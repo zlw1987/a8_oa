@@ -1,0 +1,138 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}My Tasks{% endblock %}
+{% block page_title %}My Tasks{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="summary-grid">
+        <div class="summary-label">Assigned to Me</div>
+        <div>{{ assigned_count }}</div>
+
+        <div class="summary-label">Available Pool Tasks</div>
+        <div>{{ pool_count }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Assigned to Me</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>PR No</th>
+                <th>Title</th>
+                <th>Step</th>
+                <th>Task Status</th>
+                <th>PR Status</th>
+                <th>Amount</th>
+                <th>Comment</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in assigned_tasks %}
+            <tr>
+                <td>
+                    <a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">
+                        {{ task.purchase_request.pr_no }}
+                    </a>
+                </td>
+                <td>{{ task.purchase_request.title }}</td>
+                <td>{{ task.step_name }}</td>
+                <td>{{ task.status }}</td>
+                <td>{{ task.purchase_request.status }}</td>
+                <td>{{ task.purchase_request.currency }} {{ task.purchase_request.estimated_total }}</td>
+                <td>
+                    <form method="post" action="{% url 'approvals:task_approve' task.id %}">
+                        {% csrf_token %}
+                        <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                        <div class="action-row">
+                            <button type="submit">Approve</button>
+                        </div>
+                    </form>
+
+                    <form method="post" action="{% url 'approvals:task_return' task.id %}" style="margin-top: 8px;">
+                        {% csrf_token %}
+                        <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                        <div class="action-row">
+                            <button type="submit">Return</button>
+                        </div>
+                    </form>
+
+                    <form method="post" action="{% url 'approvals:task_reject' task.id %}" style="margin-top: 8px;">
+                        {% csrf_token %}
+                        <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                        <div class="action-row">
+                            <button type="submit">Reject</button>
+                        </div>
+                    </form>
+                </td>
+                <td>
+                    <div class="action-row">
+                        <a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">Open PR</a>
+
+                        {% if task.can_release %}
+                        <form method="post" action="{% url 'approvals:task_release' task.id %}">
+                            {% csrf_token %}
+                            <button type="submit">Release</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8">No assigned tasks.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Available Pool Tasks</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>PR No</th>
+                <th>Title</th>
+                <th>Step</th>
+                <th>Task Status</th>
+                <th>PR Status</th>
+                <th>Amount</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in pool_tasks %}
+            <tr>
+                <td>
+                    <a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">
+                        {{ task.purchase_request.pr_no }}
+                    </a>
+                </td>
+                <td>{{ task.purchase_request.title }}</td>
+                <td>{{ task.step_name }}</td>
+                <td>{{ task.status }}</td>
+                <td>{{ task.purchase_request.status }}</td>
+                <td>{{ task.purchase_request.currency }} {{ task.purchase_request.estimated_total }}</td>
+                <td>
+                    <div class="action-row">
+                        <a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">Open PR</a>
+
+                        <form method="post" action="{% url 'approvals:task_claim' task.id %}">
+                            {% csrf_token %}
+                            <button type="submit">Claim</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7">No available pool tasks.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

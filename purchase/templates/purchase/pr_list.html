@@ -1,0 +1,112 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Purchase Requests{% endblock %}
+{% block page_title %}Purchase Requests{% endblock %}
+
+{% block content %}
+<div class="card">
+    <p class="muted">This is the purchase request worklist for the current user.</p>
+    <p><a href="{% url 'purchase:pr_create' %}">Create Purchase Request</a></p>
+</div>
+
+<div class="card">
+    <h2>Search / Filter</h2>
+    <form method="get">
+        <div class="action-row">
+            <input type="text" name="q" value="{{ search_q }}" placeholder="Search PR No, title, project">
+
+            <select name="status">
+                <option value="">All Statuses</option>
+                {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>
+                    {{ label }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <select name="project">
+                <option value="">All Projects</option>
+                {% for project in project_options %}
+                <option value="{{ project.project_id }}" {% if selected_project == project.project_id|stringformat:"s" %}selected{% endif %}>
+                    {{ project.project__project_code }} - {{ project.project__project_name }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <button type="submit">Apply</button>
+            <a href="{% url 'purchase:pr_list' %}">Reset</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>PR No</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Requester</th>
+                <th>Department</th>
+                <th>Project</th>
+                <th>Current Step</th>
+                <th>Current Approver</th>
+                <th>Approval Progress</th>
+                <th>Estimated Total</th>
+                <th>Request Date</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pr in purchase_requests %}
+            <tr>
+                <td><a href="{% url 'purchase:pr_detail' pr.id %}">{{ pr.pr_no }}</a></td>
+                <td>{{ pr.title }}</td>
+                <td><span class="badge {{ pr.status_badge_class }}">{{ pr.get_status_display }}</span></td>
+                <td>{{ pr.requester }}</td>
+                <td>{{ pr.request_department }}</td>
+                <td>{{ pr.project }}</td>
+                <td>{{ pr.current_step }}</td>
+                <td>{{ pr.current_approver }}</td>
+                <td>{{ pr.approval_progress }}</td>
+                <td>{{ pr.currency }} {{ pr.estimated_total }}</td>
+                <td>{{ pr.request_date }}</td>
+                <td>
+                    {% if pr.can_edit %}
+                    <a href="{% url 'purchase:pr_edit' pr.id %}">Edit</a>
+                    {% else %}
+                    <span class="muted">Locked</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="12">No purchase requests found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if page_obj.has_other_pages %}
+<div class="card">
+    <div class="pagination">
+        <span class="muted">
+            Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+        </span>
+
+        {% if page_obj.has_previous %}
+        <a href="?page=1{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Previous</a>
+        {% endif %}
+
+        <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Last</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

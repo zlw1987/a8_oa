@@ -1,0 +1,84 @@
+﻿{% extends "purchase/base.html" %}
+
+{% block title %}Create Purchase Request{% endblock %}
+{% block page_title %}Create Purchase Request{% endblock %}
+
+{% block content %}
+<div class="card">
+    <p><a href="{% url 'purchase:pr_list' %}">← Back to Purchase Request List</a></p>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+
+    <div class="card">
+        <h2>Request Header</h2>
+
+        {% if form.non_field_errors %}
+        <div style="color: red; margin-bottom: 12px;">
+            {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if form.errors %}
+        <p style="color: red;">Please fix the errors in the request header.</p>
+        {% endif %}
+
+        <table>
+            {{ form.as_table }}
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Line Items</h2>
+
+        {% if formset.non_form_errors %}
+        <div style="color: red; margin-bottom: 12px;">
+            {% for error in formset.non_form_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if formset.errors %}
+        <p style="color: red;">Please fix the errors in the line items.</p>
+        {% endif %}
+
+        {{ formset.management_form }}
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Line No</th>
+                    <th>Item Name</th>
+                    <th>Description</th>
+                    <th>Quantity</th>
+                    <th>UOM</th>
+                    <th>Unit Price</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line_form in formset %}
+                <tr>
+                    <td>{{ line_form.line_no }}</td>
+                    <td>{{ line_form.item_name }}</td>
+                    <td>{{ line_form.item_description }}</td>
+                    <td>{{ line_form.quantity }}</td>
+                    <td>{{ line_form.uom }}</td>
+                    <td>{{ line_form.unit_price }}</td>
+                    <td>{{ line_form.notes }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <button type="submit" name="action" value="draft">Save Draft</button>
+        <button type="submit" name="action" value="submit">Submit Now</button>
+    </div>
+</form>
+{% endblock %}

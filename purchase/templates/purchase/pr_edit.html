@@ -1,0 +1,338 @@
+﻿{% extends "purchase/base.html" %}
+
+{% block title %}
+    {% if page_mode == "edit" %}
+        Edit Purchase Request
+    {% else %}
+        Create Purchase Request
+    {% endif %}
+{% endblock %}
+
+{% block page_title %}
+    {% if page_mode == "edit" %}
+        Edit Purchase Request
+    {% else %}
+        Create Purchase Request
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <p><a href="{% url 'purchase:pr_list' %}">← Back to Purchase Request List</a></p>
+
+    {% if page_mode == "edit" and purchase_request %}
+    <p><a href="{% url 'purchase:pr_detail' purchase_request.id %}">Back to Detail Page</a></p>
+    {% endif %}
+</div>
+
+{% if page_mode == "create" %}
+<div class="card">
+    <div class="summary-grid">
+        <div class="summary-label">PR No</div>
+        <div>Will be generated automatically after save.</div>
+    </div>
+</div>
+{% endif %}
+
+{% if page_mode == "edit" and purchase_request %}
+<div class="card">
+    <div class="summary-grid">
+        <div class="summary-label">PR No</div>
+        <div>{{ purchase_request.pr_no }}</div>
+    </div>
+</div>
+{% endif %}
+
+<form method="post" id="pr-form">
+    {% csrf_token %}
+
+    <div class="card">
+        <h2>Request Header</h2>
+
+        {% if form.non_field_errors %}
+        <div style="color: red; margin-bottom: 12px;">
+            {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if form.errors %}
+        <p style="color: red;">Please fix the errors in the request header.</p>
+        {% endif %}
+
+        <table>
+            {{ form.as_table }}
+        </table>
+    </div>
+
+    {% if budget_summary %}
+    <div class="card">
+        <h2>Project Budget Snapshot</h2>
+        <div class="summary-grid">
+            <div class="summary-label">Project</div>
+            <div>{{ budget_summary.project_code }} - {{ budget_summary.project_name }}</div>
+
+            <div class="summary-label">Project Budget</div>
+            <div>{{ form.currency.value|default:"USD" }} {{ budget_summary.budget_amount }}</div>
+
+            <div class="summary-label">Reserved Amount</div>
+            <div>{{ form.currency.value|default:"USD" }} {{ budget_summary.reserved_amount }}</div>
+
+            <div class="summary-label">Available Amount</div>
+            <div>{{ form.currency.value|default:"USD" }} {{ budget_summary.available_amount }}</div>
+
+            <div class="summary-label">Current Request Total</div>
+            <div>{{ form.currency.value|default:"USD" }} {{ budget_summary.request_total }}</div>
+
+            <div class="summary-label">Remaining After This Request</div>
+            <div>{{ form.currency.value|default:"USD" }} {{ budget_summary.remaining_after_request }}</div>
+        </div>
+
+        {% if budget_summary.over_available %}
+        <p style="color: red; margin-top: 12px; font-weight: bold;">
+            Warning: This request exceeds the currently available project budget.
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>Line Items</h2>
+
+        {% if formset.non_form_errors %}
+        <div style="color: red; margin-bottom: 12px;">
+            {% for error in formset.non_form_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if formset.errors %}
+        <p style="color: red;">Please fix the errors in the line items.</p>
+        {% endif %}
+
+        {{ formset.management_form }}
+
+        <table id="line-items-table">
+            <thead>
+                <tr>
+                    <th>Line No</th>
+                    <th>Item Name</th>
+                    <th>Description</th>
+                    <th>Quantity</th>
+                    <th>UOM</th>
+                    <th>Unit Price</th>
+                    <th>Notes</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="line-items-body">
+                {% for line_form in formset %}
+                <tr class="line-form-row">
+                    {% for hidden in line_form.hidden_fields %}
+                    {{ hidden }}
+                    {% endfor %}
+
+                    <td>
+                        {{ line_form.line_no }}
+                        {% for error in line_form.line_no.errors %}
+                        <div style="color: red;">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.item_name }}
+                        {% for error in line_form.item_name.errors %}
+                        <div style="color: red;">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.item_description }}
+                        {% for error in line_form.item_description.errors %}
+                        <div style="color: red;">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.quantity }}
+                        {% for error in line_form.quantity.errors %}
+                        <div style="color: red;">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.uom }}
+                        {% for error in line_form.uom.errors %}
+                        <div style="color: red;">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.unit_price }}
+                        {% for error in line_form.unit_price.errors %}
+                        <div style="color: red;">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.notes }}
+                        {% for error in line_form.notes.errors %}
+                        <div style="color: red;">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {% if line_form.DELETE %}
+                        <span style="display:none;">{{ line_form.DELETE }}</span>
+                        {% endif %}
+                        <button type="button" class="delete-row-btn">Delete Row</button>
+                    </td>
+                </tr>
+
+                {% if line_form.non_field_errors %}
+                <tr class="line-form-error-row">
+                    <td colspan="8" style="color: red;">
+                        {% for error in line_form.non_field_errors %}
+                        <div>{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="action-row">
+            <button type="button" id="add-row-btn">Add Row</button>
+        </div>
+    </div>
+
+    <div class="card">
+        {% if page_mode == "edit" %}
+        <button type="submit" name="action" value="draft">Save Changes</button>
+        <button type="submit" name="action" value="submit">Save and Submit</button>
+        {% else %}
+        <button type="submit" name="action" value="draft">Save Draft</button>
+        <button type="submit" name="action" value="submit">Submit Now</button>
+        {% endif %}
+    </div>
+</form>
+
+<template id="empty-line-form-template">
+    <tr class="line-form-row">
+        {% for hidden in formset.empty_form.hidden_fields %}
+        {{ hidden }}
+        {% endfor %}
+
+        <td>{{ formset.empty_form.line_no }}</td>
+        <td>{{ formset.empty_form.item_name }}</td>
+        <td>{{ formset.empty_form.item_description }}</td>
+        <td>{{ formset.empty_form.quantity }}</td>
+        <td>{{ formset.empty_form.uom }}</td>
+        <td>{{ formset.empty_form.unit_price }}</td>
+        <td>{{ formset.empty_form.notes }}</td>
+        <td>
+            {% if formset.empty_form.DELETE %}
+            <span style="display:none;">{{ formset.empty_form.DELETE }}</span>
+            {% endif %}
+            <button type="button" class="delete-row-btn">Delete Row</button>
+        </td>
+    </tr>
+</template>
+
+<script>
+    (function () {
+        const body = document.getElementById("line-items-body");
+        const addRowBtn = document.getElementById("add-row-btn");
+        const totalFormsInput = document.getElementById("id_lines-TOTAL_FORMS");
+        const template = document.getElementById("empty-line-form-template").innerHTML;
+
+        function getVisibleRows() {
+            return Array.from(body.querySelectorAll(".line-form-row")).filter(
+                row => row.style.display !== "none"
+            );
+        }
+
+        function getDeleteField(row) {
+            return row.querySelector('input[name$="-DELETE"]');
+        }
+
+        function getLineNoField(row) {
+            return row.querySelector('input[name$="-line_no"]');
+        }
+
+        function getMeaningfulInputs(row) {
+            return {
+                itemName: row.querySelector('input[name$="-item_name"]'),
+                itemDescription: row.querySelector('textarea[name$="-item_description"]'),
+                quantity: row.querySelector('input[name$="-quantity"]'),
+                uom: row.querySelector('input[name$="-uom"]'),
+                unitPrice: row.querySelector('input[name$="-unit_price"]'),
+                notes: row.querySelector('input[name$="-notes"]'),
+            };
+        }
+
+        function rowHasMeaningfulContent(row) {
+            const inputs = getMeaningfulInputs(row);
+
+            return Boolean(
+                (inputs.itemName && inputs.itemName.value.trim() !== "") ||
+                (inputs.itemDescription && inputs.itemDescription.value.trim() !== "") ||
+                (inputs.quantity && inputs.quantity.value.trim() !== "") ||
+                (inputs.uom && inputs.uom.value.trim() !== "") ||
+                (inputs.unitPrice && inputs.unitPrice.value.trim() !== "") ||
+                (inputs.notes && inputs.notes.value.trim() !== "")
+            );
+        }
+
+        function renumberRows() {
+            let nextNo = 1;
+
+            getVisibleRows().forEach(row => {
+                const lineNoField = getLineNoField(row);
+                if (!lineNoField) return;
+
+                if (rowHasMeaningfulContent(row)) {
+                    lineNoField.value = nextNo;
+                    nextNo += 1;
+                } else {
+                    lineNoField.value = "";
+                }
+            });
+        }
+
+        function attachRowEvents(row) {
+            const deleteBtn = row.querySelector(".delete-row-btn");
+            if (deleteBtn) {
+                deleteBtn.addEventListener("click", function () {
+                    const deleteField = getDeleteField(row);
+                    if (deleteField) {
+                        deleteField.checked = true;
+                    }
+                    row.style.display = "none";
+                    renumberRows();
+                });
+            }
+
+            row.querySelectorAll("input, textarea, select").forEach(el => {
+                el.addEventListener("input", renumberRows);
+                el.addEventListener("change", renumberRows);
+            });
+        }
+
+        function addRow() {
+            const formIndex = parseInt(totalFormsInput.value, 10);
+            const html = template.replace(/__prefix__/g, formIndex);
+            const wrapper = document.createElement("tbody");
+            wrapper.innerHTML = html.trim();
+            const newRow = wrapper.querySelector(".line-form-row");
+
+            body.appendChild(newRow);
+            totalFormsInput.value = formIndex + 1;
+
+            attachRowEvents(newRow);
+            renumberRows();
+        }
+
+        getVisibleRows().forEach(attachRowEvents);
+        renumberRows();
+
+        addRowBtn.addEventListener("click", addRow);
+    })();
+</script>
+{% endblock %}

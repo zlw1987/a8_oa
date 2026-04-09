@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}Purchase System{% endblock %}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 24px;
+            background: #f7f7f7;
+            color: #222;
+        }
+
+        a {
+            color: #0b57d0;
+            text-decoration: none;
+        }
+
+            a:hover {
+                text-decoration: underline;
+            }
+
+        .page-title {
+            margin-bottom: 16px;
+        }
+
+        .card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 220px 1fr;
+            row-gap: 8px;
+            column-gap: 12px;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .summary-card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+            .summary-card .label {
+                color: #666;
+                margin-bottom: 8px;
+            }
+
+            .summary-card .value {
+                font-size: 28px;
+                font-weight: bold;
+            }
+
+        .summary-label {
+            font-weight: bold;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #efefef;
+        }
+
+        .muted {
+            color: #666;
+        }
+
+        .status {
+            font-weight: bold;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+
+            .message.success {
+                background: #e6f4ea;
+                border: 1px solid #b7dfc3;
+                color: #1e4620;
+            }
+
+            .message.error {
+                background: #fdeaea;
+                border: 1px solid #f3b8b8;
+                color: #8a1f1f;
+            }
+
+        .action-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            align-items: center;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 80px;
+        }
+
+        button {
+            padding: 8px 14px;
+            cursor: pointer;
+        }
+
+        .top-nav {
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+            .top-nav .spacer {
+                flex: 1;
+            }
+
+        .inline-form {
+            display: inline;
+            margin: 0;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .badge-neutral {
+            background: #ececec;
+            color: #444;
+        }
+
+        .badge-warning {
+            background: #fff3cd;
+            color: #7a5a00;
+        }
+
+        .badge-success {
+            background: #e6f4ea;
+            color: #1e4620;
+        }
+
+        .badge-danger {
+            background: #fdeaea;
+            color: #8a1f1f;
+        }
+
+        .badge-info {
+            background: #e7f3ff;
+            color: #0b57d0;
+        }
+
+        .badge-dark {
+            background: #e0e0e0;
+            color: #222;
+        }
+
+        .pagination {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="card top-nav">
+        {% if request.user.is_authenticated %}
+        <a href="{% url 'dashboard:home' %}">Dashboard</a>
+        <a href="{% url 'purchase:pr_list' %}">Purchase Requests</a>
+        <a href="{% url 'approvals:my_tasks' %}">My Tasks</a>
+        <a href="/admin/">Admin</a>
+        <div class="spacer"></div>
+        <span class="muted">Signed in as: {{ request.user }}</span>
+
+        <form method="post" action="{% url 'logout' %}" class="inline-form">
+            {% csrf_token %}
+            <button type="submit">Logout</button>
+        </form>
+        {% else %}
+        <a href="{% url 'login' %}">Login</a>
+        {% endif %}
+    </div>
+
+    <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
+
+    {% if messages %}
+    {% for message in messages %}
+    <div class="message {% if message.tags == 'error' %}error{% else %}success{% endif %}">
+        {{ message }}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% block content %}{% endblock %}
+</body>
+</html>

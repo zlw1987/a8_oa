@@ -1,0 +1,132 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="summary-cards">
+    <div class="summary-card">
+        <div class="label">My Editable Requests</div>
+        <div class="value">{{ editable_count }}</div>
+    </div>
+
+    <div class="summary-card">
+        <div class="label">My In-Progress Requests</div>
+        <div class="value">{{ in_progress_count }}</div>
+    </div>
+
+    <div class="summary-card">
+        <div class="label">Assigned Tasks</div>
+        <div class="value">{{ assigned_task_count }}</div>
+    </div>
+
+    <div class="summary-card">
+        <div class="label">Available Pool Tasks</div>
+        <div class="value">{{ pool_task_count }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'purchase:pr_create' %}">Create Purchase Request</a>
+        <a href="{% url 'purchase:pr_list' %}">Open Purchase Request List</a>
+        <a href="{% url 'approvals:my_tasks' %}">Open My Tasks</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>My Recent Requests</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>PR No</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Project</th>
+                <th>Amount</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pr in my_recent_requests %}
+            <tr>
+                <td>{{ pr.pr_no }}</td>
+                <td>{{ pr.title }}</td>
+                <td>{{ pr.status }}</td>
+                <td>{{ pr.project }}</td>
+                <td>{{ pr.currency }} {{ pr.estimated_total }}</td>
+                <td><a href="{% url 'purchase:pr_detail' pr.id %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6">No recent requests.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Assigned to Me</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>PR No</th>
+                <th>Title</th>
+                <th>Step</th>
+                <th>Task Status</th>
+                <th>Amount</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in assigned_tasks %}
+            <tr>
+                <td>{{ task.purchase_request.pr_no }}</td>
+                <td>{{ task.purchase_request.title }}</td>
+                <td>{{ task.step_name }}</td>
+                <td>{{ task.status }}</td>
+                <td>{{ task.purchase_request.currency }} {{ task.purchase_request.estimated_total }}</td>
+                <td><a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6">No assigned tasks.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Available Pool Tasks</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>PR No</th>
+                <th>Title</th>
+                <th>Step</th>
+                <th>Task Status</th>
+                <th>Amount</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in pool_tasks %}
+            <tr>
+                <td>{{ task.purchase_request.pr_no }}</td>
+                <td>{{ task.purchase_request.title }}</td>
+                <td>{{ task.step_name }}</td>
+                <td>{{ task.status }}</td>
+                <td>{{ task.purchase_request.currency }} {{ task.purchase_request.estimated_total }}</td>
+                <td><a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6">No available pool tasks.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
