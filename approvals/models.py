@@ -178,7 +178,7 @@ class ApprovalTask(models.Model):
         unique_together = ("purchase_request", "step_no")
 
     def __str__(self):
-        return f"{self.purchase_request.pr_no} / Step {self.step_no} / {self.status}"
+        return f"{self.request_no or '-'} / Step {self.step_no} / {self.status}"
 
     def _add_history(
         self,
@@ -228,8 +228,8 @@ class ApprovalTask(models.Model):
             to_assignee=user,
             comment=f"Task claimed by {user}.",
         )
-        self.purchase_request._add_history(
-            action_type=PurchaseRequestHistoryActionType.TASK_CLAIMED,
+        self._add_request_history_if_supported(
+            action_key="task_claimed",
             acting_user=user,
             comment=f"Task '{self.step_name}' claimed by {user}.",
         )
@@ -261,8 +261,8 @@ class ApprovalTask(models.Model):
             to_assignee=None,
             comment=f"Task released back to pool by {user}.",
         )
-        self.purchase_request._add_history(
-            action_type=PurchaseRequestHistoryActionType.TASK_RELEASED_TO_POOL,
+        self._add_request_history_if_supported(
+            action_key="task_released_to_pool",
             acting_user=user,
             comment=f"Task '{self.step_name}' released back to pool by {user}.",
         )
@@ -280,10 +280,71 @@ class ApprovalTask(models.Model):
         request_obj = self.get_request_object()
         return getattr(request_obj, "title", "") or getattr(request_obj, "purpose", "") or ""
 
+    def get_request_tasks_queryset(self):
+        if self.request_content_type_id and self.request_object_id:
+            return ApprovalTask.objects.filter(
+                request_content_type=self.request_content_type,
+                request_object_id=self.request_object_id,
+            ).order_by("step_no", "id")
+
+        if self.purchase_request_id:
+            return ApprovalTask.objects.filter(
+                purchase_request=self.purchase_request,
+            ).order_by("step_no", "id")
+
+        return ApprovalTask.objects.none()
+
     @property
     def request_requester(self):
         request_obj = self.get_request_object()
         return getattr(request_obj, "requester", None)
+
+    def _resolve_assignee_from_request(self):
+        request_obj = self.get_request_object()
+        if not request_obj:
+            return None
+
+        resolver = getattr(request_obj, "resolve_fixed_step_assignee", None)
+        if callable(resolver):
+            return resolver(self.step)
+
+        return None
+
+    def _add_request_history_if_supported(self, action_key, acting_user=None, comment=""):
+        request_obj = self.get_request_object()
+        if not request_obj:
+            return
+
+        history_writer = getattr(request_obj, "_add_history", None)
+        if not callable(history_writer):
+            return
+
+        app_label = ""
+        if self.request_content_type_id:
+            app_label = self.request_content_type.app_label
+        elif self.purchase_request_id:
+            app_label = "purchase"
+
+        if app_label != "purchase":
+            return
+
+        action_map = {
+            "task_claimed": PurchaseRequestHistoryActionType.TASK_CLAIMED,
+            "task_released_to_pool": PurchaseRequestHistoryActionType.TASK_RELEASED_TO_POOL,
+            "task_approved": PurchaseRequestHistoryActionType.TASK_APPROVED,
+            "task_rejected": PurchaseRequestHistoryActionType.TASK_REJECTED,
+            "task_returned": PurchaseRequestHistoryActionType.TASK_RETURNED,
+        }
+
+        action_type = action_map.get(action_key)
+        if not action_type:
+            return
+
+        history_writer(
+            action_type=action_type,
+            acting_user=acting_user,
+            comment=comment,
+        )
 
     @transaction.atomic
     def activate(self):
@@ -309,7 +370,7 @@ class ApprovalTask(models.Model):
             )
             return
 
-        assigned_user = self.purchase_request.resolve_fixed_step_assignee(self.step)
+        assigned_user = self._resolve_assignee_from_request()
         if not assigned_user:
             raise ValidationError(
                 f"Unable to resolve approver for step {self.step_no} - {self.step_name}."
@@ -331,8 +392,9 @@ class ApprovalTask(models.Model):
 
     def _get_next_task(self):
         return (
-            self.purchase_request.approval_tasks.filter(step_no__gt=self.step_no)
-            .order_by("step_no")
+            self.get_request_tasks_queryset()
+            .filter(step_no__gt=self.step_no)
+            .order_by("step_no", "id")
             .first()
         )
 
@@ -362,8 +424,9 @@ class ApprovalTask(models.Model):
             to_assignee=current_assignee,
             comment=comment or f"Task approved by {user}.",
         )
-        self.purchase_request._add_history(
-            action_type=PurchaseRequestHistoryActionType.TASK_APPROVED,
+        request_obj = self.get_request_object()
+        self._add_request_history_if_supported(
+            action_key="task_approved",
             acting_user=user,
             comment=comment or f"Task '{self.step_name}' approved by {user}.",
         )
@@ -381,9 +444,9 @@ class ApprovalTask(models.Model):
             )
             return
 
-        self.purchase_request.mark_as_approved(
+        request_obj.mark_as_approved(
             acting_user=user,
-            comment=f"All approval tasks completed for {self.purchase_request.pr_no}.",
+            comment=f"All approval tasks completed for {self.request_no}.",
         )
 
     @transaction.atomic
@@ -413,16 +476,20 @@ class ApprovalTask(models.Model):
             comment=comment or f"Task rejected by {user}.",
         )
 
-        self.purchase_request.mark_as_rejected(
+        request_obj = self.get_request_object()
+
+        self._add_request_history_if_supported(
+            action_key="task_rejected",
+            acting_user=user,
+            comment=comment or f"Task '{self.step_name}' rejected by {user}.",
+        )
+
+        request_obj.mark_as_rejected(
             acting_user=user,
             comment=comment or f"Rejected at step {self.step_no} - {self.step_name}.",
             exclude_task_id=self.id,
         )
-        self.purchase_request._add_history(
-            action_type=PurchaseRequestHistoryActionType.TASK_REJECTED,
-            acting_user=user,
-            comment=comment or f"Task '{self.step_name}' rejected by {user}.",
-        )
+
     @transaction.atomic
     def return_to_requester(self, user, comment=""):
         if self.status != ApprovalTaskStatus.PENDING:
@@ -450,13 +517,15 @@ class ApprovalTask(models.Model):
             comment=comment or f"Task returned to requester by {user}.",
         )
 
-        self.purchase_request._add_history(
-            action_type=PurchaseRequestHistoryActionType.TASK_RETURNED,
+        request_obj = self.get_request_object()
+
+        self._add_request_history_if_supported(
+            action_key="task_returned",
             acting_user=user,
             comment=comment or f"Task '{self.step_name}' returned to requester by {user}.",
         )
 
-        self.purchase_request.mark_as_returned(
+        request_obj.mark_as_returned(
             acting_user=user,
             comment=comment or f"Returned at step {self.step_no} - {self.step_name}.",
             exclude_task_id=self.id,

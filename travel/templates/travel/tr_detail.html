@@ -1,0 +1,351 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Travel Request Detail{% endblock %}
+{% block page_title %}Travel Request Detail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'travel:tr_list' %}">Back to Travel Request List</a>
+
+        {% if can_edit %}
+        <a href="{% url 'travel:tr_edit' travel_request.id %}">Edit Travel Request</a>
+        {% endif %}
+
+        {% if can_submit %}
+        <a href="{% url 'travel:tr_submit' travel_request.id %}">Submit</a>
+        {% endif %}
+
+        {% if can_cancel %}
+        <a href="{% url 'travel:tr_cancel' travel_request.id %}">Cancel</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Travel Request Summary</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Travel No</div>
+        <div>{{ travel_request.travel_no }}</div>
+
+        <div class="summary-label">Purpose</div>
+        <div>{{ travel_request.purpose }}</div>
+
+        <div class="summary-label">Status</div>
+        <div>{{ travel_request.get_status_display }}</div>
+
+        <div class="summary-label">Requester</div>
+        <div>{{ travel_request.requester }}</div>
+
+        <div class="summary-label">Department</div>
+        <div>{{ travel_request.request_department }}</div>
+
+        <div class="summary-label">Project</div>
+        <div>{{ travel_request.project }}</div>
+
+        <div class="summary-label">Origin City</div>
+        <div>{{ travel_request.origin_city }}</div>
+
+        <div class="summary-label">Destination City</div>
+        <div>{{ travel_request.destination_city }}</div>
+
+        <div class="summary-label">Start Date</div>
+        <div>{{ travel_request.start_date }}</div>
+
+        <div class="summary-label">End Date</div>
+        <div>{{ travel_request.end_date }}</div>
+
+        <div class="summary-label">Estimated Total</div>
+        <div>{{ travel_request.currency }} {{ travel_request.estimated_total }}</div>
+        <div class="summary-label">Actual Total</div>
+        <div>{{ travel_request.currency }} {{ travel_request.actual_total }}</div>
+
+        <div class="summary-label">Notes</div>
+        <div>{{ travel_request.notes }}</div>
+        <div class="summary-label">Current Step</div>
+        <div>{{ current_step }}</div>
+
+        <div class="summary-label">Current Approver</div>
+        <div>{{ current_approver }}</div>
+
+        <div class="summary-label">Approval Progress</div>
+        <div>{{ approval_progress }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Attachments</h2>
+
+    {% if can_manage_attachments %}
+    <form method="post" action="{% url 'travel:tr_upload_attachment' travel_request.id %}" enctype="multipart/form-data">
+        {% csrf_token %}
+        <table>
+            {{ attachment_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Upload Attachment</button>
+        </div>
+    </form>
+    {% endif %}
+
+    <table style="margin-top: 16px;">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Title</th>
+                <th>File</th>
+                <th>Uploaded By</th>
+                <th>Uploaded At</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for attachment in attachments %}
+            <tr>
+                <td>{{ attachment.get_document_type_display }}</td>
+                <td>{{ attachment.title }}</td>
+                <td>
+                    <a href="{{ attachment.file.url }}" target="_blank">{{ attachment.filename }}</a>
+                </td>
+                <td>{{ attachment.uploaded_by }}</td>
+                <td>{{ attachment.uploaded_at }}</td>
+                <td>
+                    {% if can_manage_attachments %}
+                    <form method="post" action="{% url 'travel:tr_delete_attachment' travel_request.id attachment.id %}">
+                        {% csrf_token %}
+                        <button type="submit">Delete</button>
+                    </form>
+                    {% else %}
+                    <span class="muted">Read Only</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6">No attachments.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Itinerary</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Line No</th>
+                <th>Trip Date</th>
+                <th>From City</th>
+                <th>To City</th>
+                <th>Transport Type</th>
+                <th>Departure Time</th>
+                <th>Arrival Time</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in itineraries %}
+            <tr>
+                <td>{{ line.line_no }}</td>
+                <td>{{ line.trip_date }}</td>
+                <td>{{ line.from_city }}</td>
+                <td>{{ line.to_city }}</td>
+                <td>{{ line.get_transport_type_display }}</td>
+                <td>{{ line.departure_time }}</td>
+                <td>{{ line.arrival_time }}</td>
+                <td>{{ line.notes }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8">No itinerary lines.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Estimated Expense</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Line No</th>
+                <th>Expense Type</th>
+                <th>Location Mode</th>
+                <th>Expense Date</th>
+                <th>Estimated Amount</th>
+                <th>From Location</th>
+                <th>To Location</th>
+                <th>Expense Location</th>
+                <th>Check-in</th>
+                <th>Check-out</th>
+                <th>Itinerary Ref</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in expense_lines %}
+            <tr>
+                <td>{{ line.line_no }}</td>
+                <td>{{ line.get_expense_type_display }}</td>
+                <td>{{ line.get_location_mode_display }}</td>
+                <td>{{ line.expense_date }}</td>
+                <td>{{ line.currency }} {{ line.estimated_amount }}</td>
+                <td>{{ line.from_location }}</td>
+                <td>{{ line.to_location }}</td>
+                <td>{{ line.expense_location }}</td>
+                <td>{{ line.checkin_date }}</td>
+                <td>{{ line.checkout_date }}</td>
+                <td>{{ line.itinerary_line_no }}</td>
+                <td>{{ line.notes }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="12">No estimated expense lines.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Actual Expense</h2>
+
+    {% if can_record_actual_expense %}
+    <form method="post" action="{% url 'travel:tr_record_actual_expense' travel_request.id %}">
+        {% csrf_token %}
+        <table>
+            {{ actual_expense_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Record Actual Expense</button>
+        </div>
+    </form>
+    {% endif %}
+
+    <table style="margin-top: 16px;">
+        <thead>
+            <tr>
+                <th>Line No</th>
+                <th>Expense Type</th>
+                <th>Expense Date</th>
+                <th>Actual Amount</th>
+                <th>Estimated Link</th>
+                <th>PR Line Link</th>
+                <th>Vendor</th>
+                <th>Reference No</th>
+                <th>Expense Location</th>
+                <th>Notes</th>
+                <th>Created By</th>
+                <th>Created At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in actual_expense_lines %}
+            <tr>
+                <td>{{ line.line_no }}</td>
+                <td>{{ line.get_expense_type_display }}</td>
+                <td>{{ line.expense_date }}</td>
+                <td>{{ line.currency }} {{ line.actual_amount }}</td>
+                <td>
+                    {% if line.estimated_expense_line %}
+                    Line {{ line.estimated_expense_line.line_no }} -
+                    {{ line.estimated_expense_line.get_expense_type_display }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if line.purchase_request_line %}
+                    {{ line.purchase_request_line.request.pr_no }} / Line {{ line.purchase_request_line.line_no }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>{{ line.vendor_name }}</td>
+                <td>{{ line.reference_no }}</td>
+                <td>{{ line.expense_location }}</td>
+                <td>{{ line.notes }}</td>
+                <td>{{ line.created_by }}</td>
+                <td>{{ line.created_at }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="12">No actual expense lines.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Content Change Audit</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Changed At</th>
+                <th>Action</th>
+                <th>Section</th>
+                <th>Line No</th>
+                <th>Field</th>
+                <th>Old Value</th>
+                <th>New Value</th>
+                <th>Changed By</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for audit in content_audits %}
+            <tr>
+                <td>{{ audit.changed_at }}</td>
+                <td>{{ audit.get_action_type_display }}</td>
+                <td>{{ audit.section }}</td>
+                <td>{{ audit.line_no }}</td>
+                <td>{{ audit.field_name }}</td>
+                <td>{{ audit.old_value }}</td>
+                <td>{{ audit.new_value }}</td>
+                <td>{{ audit.changed_by }}</td>
+                <td>{{ audit.notes }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="9">No content change audit records.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Travel History</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Created At</th>
+                <th>Action</th>
+                <th>From Status</th>
+                <th>To Status</th>
+                <th>Acting User</th>
+                <th>Comment</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for history in histories %}
+            <tr>
+                <td>{{ history.created_at }}</td>
+                <td>{{ history.get_action_type_display }}</td>
+                <td>{{ history.from_status }}</td>
+                <td>{{ history.to_status }}</td>
+                <td>{{ history.acting_user }}</td>
+                <td>{{ history.comment }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6">No history records.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

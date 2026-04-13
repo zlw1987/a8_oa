@@ -7,8 +7,30 @@ from .models import (
     PurchaseRequestHistory,
     PurchaseRequestAttachment,
     PurchaseRequestContentAudit,
+    PurchaseActualSpend,
 )
 
+@admin.action(description="Close selected purchase requests")
+def close_requests(modeladmin, request, queryset):
+    success_count = 0
+
+    for purchase_request in queryset:
+        try:
+            purchase_request.close_purchase(acting_user=request.user)
+            success_count += 1
+        except ValidationError as exc:
+            modeladmin.message_user(
+                request,
+                f"{purchase_request.pr_no}: {'; '.join(exc.messages)}",
+                level=messages.ERROR,
+            )
+
+    if success_count:
+        modeladmin.message_user(
+            request,
+            f"{success_count} purchase request(s) closed successfully.",
+            level=messages.SUCCESS,
+        )
 
 @admin.action(description="Submit selected purchase requests")
 def submit_requests(modeladmin, request, queryset):
@@ -96,9 +118,12 @@ class PurchaseRequestAdmin(admin.ModelAdmin):
         "project",
         "matched_rule",
         "status",
+        "fulfillment_status",
         "current_step_display",
         "current_approver_display",
         "approval_progress_display",
+        "actual_spent_total_display",
+        "reserved_remaining_display",
         "request_date",
         "estimated_total",
     )
@@ -169,7 +194,15 @@ class PurchaseRequestAdmin(admin.ModelAdmin):
         ),
     )
     inlines = [PurchaseRequestLineInline, PurchaseRequestHistoryInline]
-    actions = [submit_requests, cancel_requests]
+    actions = [submit_requests, cancel_requests, close_requests]
+
+    @admin.display(description="Actual Spent")
+    def actual_spent_total_display(self, obj):
+        return f"{obj.currency} {obj.get_actual_spent_total()}"
+
+    @admin.display(description="Reserved Remaining")
+    def reserved_remaining_display(self, obj):
+        return f"{obj.currency} {obj.get_reserved_remaining_amount()}"
 
     @admin.display(description="Current Step")
     def current_step_display(self, obj):
@@ -286,3 +319,48 @@ class PurchaseRequestContentAuditAdmin(admin.ModelAdmin):
         "action_type",
         "changed_at",
     )
+
+@admin.register(PurchaseActualSpend)
+class PurchaseActualSpendAdmin(admin.ModelAdmin):
+    list_display = (
+        "purchase_request",
+        "spend_date",
+        "amount",
+        "currency",
+        "vendor_name",
+        "reference_no",
+        "created_by",
+        "created_at",
+    )
+    search_fields = (
+        "purchase_request__pr_no",
+        "purchase_request__title",
+        "vendor_name",
+        "reference_no",
+        "notes",
+    )
+    list_filter = (
+        "currency",
+        "spend_date",
+        "created_at",
+    )
+    readonly_fields = (
+        "purchase_request",
+        "spend_date",
+        "amount",
+        "currency",
+        "vendor_name",
+        "reference_no",
+        "notes",
+        "created_by",
+        "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

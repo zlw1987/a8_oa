@@ -95,6 +95,16 @@
     <Compile Include="purchase\urls.py" />
     <Compile Include="purchase\views.py" />
     <Compile Include="purchase\__init__.py" />
+    <Compile Include="travel\admin.py" />
+    <Compile Include="travel\apps.py" />
+    <Compile Include="travel\forms.py" />
+    <Compile Include="travel\migrations\__init__.py" />
+    <Compile Include="travel\models.py" />
+    <Compile Include="travel\notifications.py" />
+    <Compile Include="travel\tests.py" />
+    <Compile Include="travel\urls.py" />
+    <Compile Include="travel\views.py" />
+    <Compile Include="travel\__init__.py" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="approvals\templates\approvals\my_tasks.html" />
@@ -106,6 +116,9 @@
     <Content Include="purchase\templates\purchase\pr_detail.html" />
     <Content Include="purchase\templates\purchase\pr_edit.html" />
     <Content Include="purchase\templates\purchase\pr_list.html" />
+    <Content Include="travel\templates\travel\tr_detail.html" />
+    <Content Include="travel\templates\travel\tr_edit.html" />
+    <Content Include="travel\templates\travel\tr_list.html" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="accounts" />
@@ -128,6 +141,10 @@
     <Folder Include="purchase\templates\" />
     <Folder Include="purchase\templates\approvals" />
     <Folder Include="purchase\templates\purchase" />
+    <Folder Include="travel\" />
+    <Folder Include="travel\migrations\" />
+    <Folder Include="travel\templates\" />
+    <Folder Include="travel\templates\travel\" />
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="Global|PythonCore|3.14" />

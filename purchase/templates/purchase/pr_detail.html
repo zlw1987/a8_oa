@@ -64,6 +64,15 @@
         <div class="summary-label">Estimated Total</div>
         <div>{{ purchase_request.currency }} {{ purchase_request.estimated_total }}</div>
 
+        <div class="summary-label">Fulfillment Status</div>
+        <div>{{ purchase_request.get_fulfillment_status_display }}</div>
+
+        <div class="summary-label">Actual Spent Total</div>
+        <div>{{ purchase_request.currency }} {{ actual_spent_total }}</div>
+
+        <div class="summary-label">Reserved Remaining</div>
+        <div>{{ purchase_request.currency }} {{ reserved_remaining }}</div>
+
         <div class="summary-label">Request Date</div>
         <div>{{ purchase_request.request_date }}</div>
 
@@ -181,6 +190,77 @@
         {% endif %}
     </div>
     {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>Actual Spend</h2>
+
+    {% if can_record_actual_spend %}
+    <form method="post" action="{% url 'purchase:pr_record_actual_spend' purchase_request.id %}">
+        {% csrf_token %}
+        <table>
+            {{ actual_spend_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Record Actual Spend</button>
+        </div>
+    </form>
+    {% endif %}
+
+    <table style="margin-top: 16px;">
+        <thead>
+            <tr>
+                <th>Spend Date</th>
+                <th>Amount</th>
+                <th>Vendor</th>
+                <th>Reference No</th>
+                <th>Created By</th>
+                <th>Created At</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for spend in actual_spend_entries %}
+            <tr>
+                <td>{{ spend.spend_date }}</td>
+                <td>{{ spend.currency }} {{ spend.amount }}</td>
+                <td>{{ spend.vendor_name }}</td>
+                <td>{{ spend.reference_no }}</td>
+                <td>{{ spend.created_by }}</td>
+                <td>{{ spend.created_at }}</td>
+                <td>{{ spend.notes }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7">No actual spend records.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if can_close_purchase %}
+<div class="card">
+    <h2>Close Purchase</h2>
+    <p class="muted">
+        Use this action when the purchase execution is complete. Any remaining reserved budget will be released.
+    </p>
+
+    <form method="post" action="{% url 'purchase:pr_close' purchase_request.id %}">
+        {% csrf_token %}
+        <table>
+            <tr>
+                <th>Close Comment</th>
+                <td>
+                    <textarea name="comment"></textarea>
+                </td>
+            </tr>
+        </table>
+        <div class="action-row">
+            <button type="submit">Close Purchase</button>
+        </div>
+    </form>
 </div>
 {% endif %}
 

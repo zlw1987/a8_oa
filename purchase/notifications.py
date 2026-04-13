@@ -53,7 +53,11 @@ def notify_pr_submitted(purchase_request):
 
 
 def notify_current_task_activated(task):
-    purchase_request = task.purchase_request
+    request_obj = task.get_request_object()
+    if not request_obj:
+        return 0
+
+
 
     if task.status == ApprovalTaskStatus.POOL:
         recipients = [
@@ -68,13 +72,13 @@ def notify_current_task_activated(task):
     else:
         recipients = []
 
-    subject = f"[OA] Approval needed - {purchase_request.pr_no} / {task.step_name}"
+    subject = f"[OA] Approval needed - {task.request_no} / {task.step_name}"
     body = (
-        f"Purchase Request: {purchase_request.pr_no}\n"
-        f"Title: {purchase_request.title}\n"
+        f"Request No: {task.request_no}\n"
+        f"Title: {task.request_title}\n"
         f"Current Step: {task.step_name}\n"
         f"Task Status: {task.get_status_display()}\n"
-        f"Request Amount: {purchase_request.currency} {purchase_request.estimated_total}\n\n"
+        f"Request Amount: {getattr(request_obj, 'currency', '')} {getattr(request_obj, 'estimated_total', '')}\n\n"
         f"{audience_text}"
     )
 

@@ -27,6 +27,7 @@ class RequestStatus(models.TextChoices):
 
 class BudgetEntryType(models.TextChoices):
     RESERVE = "RESERVE", "Reserve"
+    CONSUME = "CONSUME", "Consume"
     RELEASE = "RELEASE", "Release"
     ADJUST = "ADJUST", "Adjust"
 
@@ -88,3 +89,11 @@ class UnitOfMeasure(models.TextChoices):
     DAY = "DAY", "Day"
     MONTH = "MONTH", "Month"
     OTHER = "OTHER", "Other"
+
+class CurrencyCode(models.TextChoices):
+    USD = "USD", "USD"
+    EUR = "EUR", "EUR"
+    CNY = "CNY", "CNY"
+    HKD = "HKD", "HKD"
+    TWD = "TWD", "TWD"
+    JPY = "JPY", "JPY"

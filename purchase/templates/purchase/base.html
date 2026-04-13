@@ -195,6 +195,7 @@
         {% if request.user.is_authenticated %}
         <a href="{% url 'dashboard:home' %}">Dashboard</a>
         <a href="{% url 'purchase:pr_list' %}">Purchase Requests</a>
+        <a href="{% url 'travel:tr_list' %}">Travel Requests</a>
         <a href="{% url 'approvals:my_tasks' %}">My Tasks</a>
         <a href="/admin/">Admin</a>
         <div class="spacer"></div>

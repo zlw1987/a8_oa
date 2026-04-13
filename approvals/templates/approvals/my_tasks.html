@@ -3,190 +3,194 @@
 {% block title %}My Tasks{% endblock %}
 {% block page_title %}My Tasks{% endblock %}
 
-{% block content %}
-<div class="card">
-    <form method="get">
-        <div class="action-row">
-            <input type="text" name="q" value="{{ search_q }}" placeholder="Search PR No, title, step name">
-            <button type="submit">Search</button>
-            <a href="{% url 'approvals:my_tasks' %}">Reset</a>
+    {% block content %}
+    <div class="card">
+        <form method="get">
+            <div class="action-row">
+                <input type="text" name="q" value="{{ search_q }}" placeholder="Search PR No, title, step name">
+                <button type="submit">Search</button>
+                <a href="{% url 'approvals:my_tasks' %}">Reset</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <div class="summary-grid">
+            <div class="summary-label">Assigned to Me</div>
+            <div>{{ assigned_count }}</div>
+
+            <div class="summary-label">Available Pool Tasks</div>
+            <div>{{ pool_count }}</div>
         </div>
-    </form>
-</div>
-
-<div class="card">
-    <div class="summary-grid">
-        <div class="summary-label">Assigned to Me</div>
-        <div>{{ assigned_count }}</div>
-
-        <div class="summary-label">Available Pool Tasks</div>
-        <div>{{ pool_count }}</div>
     </div>
-</div>
 
-<div class="card">
-    <h2>Assigned to Me</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>PR No</th>
-                <th>Title</th>
-                <th>Step</th>
-                <th>Task Status</th>
-                <th>PR Status</th>
-                <th>Amount</th>
-                <th>Comment</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for task in assigned_tasks %}
-            <tr>
-                <td>
-                    <a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">
-                        {{ task.purchase_request.pr_no }}
-                    </a>
-                </td>
-                <td>{{ task.purchase_request.title }}</td>
-                <td>{{ task.step_name }}</td>
-                <td><span class="badge {{ task.task_status_badge_class }}">{{ task.get_status_display }}</span></td>
-                <td><span class="badge {{ task.pr_status_badge_class }}">{{ task.purchase_request.get_status_display }}</span></td>
-                <td>{{ task.purchase_request.currency }} {{ task.purchase_request.estimated_total }}</td>
-                <td>
-                    <form method="post" action="{% url 'approvals:task_approve' task.id %}">
-                        {% csrf_token %}
-                        <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
-                        <div class="action-row">
-                            <button type="submit">Approve</button>
-                        </div>
-                    </form>
-
-                    <form method="post" action="{% url 'approvals:task_return' task.id %}" style="margin-top: 8px;">
-                        {% csrf_token %}
-                        <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
-                        <div class="action-row">
-                            <button type="submit">Return</button>
-                        </div>
-                    </form>
-
-                    <form method="post" action="{% url 'approvals:task_reject' task.id %}" style="margin-top: 8px;">
-                        {% csrf_token %}
-                        <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
-                        <div class="action-row">
-                            <button type="submit">Reject</button>
-                        </div>
-                    </form>
-                </td>
-                <td>
-                    <div class="action-row">
-                        <a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">Open PR</a>
-
-                        {% if task.can_release %}
-                        <form method="post" action="{% url 'approvals:task_release' task.id %}">
+    <div class="card">
+        <h2>Assigned to Me</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Request Type</th>
+                    <th>PR No</th>
+                    <th>Title</th>
+                    <th>Step</th>
+                    <th>Task Status</th>
+                    <th>PR Status</th>
+                    <th>Amount</th>
+                    <th>Comment</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for task in assigned_tasks %}
+                <tr>
+                    <td>{{ task.request_type_label }}</td>
+                    <td>
+                        <a href="{{ task.request_detail_url }}">
+                            {{ task.request_no }}
+                        </a>
+                    </td>
+                    <td>{{ task.request_title }}</td>
+                    <td>{{ task.step_name }}</td>
+                    <td><span class="badge {{ task.task_status_badge_class }}">{{ task.get_status_display }}</span></td>
+                    <td><span class="badge {{ task.pr_status_badge_class }}">{{ task.request_status_display }}</span></td>
+                    <td>{{ task.request_currency }}  {{ task.request_amount }}</td>
+                    <td>
+                        <form method="post" action="{% url 'approvals:task_approve' task.id %}">
                             {% csrf_token %}
-                            <button type="submit">Release</button>
+                            <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                            <div class="action-row">
+                                <button type="submit">Approve</button>
+                            </div>
                         </form>
-                        {% endif %}
-                    </div>
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="8">No assigned tasks.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
 
-{% if assigned_page_obj.has_other_pages %}
-<div class="card">
-    <div class="pagination">
-        <span class="muted">
-            Assigned: {{ assigned_page_obj.start_index }} - {{ assigned_page_obj.end_index }} of {{ assigned_page_obj.paginator.count }}
-        </span>
-
-        {% if assigned_page_obj.has_previous %}
-        <a href="?assigned_page=1{% if assigned_pagination_querystring %}&{{ assigned_pagination_querystring }}{% endif %}">First</a>
-        <a href="?assigned_page={{ assigned_page_obj.previous_page_number }}{% if assigned_pagination_querystring %}&{{ assigned_pagination_querystring }}{% endif %}">Previous</a>
-        {% endif %}
-
-        <span class="muted">Page {{ assigned_page_obj.number }} of {{ assigned_page_obj.paginator.num_pages }}</span>
-
-        {% if assigned_page_obj.has_next %}
-        <a href="?assigned_page={{ assigned_page_obj.next_page_number }}{% if assigned_pagination_querystring %}&{{ assigned_pagination_querystring }}{% endif %}">Next</a>
-        <a href="?assigned_page={{ assigned_page_obj.paginator.num_pages }}{% if assigned_pagination_querystring %}&{{ assigned_pagination_querystring }}{% endif %}">Last</a>
-        {% endif %}
-    </div>
-</div>
-{% endif %}
-
-<div class="card">
-    <h2>Available Pool Tasks</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>PR No</th>
-                <th>Title</th>
-                <th>Step</th>
-                <th>Task Status</th>
-                <th>PR Status</th>
-                <th>Amount</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for task in pool_tasks %}
-            <tr>
-                <td>
-                    <a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">
-                        {{ task.purchase_request.pr_no }}
-                    </a>
-                </td>
-                <td>{{ task.purchase_request.title }}</td>
-                <td>{{ task.step_name }}</td>
-                <td><span class="badge {{ task.task_status_badge_class }}">{{ task.get_status_display }}</span></td>
-                <td><span class="badge {{ task.pr_status_badge_class }}">{{ task.purchase_request.get_status_display }}</span></td>
-                <td>{{ task.purchase_request.currency }} {{ task.purchase_request.estimated_total }}</td>
-                <td>
-                    <div class="action-row">
-                        <a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">Open PR</a>
-
-                        <form method="post" action="{% url 'approvals:task_claim' task.id %}">
+                        <form method="post" action="{% url 'approvals:task_return' task.id %}" style="margin-top: 8px;">
                             {% csrf_token %}
-                            <button type="submit">Claim</button>
+                            <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                            <div class="action-row">
+                                <button type="submit">Return</button>
+                            </div>
                         </form>
-                    </div>
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="7">No available pool tasks.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
 
-{% if pool_page_obj.has_other_pages %}
-<div class="card">
-    <div class="pagination">
-        <span class="muted">
-            Pool: {{ pool_page_obj.start_index }} - {{ pool_page_obj.end_index }} of {{ pool_page_obj.paginator.count }}
-        </span>
+                        <form method="post" action="{% url 'approvals:task_reject' task.id %}" style="margin-top: 8px;">
+                            {% csrf_token %}
+                            <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                            <div class="action-row">
+                                <button type="submit">Reject</button>
+                            </div>
+                        </form>
+                    </td>
+                    <td>
+                        <div class="action-row">
+                            <a href="{{ task.request_detail_url }}">Open PR</a>
 
-        {% if pool_page_obj.has_previous %}
-        <a href="?pool_page=1{% if pool_pagination_querystring %}&{{ pool_pagination_querystring }}{% endif %}">First</a>
-        <a href="?pool_page={{ pool_page_obj.previous_page_number }}{% if pool_pagination_querystring %}&{{ pool_pagination_querystring }}{% endif %}">Previous</a>
-        {% endif %}
-
-        <span class="muted">Page {{ pool_page_obj.number }} of {{ pool_page_obj.paginator.num_pages }}</span>
-
-        {% if pool_page_obj.has_next %}
-        <a href="?pool_page={{ pool_page_obj.next_page_number }}{% if pool_pagination_querystring %}&{{ pool_pagination_querystring }}{% endif %}">Next</a>
-        <a href="?pool_page={{ pool_page_obj.paginator.num_pages }}{% if pool_pagination_querystring %}&{{ pool_pagination_querystring }}{% endif %}">Last</a>
-        {% endif %}
+                            {% if task.can_release %}
+                            <form method="post" action="{% url 'approvals:task_release' task.id %}">
+                                {% csrf_token %}
+                                <button type="submit">Release</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8">No assigned tasks.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-</div>
-{% endif %}
-{% endblock %}
+
+    {% if assigned_page_obj.has_other_pages %}
+    <div class="card">
+        <div class="pagination">
+            <span class="muted">
+                Assigned: {{ assigned_page_obj.start_index }} - {{ assigned_page_obj.end_index }} of {{ assigned_page_obj.paginator.count }}
+            </span>
+
+            {% if assigned_page_obj.has_previous %}
+            <a href="?assigned_page=1{% if assigned_pagination_querystring %}&{{ assigned_pagination_querystring }}{% endif %}">First</a>
+            <a href="?assigned_page={{ assigned_page_obj.previous_page_number }}{% if assigned_pagination_querystring %}&{{ assigned_pagination_querystring }}{% endif %}">Previous</a>
+            {% endif %}
+
+            <span class="muted">Page {{ assigned_page_obj.number }} of {{ assigned_page_obj.paginator.num_pages }}</span>
+
+            {% if assigned_page_obj.has_next %}
+            <a href="?assigned_page={{ assigned_page_obj.next_page_number }}{% if assigned_pagination_querystring %}&{{ assigned_pagination_querystring }}{% endif %}">Next</a>
+            <a href="?assigned_page={{ assigned_page_obj.paginator.num_pages }}{% if assigned_pagination_querystring %}&{{ assigned_pagination_querystring }}{% endif %}">Last</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h2>Available Pool Tasks</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Request Type</th>
+                    <th>PR No</th>
+                    <th>Title</th>
+                    <th>Step</th>
+                    <th>Task Status</th>
+                    <th>PR Status</th>
+                    <th>Amount</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for task in pool_tasks %}
+                <tr>
+                    <td>{{ task.request_type_label }}</td>
+                    <td>
+                        <a href="{{ task.request_detail_url }}">
+                            {{ task.request_no }}
+                        </a>
+                    </td>
+                    <td>{{ task.request_title }}</td>
+                    <td>{{ task.step_name }}</td>
+                    <td><span class="badge {{ task.task_status_badge_class }}">{{ task.get_status_display }}</span></td>
+                    <td><span class="badge {{ task.pr_status_badge_class }}">{{ task.request_status_display }}</span></td>
+                    <td>{{ task.request_currency }}  {{ task.request_amount }}</td>
+                    <td>
+                        <div class="action-row">
+                            <a href="{{ task.request_detail_url }}">Open PR</a>
+
+                            <form method="post" action="{% url 'approvals:task_claim' task.id %}">
+                                {% csrf_token %}
+                                <button type="submit">Claim</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7">No available pool tasks.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if pool_page_obj.has_other_pages %}
+    <div class="card">
+        <div class="pagination">
+            <span class="muted">
+                Pool: {{ pool_page_obj.start_index }} - {{ pool_page_obj.end_index }} of {{ pool_page_obj.paginator.count }}
+            </span>
+
+            {% if pool_page_obj.has_previous %}
+            <a href="?pool_page=1{% if pool_pagination_querystring %}&{{ pool_pagination_querystring }}{% endif %}">First</a>
+            <a href="?pool_page={{ pool_page_obj.previous_page_number }}{% if pool_pagination_querystring %}&{{ pool_pagination_querystring }}{% endif %}">Previous</a>
+            {% endif %}
+
+            <span class="muted">Page {{ pool_page_obj.number }} of {{ pool_page_obj.paginator.num_pages }}</span>
+
+            {% if pool_page_obj.has_next %}
+            <a href="?pool_page={{ pool_page_obj.next_page_number }}{% if pool_pagination_querystring %}&{{ pool_pagination_querystring }}{% endif %}">Next</a>
+            <a href="?pool_page={{ pool_page_obj.paginator.num_pages }}{% if pool_pagination_querystring %}&{{ pool_pagination_querystring }}{% endif %}">Last</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+    {% endblock %}

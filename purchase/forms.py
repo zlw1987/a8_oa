@@ -5,6 +5,7 @@ from .models import (
     PurchaseRequest,
     PurchaseRequestLine,
     PurchaseRequestAttachment,
+    PurchaseActualSpend,
 )
 
 class PurchaseRequestForm(forms.ModelForm):
@@ -215,3 +216,17 @@ class PurchaseRequestAttachmentForm(forms.ModelForm):
             "title",
             "file",
         ]
+
+class PurchaseActualSpendForm(forms.ModelForm):
+    class Meta:
+        model = PurchaseActualSpend
+        fields = [
+            "spend_date",
+            "amount",
+            "vendor_name",
+            "reference_no",
+            "notes",
+        ]
+        widgets = {
+            "spend_date": forms.DateInput(attrs={"type": "date"}),
+        }

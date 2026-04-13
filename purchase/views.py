@@ -17,6 +17,7 @@ from .forms import (
     PurchaseRequestLineCreateFormSet,
     PurchaseRequestLineEditFormSet,
     PurchaseRequestAttachmentForm,
+    PurchaseActualSpendForm,
 )
 from .models import (
     PurchaseRequest,
@@ -322,6 +323,7 @@ def pr_detail(request, pk):
 
     lines = purchase_request.lines.all().order_by("line_no")
     attachments = purchase_request.attachments.all()
+    actual_spend_entries = purchase_request.actual_spend_entries.all()
     content_audits = purchase_request.content_audits.all()
     approval_tasks = purchase_request.approval_tasks.all().order_by("step_no")
     histories = purchase_request.history_entries.all()
@@ -335,6 +337,12 @@ def pr_detail(request, pk):
     attachment_form = PurchaseRequestAttachmentForm() if can_edit else None
     can_submit = purchase_request.can_user_submit(request.user)
     can_cancel = purchase_request.can_user_cancel(request.user)
+    can_close_purchase = purchase_request.can_user_close_purchase(request.user)
+
+    can_record_actual_spend = purchase_request.can_user_record_actual_spend(request.user)
+    actual_spend_form = PurchaseActualSpendForm(
+        initial={"spend_date": date.today()}
+    ) if can_record_actual_spend else None
 
     can_claim_current_task = False
     can_release_current_task = False
@@ -391,6 +399,12 @@ def pr_detail(request, pk):
         "attachments": attachments,
         "attachment_form": attachment_form,
         "can_manage_attachments": can_edit,
+        "actual_spend_entries": actual_spend_entries,
+        "actual_spent_total": purchase_request.get_actual_spent_total(),
+        "reserved_remaining": purchase_request.get_reserved_remaining_amount(),
+        "can_record_actual_spend": can_record_actual_spend,
+        "actual_spend_form": actual_spend_form,
+        "can_close_purchase": can_close_purchase,
     }
     return render(request, "purchase/pr_detail.html", context)
 
@@ -601,6 +615,72 @@ def pr_delete_attachment(request, pk, attachment_id):
     attachment_title = attachment.title or attachment.filename
     attachment.delete()
     messages.success(request, f"Attachment '{attachment_title}' deleted successfully.")
+
+    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+
+@login_required
+@require_POST
+def pr_close(request, pk):
+    purchase_request = get_object_or_404(
+        PurchaseRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+
+    if not purchase_request.can_user_close_purchase(request.user):
+        raise PermissionDenied("You do not have permission to close this purchase request.")
+
+    comment = request.POST.get("comment", "").strip()
+
+    try:
+        purchase_request.close_purchase(
+            acting_user=request.user,
+            comment=comment,
+        )
+        messages.success(
+            request,
+            f"{purchase_request.pr_no} closed successfully."
+        )
+    except ValidationError as exc:
+        for message in exc.messages:
+            messages.error(request, message)
+
+    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+
+@login_required
+@require_POST
+def pr_record_actual_spend(request, pk):
+    purchase_request = get_object_or_404(
+        PurchaseRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+
+    if not purchase_request.can_user_record_actual_spend(request.user):
+        raise PermissionDenied("You do not have permission to record actual spend for this purchase request.")
+
+    form = PurchaseActualSpendForm(request.POST)
+
+    if form.is_valid():
+        try:
+            purchase_request.record_actual_spend(
+                spend_date=form.cleaned_data["spend_date"],
+                amount=form.cleaned_data["amount"],
+                acting_user=request.user,
+                vendor_name=form.cleaned_data.get("vendor_name", ""),
+                reference_no=form.cleaned_data.get("reference_no", ""),
+                notes=form.cleaned_data.get("notes", ""),
+            )
+            messages.success(
+                request,
+                f"Actual spend recorded successfully for {purchase_request.pr_no}."
+            )
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
 
     return redirect("purchase:pr_detail", pk=purchase_request.pk)
 

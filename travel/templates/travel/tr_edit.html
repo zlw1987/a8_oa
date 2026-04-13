@@ -1,0 +1,589 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}
+    {% if page_mode == "edit" %}
+        Edit Travel Request
+    {% else %}
+        Create Travel Request
+    {% endif %}
+{% endblock %}
+
+{% block page_title %}
+    {% if page_mode == "edit" %}
+        Edit Travel Request
+    {% else %}
+        Create Travel Request
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <p><a href="{% url 'travel:tr_list' %}">← Back to Travel Request List</a></p>
+
+    {% if page_mode == "edit" and travel_request %}
+    <p><a href="{% url 'travel:tr_detail' travel_request.id %}">Back to Detail Page</a></p>
+    {% endif %}
+</div>
+
+{% if page_mode == "create" %}
+<div class="card">
+    <div class="summary-grid">
+        <div class="summary-label">Travel No</div>
+        <div>Will be generated automatically after save.</div>
+    </div>
+</div>
+{% endif %}
+
+{% if page_mode == "edit" and travel_request %}
+<div class="card">
+    <div class="summary-grid">
+        <div class="summary-label">Travel No</div>
+        <div>{{ travel_request.travel_no }}</div>
+
+        <div class="summary-label">Estimated Total</div>
+        <div>{{ travel_request.currency }} {{ estimated_total_preview }}</div>
+    </div>
+</div>
+{% endif %}
+
+<form method="post" id="travel-form">
+    {% csrf_token %}
+
+    <div class="card">
+        <h2>Basic Info</h2>
+
+        {% if form.non_field_errors %}
+        <div style="color: red; margin-bottom: 12px;">
+            {% for error in form.non_field_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if form.errors %}
+        <p style="color: red;">Please fix the errors in the travel request header.</p>
+        {% endif %}
+
+        <table>
+            {{ form.as_table }}
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Itinerary</h2>
+
+        {% if itinerary_formset.non_form_errors %}
+        <div style="color: red; margin-bottom: 12px;">
+            {% for error in itinerary_formset.non_form_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {{ itinerary_formset.management_form }}
+
+        <table id="itinerary-table">
+            <thead>
+                <tr>
+                    <th>Line No</th>
+                    <th>Trip Date</th>
+                    <th>From City</th>
+                    <th>To City</th>
+                    <th>Transport Type</th>
+                    <th>Departure Time</th>
+                    <th>Arrival Time</th>
+                    <th>Notes</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="itinerary-body">
+                {% for line_form in itinerary_formset %}
+                <tr class="itinerary-row">
+                    {% for hidden in line_form.hidden_fields %}
+                    {{ hidden }}
+                    {% endfor %}
+
+                    <td>
+                        {{ line_form.line_no }}
+                        {% for error in line_form.line_no.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.trip_date }}
+                        {% for error in line_form.trip_date.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.from_city }}
+                        {% for error in line_form.from_city.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.to_city }}
+                        {% for error in line_form.to_city.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.transport_type }}
+                        {% for error in line_form.transport_type.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.departure_time }}
+                        {% for error in line_form.departure_time.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.arrival_time }}
+                        {% for error in line_form.arrival_time.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                        {{ line_form.notes }}
+                        {% for error in line_form.notes.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </td>
+                    <td>
+                        {% if line_form.DELETE %}
+                        <span style="display:none;">{{ line_form.DELETE }}</span>
+                        {% endif %}
+                        <button type="button" class="delete-itinerary-row-btn">Delete Row</button>
+                    </td>
+                </tr>
+
+                {% if line_form.non_field_errors %}
+                <tr>
+                    <td colspan="9" style="color:red;">
+                        {% for error in line_form.non_field_errors %}
+                        <div>{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="action-row">
+            <button type="button" id="add-itinerary-row-btn">Add Itinerary Row</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Estimated Expense</h2>
+
+        {% if expense_formset.non_form_errors %}
+        <div style="color: red; margin-bottom: 12px;">
+            {% for error in expense_formset.non_form_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {{ expense_formset.management_form }}
+
+        <div id="expense-body">
+            {% for line_form in expense_formset %}
+            <div class="card expense-row" style="margin-bottom: 16px; border: 1px solid #ddd;">
+                {% for hidden in line_form.hidden_fields %}
+                {{ hidden }}
+                {% endfor %}
+
+                <div class="summary-grid">
+                    <div class="summary-label">Line No</div>
+                    <div>
+                        {{ line_form.line_no }}
+                        {% for error in line_form.line_no.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Expense Type</div>
+                    <div>
+                        {{ line_form.expense_type }}
+                        {% for error in line_form.expense_type.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Mode</div>
+                    <div>
+                        <span class="expense-mode-label" data-role="mode-label">-</span>
+                    </div>
+
+                    <div class="summary-label">Expense Date</div>
+                    <div>
+                        {{ line_form.expense_date }}
+                        {% for error in line_form.expense_date.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Estimated Amount</div>
+                    <div>
+                        {{ line_form.estimated_amount }}
+                        {% for error in line_form.estimated_amount.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Currency</div>
+                    <div>
+                        {{ line_form.currency }}
+                        {% for error in line_form.currency.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                <div class="summary-grid" data-groups="transit" style="margin-top: 12px;">
+                    <div class="summary-label">From Location</div>
+                    <div>
+                        {{ line_form.from_location }}
+                        {% for error in line_form.from_location.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">To Location</div>
+                    <div>
+                        {{ line_form.to_location }}
+                        {% for error in line_form.to_location.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Departure</div>
+                    <div>
+                        {{ line_form.departure_dt }}
+                        {% for error in line_form.departure_dt.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Arrival</div>
+                    <div>
+                        {{ line_form.arrival_dt }}
+                        {% for error in line_form.arrival_dt.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Itinerary Ref</div>
+                    <div>
+                        {{ line_form.itinerary_line_no }}
+                        {% for error in line_form.itinerary_line_no.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                <div class="summary-grid" data-groups="stay local" style="margin-top: 12px;">
+                    <div class="summary-label">Expense Location</div>
+                    <div>
+                        {{ line_form.expense_location }}
+                        {% for error in line_form.expense_location.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                <div class="summary-grid" data-groups="stay" style="margin-top: 12px;">
+                    <div class="summary-label">Check-in Date</div>
+                    <div>
+                        {{ line_form.checkin_date }}
+                        {% for error in line_form.checkin_date.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Check-out Date</div>
+                    <div>
+                        {{ line_form.checkout_date }}
+                        {% for error in line_form.checkout_date.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                <div class="summary-grid" style="margin-top: 12px;">
+                    <div class="summary-label">Exception Reason</div>
+                    <div>
+                        {{ line_form.exception_reason }}
+                        {% for error in line_form.exception_reason.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+
+                    <div class="summary-label">Notes</div>
+                    <div>
+                        {{ line_form.notes }}
+                        {% for error in line_form.notes.errors %}<div style="color:red;">{{ error }}</div>{% endfor %}
+                    </div>
+                </div>
+
+                {% if line_form.non_field_errors %}
+                <div style="color:red; margin-top: 12px;">
+                    {% for error in line_form.non_field_errors %}
+                    <div>{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="action-row">
+                    {% if line_form.DELETE %}
+                    <span style="display:none;">{{ line_form.DELETE }}</span>
+                    {% endif %}
+                    <button type="button" class="delete-expense-row-btn">Delete Row</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="action-row">
+            <button type="button" id="add-expense-row-btn">Add Expense Row</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <button type="submit">Save Draft</button>
+    </div>
+</form>
+
+<template id="empty-itinerary-template">
+    <tr class="itinerary-row">
+        {% for hidden in itinerary_formset.empty_form.hidden_fields %}
+        {{ hidden }}
+        {% endfor %}
+        <td>{{ itinerary_formset.empty_form.line_no }}</td>
+        <td>{{ itinerary_formset.empty_form.trip_date }}</td>
+        <td>{{ itinerary_formset.empty_form.from_city }}</td>
+        <td>{{ itinerary_formset.empty_form.to_city }}</td>
+        <td>{{ itinerary_formset.empty_form.transport_type }}</td>
+        <td>{{ itinerary_formset.empty_form.departure_time }}</td>
+        <td>{{ itinerary_formset.empty_form.arrival_time }}</td>
+        <td>{{ itinerary_formset.empty_form.notes }}</td>
+        <td>
+            {% if itinerary_formset.empty_form.DELETE %}
+            <span style="display:none;">{{ itinerary_formset.empty_form.DELETE }}</span>
+            {% endif %}
+            <button type="button" class="delete-itinerary-row-btn">Delete Row</button>
+        </td>
+    </tr>
+</template>
+
+<template id="empty-expense-template">
+    <div class="card expense-row" style="margin-bottom: 16px; border: 1px solid #ddd;">
+        {% for hidden in expense_formset.empty_form.hidden_fields %}
+        {{ hidden }}
+        {% endfor %}
+
+        <div class="summary-grid">
+            <div class="summary-label">Line No</div>
+            <div>{{ expense_formset.empty_form.line_no }}</div>
+
+            <div class="summary-label">Expense Type</div>
+            <div>{{ expense_formset.empty_form.expense_type }}</div>
+
+            <div class="summary-label">Mode</div>
+            <div><span class="expense-mode-label" data-role="mode-label">-</span></div>
+
+            <div class="summary-label">Expense Date</div>
+            <div>{{ expense_formset.empty_form.expense_date }}</div>
+
+            <div class="summary-label">Estimated Amount</div>
+            <div>{{ expense_formset.empty_form.estimated_amount }}</div>
+
+            <div class="summary-label">Currency</div>
+            <div>{{ expense_formset.empty_form.currency }}</div>
+        </div>
+
+        <div class="summary-grid" data-groups="transit" style="margin-top: 12px;">
+            <div class="summary-label">From Location</div>
+            <div>{{ expense_formset.empty_form.from_location }}</div>
+
+            <div class="summary-label">To Location</div>
+            <div>{{ expense_formset.empty_form.to_location }}</div>
+
+            <div class="summary-label">Departure</div>
+            <div>{{ expense_formset.empty_form.departure_dt }}</div>
+
+            <div class="summary-label">Arrival</div>
+            <div>{{ expense_formset.empty_form.arrival_dt }}</div>
+
+            <div class="summary-label">Itinerary Ref</div>
+            <div>{{ expense_formset.empty_form.itinerary_line_no }}</div>
+        </div>
+
+        <div class="summary-grid" data-groups="stay local" style="margin-top: 12px;">
+            <div class="summary-label">Expense Location</div>
+            <div>{{ expense_formset.empty_form.expense_location }}</div>
+        </div>
+
+        <div class="summary-grid" data-groups="stay" style="margin-top: 12px;">
+            <div class="summary-label">Check-in Date</div>
+            <div>{{ expense_formset.empty_form.checkin_date }}</div>
+
+            <div class="summary-label">Check-out Date</div>
+            <div>{{ expense_formset.empty_form.checkout_date }}</div>
+        </div>
+
+        <div class="summary-grid" style="margin-top: 12px;">
+            <div class="summary-label">Exception Reason</div>
+            <div>{{ expense_formset.empty_form.exception_reason }}</div>
+
+            <div class="summary-label">Notes</div>
+            <div>{{ expense_formset.empty_form.notes }}</div>
+        </div>
+
+        <div class="action-row">
+            {% if expense_formset.empty_form.DELETE %}
+            <span style="display:none;">{{ expense_formset.empty_form.DELETE }}</span>
+            {% endif %}
+            <button type="button" class="delete-expense-row-btn">Delete Row</button>
+        </div>
+    </div>
+</template>
+
+<script>
+    (function () {
+        function setupDynamicFormset(config) {
+            const body = document.getElementById(config.bodyId);
+            const addBtn = document.getElementById(config.addBtnId);
+            const totalFormsInput = document.getElementById(config.totalFormsId);
+            const template = document.getElementById(config.templateId).innerHTML;
+
+            function getRows() {
+                return Array.from(body.querySelectorAll(config.rowSelector)).filter(
+                    row => row.style.display !== "none"
+                );
+            }
+
+            function getDeleteField(row) {
+                return row.querySelector('input[name$="-DELETE"]');
+            }
+
+            function getLineNoField(row) {
+                return row.querySelector('input[name$="-line_no"]');
+            }
+
+            function rowHasMeaningfulContent(row) {
+                return Array.from(row.querySelectorAll("input, textarea, select")).some(el => {
+                    if (el.name.endsWith("-line_no") || el.name.endsWith("-DELETE") || el.type === "hidden") {
+                        return false;
+                    }
+                    if (el.type === "checkbox") {
+                        return el.checked;
+                    }
+                    return (el.value || "").trim() !== "";
+                });
+            }
+
+            function renumberRows() {
+                let nextNo = 1;
+
+                getRows().forEach(row => {
+                    const lineNoField = getLineNoField(row);
+                    if (!lineNoField) return;
+
+                    if (rowHasMeaningfulContent(row)) {
+                        lineNoField.value = nextNo;
+                        nextNo += 1;
+                    } else {
+                        lineNoField.value = "";
+                    }
+                });
+            }
+
+            function attachRowEvents(row) {
+                const deleteBtn = row.querySelector(config.deleteBtnSelector);
+                if (deleteBtn) {
+                    deleteBtn.addEventListener("click", function () {
+                        const deleteField = getDeleteField(row);
+                        if (deleteField) {
+                            deleteField.checked = true;
+                        }
+                        row.style.display = "none";
+                        renumberRows();
+                    });
+                }
+
+                row.querySelectorAll("input, textarea, select").forEach(el => {
+                    el.addEventListener("input", renumberRows);
+                    el.addEventListener("change", renumberRows);
+                });
+            }
+
+            function addRow() {
+                const formIndex = parseInt(totalFormsInput.value, 10);
+                const html = template.replace(/__prefix__/g, formIndex);
+
+                const wrapperTag = config.wrapperTag || "div";
+                const wrapper = document.createElement(wrapperTag);
+                wrapper.innerHTML = html.trim();
+                const newRow = wrapper.querySelector(config.rowSelector);
+
+                body.appendChild(newRow);
+                totalFormsInput.value = formIndex + 1;
+
+                attachRowEvents(newRow);
+                renumberRows();
+
+                if (config.afterAddRow) {
+                    config.afterAddRow(newRow);
+                }
+            }
+
+            getRows().forEach(attachRowEvents);
+            renumberRows();
+
+            addBtn.addEventListener("click", addRow);
+
+            return {
+                getRows,
+            };
+        }
+
+        function getExpenseMode(expenseType) {
+            const transitTypes = ["AIRFARE", "TRAIN", "TAXI", "CAR_RENTAL", "BUS"];
+            const stayTypes = ["HOTEL"];
+            const localTypes = ["MEAL", "PARKING", "TOLL", "VISA", "REGISTRATION", "MISC"];
+
+            if (transitTypes.includes(expenseType)) return "transit";
+            if (stayTypes.includes(expenseType)) return "stay";
+            if (localTypes.includes(expenseType)) return "local";
+            return "";
+        }
+
+        function getExpenseModeLabel(mode) {
+            if (mode === "transit") return "Transit";
+            if (mode === "stay") return "Stay";
+            if (mode === "local") return "Local";
+            return "-";
+        }
+
+        function updateExpenseRowMode(row) {
+            const expenseTypeField = row.querySelector('select[name$="-expense_type"]');
+            const modeLabel = row.querySelector('[data-role="mode-label"]');
+            const mode = getExpenseMode(expenseTypeField ? expenseTypeField.value : "");
+
+            if (modeLabel) {
+                modeLabel.textContent = getExpenseModeLabel(mode);
+            }
+
+            row.querySelectorAll("[data-groups]").forEach(cell => {
+                const groups = (cell.getAttribute("data-groups") || "").split(" ");
+                const shouldShow = mode && groups.includes(mode);
+
+                cell.style.display = shouldShow ? "" : "none";
+
+                cell.querySelectorAll("input, textarea, select").forEach(input => {
+                    input.disabled = !shouldShow;
+                });
+            });
+        }
+
+        const itinerarySetup = setupDynamicFormset({
+            bodyId: "itinerary-body",
+            addBtnId: "add-itinerary-row-btn",
+            totalFormsId: "id_itineraries-TOTAL_FORMS",
+            templateId: "empty-itinerary-template",
+            rowSelector: ".itinerary-row",
+            deleteBtnSelector: ".delete-itinerary-row-btn",
+            wrapperTag: "tbody"
+        });
+
+        const expenseSetup = setupDynamicFormset({
+            bodyId: "expense-body",
+            addBtnId: "add-expense-row-btn",
+            totalFormsId: "id_expenses-TOTAL_FORMS",
+            templateId: "empty-expense-template",
+            rowSelector: ".expense-row",
+            deleteBtnSelector: ".delete-expense-row-btn",
+            wrapperTag: "div",
+            afterAddRow: function (row) {
+                bindExpenseRow(row);
+                updateExpenseRowMode(row);
+            }
+        });
+
+        function bindExpenseRow(row) {
+            const expenseTypeField = row.querySelector('select[name$="-expense_type"]');
+            if (expenseTypeField) {
+                expenseTypeField.addEventListener("change", function () {
+                    updateExpenseRowMode(row);
+                });
+            }
+        }
+
+        expenseSetup.getRows().forEach(row => {
+            bindExpenseRow(row);
+            updateExpenseRowMode(row);
+        });
+    })();
+</script>
+{% endblock %}

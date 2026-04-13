@@ -18,6 +18,7 @@ from common.choices import (
     ApproverType,
     DepartmentType,
     UnitOfMeasure,
+    CurrencyCode,
 )
 from common.approval_constants import POOL_APPROVER_TYPES
 from projects.models import ProjectBudgetEntry
@@ -40,6 +41,11 @@ class PurchaseRequestNumberSequence(models.Model):
 
     def __str__(self):
         return f"{self.sequence_date} / {self.last_number}"
+
+class PurchaseFulfillmentStatus(models.TextChoices):
+    NOT_STARTED = "NOT_STARTED", "Not Started"
+    PARTIAL = "PARTIAL", "Partially Spent"
+    COMPLETED = "COMPLETED", "Completed"
 
 class PurchaseRequest(models.Model):
 
@@ -72,9 +78,20 @@ class PurchaseRequest(models.Model):
         choices=RequestStatus,
         default=RequestStatus.DRAFT,
     )
+
+    fulfillment_status = models.CharField(
+        max_length=20,
+        choices=PurchaseFulfillmentStatus,
+        default=PurchaseFulfillmentStatus.NOT_STARTED,
+    )
+
     request_date = models.DateField()
     needed_by_date = models.DateField(null=True, blank=True)
-    currency = models.CharField(max_length=10, default="USD")
+    currency = models.CharField(
+    max_length=10,
+    choices=CurrencyCode,
+    default=CurrencyCode.USD,
+    )
     estimated_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     justification = models.TextField(blank=True, default="")
     vendor_suggestion = models.CharField(max_length=100, blank=True, default="")
@@ -178,6 +195,15 @@ class PurchaseRequest(models.Model):
             and self.status in [RequestStatus.DRAFT, RequestStatus.RETURNED]
         )
 
+    def can_user_record_actual_spend(self, user):
+        if not getattr(user, "is_authenticated", False):
+            return False
+
+        if getattr(user, "is_superuser", False):
+            return self.status == RequestStatus.APPROVED
+
+        return self.requester_id == user.id and self.status == RequestStatus.APPROVED
+
     def can_user_cancel(self, user):
         if not getattr(user, "is_authenticated", False):
             return False
@@ -197,6 +223,15 @@ class PurchaseRequest(models.Model):
                 RequestStatus.APPROVED,
             ]
         )
+
+    def can_user_close_purchase(self, user):
+        if not getattr(user, "is_authenticated", False):
+            return False
+
+        if getattr(user, "is_superuser", False):
+            return self.status == RequestStatus.APPROVED
+
+        return self.requester_id == user.id and self.status == RequestStatus.APPROVED
 
     def get_current_task(self):
         return (
@@ -369,92 +404,96 @@ class PurchaseRequest(models.Model):
 
         return self._dedupe_users(users)
 
-    def create_approval_tasks(self):
-        if not self.matched_rule_id:
-            raise ValidationError("Cannot create approval tasks without a matched approval rule.")
+def create_approval_tasks(self):
+    purchase_request_content_type = ContentType.objects.get_for_model(type(self))
 
-        steps = self.matched_rule.steps.filter(is_active=True).order_by("step_no")
-        if not steps.exists():
-            raise ValidationError("The matched approval rule has no active steps.")
+    if not self.matched_rule_id:
+        raise ValidationError("Cannot create approval tasks without a matched approval rule.")
 
-        self.approval_tasks.all().delete()
+    steps = self.matched_rule.steps.filter(is_active=True).order_by("step_no")
+    if not steps.exists():
+        raise ValidationError("The matched approval rule has no active steps.")
 
-        created_count = 0
-        for step in steps:
-            is_first_step = created_count == 0
+    self.approval_tasks.all().delete()
 
-            if step.approver_type in POOL_APPROVER_TYPES:
-                candidates = self.resolve_step_candidates(step)
-                if not candidates:
-                    raise ValidationError(
-                        f"Unable to resolve any candidates for step {step.step_no} - {step.step_name}."
-                    )
+    created_count = 0
+    for step in steps:
+        is_first_step = created_count == 0
 
-                task_status = ApprovalTaskStatus.POOL if is_first_step else ApprovalTaskStatus.WAITING
-
-                task = ApprovalTask.objects.create(
-                    purchase_request=self,
-                    request_content_type=purchase_request_content_type,
-                    request_object_id=self.id,
-                    rule=matched_rule,
-                    step=step,
-                    step_no=step.step_no,
-                    step_name=step.step_name,
-                    status=task_status,
-                    assigned_user=assigned_user,
+        if step.approver_type in POOL_APPROVER_TYPES:
+            candidates = self.resolve_step_candidates(step)
+            if not candidates:
+                raise ValidationError(
+                    f"Unable to resolve any candidates for step {step.step_no} - {step.step_name}."
                 )
 
-                ApprovalTaskCandidate.objects.bulk_create(
-                    [
-                        ApprovalTaskCandidate(task=task, user=user)
-                        for user in candidates
-                    ]
+            task_status = ApprovalTaskStatus.POOL if is_first_step else ApprovalTaskStatus.WAITING
+
+            task = ApprovalTask.objects.create(
+                purchase_request=self,
+                request_content_type=purchase_request_content_type,
+                request_object_id=self.id,
+                rule=self.matched_rule,
+                step=step,
+                step_no=step.step_no,
+                step_name=step.step_name,
+                status=task_status,
+                assigned_user=None,
+            )
+
+            ApprovalTaskCandidate.objects.bulk_create(
+                [
+                    ApprovalTaskCandidate(task=task, user=user)
+                    for user in candidates
+                ]
+            )
+
+            task._add_history(
+                action_type=ApprovalTaskActionType.CREATED,
+                action_by=None,
+                from_status=None,
+                to_status=task.status,
+                from_assignee=None,
+                to_assignee=None,
+                comment=f"Pool task created with {len(candidates)} candidate(s).",
+            )
+
+        else:
+            assigned_user = self.resolve_fixed_step_assignee(step) if is_first_step else None
+            if is_first_step and not assigned_user:
+                raise ValidationError(
+                    f"Unable to resolve approver for step {step.step_no} - {step.step_name}."
                 )
 
-                task._add_history(
-                    action_type=ApprovalTaskActionType.CREATED,
-                    action_by=None,
-                    from_status=None,
-                    to_status=task.status,
-                    from_assignee=None,
-                    to_assignee=None,
-                    comment=f"Pool task created with {len(candidates)} candidate(s).",
-                )
+            task_status = ApprovalTaskStatus.PENDING if is_first_step else ApprovalTaskStatus.WAITING
 
-            else:
-                assigned_user = self.resolve_fixed_step_assignee(step) if is_first_step else None
-                if is_first_step and not assigned_user:
-                    raise ValidationError(
-                        f"Unable to resolve approver for step {step.step_no} - {step.step_name}."
-                    )
+            task = ApprovalTask.objects.create(
+                purchase_request=self,
+                request_content_type=purchase_request_content_type,
+                request_object_id=self.id,
+                rule=self.matched_rule,
+                step=step,
+                step_no=step.step_no,
+                step_name=step.step_name,
+                assigned_user=assigned_user,
+                status=task_status,
+            )
 
-                task_status = ApprovalTaskStatus.PENDING if is_first_step else ApprovalTaskStatus.WAITING
+            task._add_history(
+                action_type=ApprovalTaskActionType.CREATED,
+                action_by=None,
+                from_status=None,
+                to_status=task.status,
+                from_assignee=None,
+                to_assignee=assigned_user,
+                comment=(
+                    f"Task created and assigned to {assigned_user}."
+                    if assigned_user
+                    else "Waiting task created. Assignee will be resolved on activation."
+                ),
+            )
 
-                task = ApprovalTask.objects.create(
-                    purchase_request=self,
-                    rule=self.matched_rule,
-                    step=step,
-                    step_no=step.step_no,
-                    step_name=step.step_name,
-                    assigned_user=assigned_user,
-                    status=task_status,
-                )
-
-                task._add_history(
-                    action_type=ApprovalTaskActionType.CREATED,
-                    action_by=None,
-                    from_status=None,
-                    to_status=task.status,
-                    from_assignee=None,
-                    to_assignee=assigned_user,
-                    comment=(
-                        f"Task created and assigned to {assigned_user}."
-                        if assigned_user
-                        else "Waiting task created. Assignee will be resolved on activation."
-                    ),
-                )
-
-            created_count += 1
+        created_count += 1
 
     def validate_for_submit(self):
         errors = []
@@ -679,6 +718,145 @@ class PurchaseRequest(models.Model):
             comment=f"{self.pr_no} cancelled.",
         )
 
+    def get_actual_spent_total(self):
+        total = self.actual_spend_entries.aggregate(total=Sum("amount"))["total"]
+        return total or Decimal("0.00")
+
+    def get_reserved_remaining_amount(self):
+        reserve_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=self.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        release_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=self.id,
+                entry_type=BudgetEntryType.RELEASE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        return reserve_total - release_total
+
+    @transaction.atomic
+    def record_actual_spend(
+        self,
+        spend_date,
+        amount,
+        acting_user=None,
+        vendor_name="",
+        reference_no="",
+        notes="",
+    ):
+        if self.status != RequestStatus.APPROVED:
+            raise ValidationError("Actual spend can only be recorded after the purchase request is fully approved.")
+
+        if amount <= 0:
+            raise ValidationError("Actual spend amount must be greater than 0.")
+
+        reserved_remaining = self.get_reserved_remaining_amount()
+        extra_needed = amount - reserved_remaining if amount > reserved_remaining else Decimal("0.00")
+
+        if extra_needed > 0:
+            available_budget = self.project.get_available_amount()
+            if extra_needed > available_budget:
+                raise ValidationError(
+                    f"Insufficient project budget for overspend. Extra needed is {extra_needed}, "
+                    f"but available budget is {available_budget}."
+                )
+
+        actual_spend = PurchaseActualSpend.objects.create(
+            purchase_request=self,
+            spend_date=spend_date,
+            amount=amount,
+            currency=self.currency,
+            vendor_name=vendor_name,
+            reference_no=reference_no,
+            notes=notes,
+            created_by=acting_user,
+        )
+
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.CONSUME,
+            source_type=RequestType.PURCHASE,
+            source_id=self.id,
+            amount=amount,
+            notes=f"Budget consumed by actual spend of {self.pr_no}",
+            created_by=acting_user,
+        )
+
+        amount_to_release = min(amount, reserved_remaining)
+        if amount_to_release > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.PURCHASE,
+                source_id=self.id,
+                amount=amount_to_release,
+                notes=f"Reserved budget converted to actual spend for {self.pr_no}",
+                created_by=acting_user,
+            )
+
+        self.fulfillment_status = PurchaseFulfillmentStatus.PARTIAL
+        self.save(update_fields=["fulfillment_status"])
+
+        self._add_history(
+            action_type=PurchaseRequestActionType.SPEND_RECORDED,
+            from_status=self.status,
+            to_status=self.status,
+            acting_user=acting_user,
+            comment=(
+                f"Actual spend recorded: {self.currency} {amount}. "
+                f"Vendor: {vendor_name or '-'}; Reference: {reference_no or '-'}."
+            ),
+        )
+
+        return actual_spend
+
+    @transaction.atomic
+    def close_purchase(self, acting_user=None, comment=""):
+        if self.status != RequestStatus.APPROVED:
+            raise ValidationError("Only approved purchase requests can be closed.")
+
+        reserved_remaining = self.get_reserved_remaining_amount()
+        actual_spent_total = self.get_actual_spent_total()
+        from_status = self.status
+
+        if reserved_remaining > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.PURCHASE,
+                source_id=self.id,
+                amount=reserved_remaining,
+                notes=f"Unused reserved budget released by closing {self.pr_no}",
+                created_by=acting_user,
+            )
+
+        self.status = RequestStatus.CLOSED
+        self.fulfillment_status = PurchaseFulfillmentStatus.COMPLETED
+        self.save(update_fields=["status", "fulfillment_status"])
+
+        self._add_history(
+            action_type=PurchaseRequestActionType.CLOSED,
+            from_status=from_status,
+            to_status=self.status,
+            acting_user=acting_user,
+            comment=(
+                comment
+                or f"{self.pr_no} closed. Actual spent total: {self.currency} {actual_spent_total}. "
+                   f"Unused reserve released: {self.currency} {reserved_remaining}."
+            ),
+        )
+
 def purchase_attachment_upload_to(instance, filename):
     pr_no = instance.purchase_request.pr_no or f"pr_{instance.purchase_request_id}"
     return f"purchase_attachments/{pr_no}/{filename}"
@@ -810,6 +988,39 @@ class PurchaseRequestLine(models.Model):
         self.line_amount = (self.quantity or Decimal("0.00")) * (self.unit_price or Decimal("0.00"))
         super().save(*args, **kwargs)
 
+class PurchaseActualSpend(models.Model):
+    purchase_request = models.ForeignKey(
+        PurchaseRequest,
+        on_delete=models.CASCADE,
+        related_name="actual_spend_entries",
+    )
+    spend_date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(
+    max_length=10,
+    choices=CurrencyCode,
+    default=CurrencyCode.USD,
+    )
+    vendor_name = models.CharField(max_length=100, blank=True, default="")
+    reference_no = models.CharField(max_length=100, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="purchase_actual_spend_entries",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "PS_A8_PR_ACT"
+        verbose_name = "Purchase Actual Spend"
+        verbose_name_plural = "Purchase Actual Spend Entries"
+        ordering = ["-spend_date", "-id"]
+
+    def __str__(self):
+        return f"{self.purchase_request.pr_no} / {self.spend_date} / {self.amount}"
 
 class PurchaseRequestHistory(models.Model):
     purchase_request = models.ForeignKey(
@@ -838,3 +1049,9 @@ class PurchaseRequestHistory(models.Model):
 
     def __str__(self):
         return f"{self.purchase_request.pr_no} / {self.action_type} / {self.action_at}"
+
+class PurchaseRequestActionType(models.TextChoices):
+    SUBMITTED = "SUBMITTED", "Submitted"
+    CANCELLED = "CANCELLED", "Cancelled"
+    SPEND_RECORDED = "SPEND_RECORDED", "Actual Spend Recorded"
+    CLOSED = "CLOSED", "Closed"

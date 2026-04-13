@@ -65,8 +65,17 @@ class Project(models.Model):
 
         return reserve_total - release_total + adjust_total
 
+    def get_consumed_amount(self):
+        return (
+            ProjectBudgetEntry.objects.filter(
+                project=self,
+                entry_type=BudgetEntryType.CONSUME,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
     def get_available_amount(self):
-        return self.budget_amount - self.get_reserved_amount()
+        return self.budget_amount - self.get_reserved_amount() - self.get_consumed_amount()
 
 class ProjectBudgetEntry(models.Model):
     project = models.ForeignKey(

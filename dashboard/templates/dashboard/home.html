@@ -39,27 +39,35 @@
     <table>
         <thead>
             <tr>
-                <th>PR No</th>
+                <th>Request Type</th>
+                <th>Request No</th>
                 <th>Title</th>
-                <th>Status</th>
-                <th>Project</th>
+                <th>Step</th>
+                <th>Request Status</th>
                 <th>Amount</th>
                 <th>Open</th>
             </tr>
         </thead>
         <tbody>
-            {% for pr in my_recent_requests %}
+            {% for task in pool_tasks %}
             <tr>
-                <td>{{ pr.pr_no }}</td>
-                <td>{{ pr.title }}</td>
-                <td>{{ pr.status }}</td>
-                <td>{{ pr.project }}</td>
-                <td>{{ pr.currency }} {{ pr.estimated_total }}</td>
-                <td><a href="{% url 'purchase:pr_detail' pr.id %}">Open</a></td>
+                <td>{{ task.request_type_label }}</td>
+                <td>{{ task.request_no_display }}</td>
+                <td>{{ task.request_title_display }}</td>
+                <td>{{ task.step_name }}</td>
+                <td>{{ task.request_status_display }}</td>
+                <td>{{ task.request_currency }} {{ task.request_amount }}</td>
+                <td>
+                    {% if task.request_detail_url %}
+                    <a href="{{ task.request_detail_url }}">Open</a>
+                    {% else %}
+                    <span class="muted">Unavailable</span>
+                    {% endif %}
+                </td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="6">No recent requests.</td>
+                <td colspan="7">No available pool tasks.</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -71,23 +79,31 @@
     <table>
         <thead>
             <tr>
-                <th>PR No</th>
+                <th>Request Type</th>
+                <th>Request No</th>
                 <th>Title</th>
                 <th>Step</th>
-                <th>Task Status</th>
+                <th>Request Status</th>
                 <th>Amount</th>
-                <th>Open</th>
+                <th>Action</th>
             </tr>
         </thead>
         <tbody>
             {% for task in assigned_tasks %}
             <tr>
-                <td>{{ task.purchase_request.pr_no }}</td>
-                <td>{{ task.purchase_request.title }}</td>
+                <td>{{ task.request_type_label }}</td>
+                <td>{{ task.request_no_display }}</td>
+                <td>{{ task.request_title_display }}</td>
                 <td>{{ task.step_name }}</td>
-                <td>{{ task.status }}</td>
-                <td>{{ task.purchase_request.currency }} {{ task.purchase_request.estimated_total }}</td>
-                <td><a href="{% url 'purchase:pr_detail' task.purchase_request.id %}">Open</a></td>
+                <td>{{ task.request_status_display }}</td>
+                <td>{{ task.request_currency }} {{ task.request_amount }}</td>
+                <td>
+                    {% if task.request_detail_url %}
+                    <a href="{{ task.request_detail_url }}">Open</a>
+                    {% else %}
+                    <span class="muted">Unavailable</span>
+                    {% endif %}
+                </td>
             </tr>
             {% empty %}
             <tr>

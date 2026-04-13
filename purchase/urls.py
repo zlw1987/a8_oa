@@ -10,9 +10,10 @@ urlpatterns = [
     path("<int:pk>/edit/", views.pr_edit, name="pr_edit"),
     path("<int:pk>/attachments/upload/", views.pr_upload_attachment, name="pr_upload_attachment"),
     path("<int:pk>/attachments/<int:attachment_id>/delete/", views.pr_delete_attachment, name="pr_delete_attachment"),
+    path("<int:pk>/actual-spend/record/", views.pr_record_actual_spend, name="pr_record_actual_spend"),
     path("<int:pk>/submit/", views.pr_submit, name="pr_submit"),
     path("<int:pk>/cancel/", views.pr_cancel, name="pr_cancel"),
-
+    path("<int:pk>/close/", views.pr_close, name="pr_close"),
     path("<int:pk>/tasks/<int:task_id>/claim/", views.task_claim, name="task_claim"),
     path("<int:pk>/tasks/<int:task_id>/release/", views.task_release, name="task_release"),
     path("<int:pk>/tasks/<int:task_id>/approve/", views.task_approve, name="task_approve"),
