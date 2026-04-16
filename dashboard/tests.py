@@ -1,3 +1,186 @@
-from django.test import TestCase
+from datetime import date, timedelta
+from decimal import Decimal
 
-# Create your tests here.
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.urls import reverse
+
+from accounts.models import Department, UserDepartment
+from approvals.models import ApprovalRule, ApprovalRuleStep
+from common.choices import ApproverType, RequestType, DepartmentType
+from projects.models import Project
+from purchase.models import PurchaseRequest, PurchaseRequestLine
+from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpenseLine
+
+
+User = get_user_model()
+
+
+class DashboardCrossRequestRegressionTest(TestCase):
+    def setUp(self):
+        self.requester = User.objects.create_user(
+            username="req_dash_cross",
+            password="testpass123",
+            email="req_dash_cross@example.com",
+        )
+        self.manager = User.objects.create_user(
+            username="mgr_dash_cross",
+            password="testpass123",
+            email="mgr_dash_cross@example.com",
+        )
+
+        self.department = Department.objects.create(
+            dept_code="D-DASH-01",
+            dept_name="Dashboard Dept",
+            dept_type=DepartmentType.GENERAL,
+            manager=self.manager,
+        )
+
+        UserDepartment.objects.create(
+            user=self.requester,
+            department=self.department,
+            is_active=True,
+            can_approve=False,
+        )
+
+        self.requester.primary_department = self.department
+        self.requester.save(update_fields=["primary_department"])
+
+        self.project = Project.objects.create(
+            project_code="PJT-DASH-01",
+            project_name="Dashboard Project",
+            owning_department=self.department,
+            budget_amount=Decimal("10000.00"),
+            start_date=date.today(),
+            end_date=date.today() + timedelta(days=90),
+            is_active=True,
+        )
+
+        self.purchase_rule = ApprovalRule.objects.create(
+            rule_code="PUR-DASH",
+            rule_name="Purchase Dashboard Rule",
+            request_type=RequestType.PURCHASE,
+            department=self.department,
+            is_active=True,
+            priority=1,
+        )
+
+        ApprovalRuleStep.objects.create(
+            rule=self.purchase_rule,
+            step_no=1,
+            step_name="Department Manager Approval",
+            approver_type=ApproverType.DEPARTMENT_MANAGER,
+            is_active=True,
+        )
+
+        self.travel_rule = ApprovalRule.objects.create(
+            rule_code="TRV-DASH",
+            rule_name="Travel Dashboard Rule",
+            request_type=RequestType.TRAVEL,
+            department=self.department,
+            is_active=True,
+            priority=1,
+        )
+
+        ApprovalRuleStep.objects.create(
+            rule=self.travel_rule,
+            step_no=1,
+            step_name="Department Manager Approval",
+            approver_type=ApproverType.DEPARTMENT_MANAGER,
+            is_active=True,
+        )
+
+    def _create_purchase_and_submit(self):
+        pr = PurchaseRequest.objects.create(
+            title="Dashboard Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Dashboard purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Mouse",
+            quantity=Decimal("1"),
+            unit_price=Decimal("50.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        pr.refresh_from_db()
+        return pr
+
+    def _create_travel_and_submit(self):
+        tr = TravelRequest.objects.create(
+            purpose="Dashboard Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.submit(acting_user=self.requester)
+        tr.refresh_from_db()
+        return tr
+
+    def test_dashboard_shows_purchase_and_travel_recent_requests_for_requester(self):
+        pr = self._create_purchase_and_submit()
+        tr = self._create_travel_and_submit()
+
+        self.client.login(username="req_dash_cross", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "My Recent Requests")
+        self.assertContains(response, "Purchase")
+        self.assertContains(response, "Travel")
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, tr.travel_no)
+        self.assertContains(response, reverse("purchase:pr_detail", args=[pr.id]))
+        self.assertContains(response, reverse("travel:tr_detail", args=[tr.id]))
+
+    def test_dashboard_shows_purchase_and_travel_assigned_tasks_for_manager(self):
+        pr = self._create_purchase_and_submit()
+        tr = self._create_travel_and_submit()
+
+        self.client.login(username="mgr_dash_cross", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Assigned to Me")
+        self.assertContains(response, "Purchase")
+        self.assertContains(response, "Travel")
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, tr.travel_no)
+        self.assertContains(response, reverse("purchase:pr_detail", args=[pr.id]))
+        self.assertContains(response, reverse("travel:tr_detail", args=[tr.id]))

@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from .forms import (
     TravelRequestForm,
@@ -385,6 +386,7 @@ def tr_detail(request, pk):
         "actual_expense_lines": actual_expense_lines,
         "can_record_actual_expense": can_record_actual_expense,
         "actual_expense_form": actual_expense_form,
+        "can_close": travel_request.can_user_close(request.user),
     }
     return render(request, "travel/tr_detail.html", context)
 
@@ -543,6 +545,7 @@ def tr_edit(request, pk):
     return render(request, "travel/tr_edit.html", context)
 
 @login_required
+@require_POST
 def tr_submit(request, pk):
     travel_request = get_object_or_404(
         TravelRequest.get_visible_queryset(request.user),
@@ -564,6 +567,7 @@ def tr_submit(request, pk):
 
 
 @login_required
+@require_POST
 def tr_cancel(request, pk):
     travel_request = get_object_or_404(
         TravelRequest.get_visible_queryset(request.user),
@@ -663,7 +667,6 @@ def tr_record_actual_expense(request, pk):
                 actual_amount=form.cleaned_data["actual_amount"],
                 acting_user=request.user,
                 estimated_expense_line=form.cleaned_data.get("estimated_expense_line"),
-                purchase_request_line=form.cleaned_data.get("purchase_request_line"),
                 currency=form.cleaned_data.get("currency") or travel_request.currency,
                 vendor_name=form.cleaned_data.get("vendor_name", ""),
                 reference_no=form.cleaned_data.get("reference_no", ""),
@@ -679,5 +682,31 @@ def tr_record_actual_expense(request, pk):
             label = form.fields[field_name].label or field_name
             for error in errors:
                 messages.error(request, f"{label}: {error}")
+
+    return redirect("travel:tr_detail", pk=travel_request.pk)
+
+@login_required
+@require_POST
+def tr_close(request, pk):
+    travel_request = get_object_or_404(
+        TravelRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+
+    if not travel_request.can_user_close(request.user):
+        messages.error(request, "You do not have permission to close this travel request.")
+        return redirect("travel:tr_detail", pk=travel_request.pk)
+
+    comment = request.POST.get("comment", "").strip()
+
+    try:
+        travel_request.close_request(
+            acting_user=request.user,
+            comment=comment,
+        )
+        messages.success(request, f"{travel_request.travel_no} closed successfully.")
+    except ValidationError as exc:
+        for message in exc.messages:
+            messages.error(request, message)
 
     return redirect("travel:tr_detail", pk=travel_request.pk)

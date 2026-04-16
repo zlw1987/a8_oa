@@ -97,3 +97,18 @@ def notify_tr_rejected(travel_request, comment=""):
     )
 
     return _send_notification(subject, body, recipients)
+
+def notify_tr_closed(travel_request, comment=""):
+    requester = travel_request.requester
+    recipients = [requester.email] if requester and requester.email else []
+
+    subject = f"[OA] {travel_request.travel_no} closed"
+    body = (
+        f"Travel Request: {travel_request.travel_no}\n"
+        f"Purpose: {travel_request.purpose}\n"
+        f"Status: {travel_request.get_status_display()}\n"
+        f"Actual Total: {travel_request.currency} {travel_request.actual_total}\n\n"
+        f"Comment: {comment or '-'}"
+    )
+
+    return _send_notification(subject, body, recipients)

@@ -4,6 +4,16 @@
 {% block page_title %}Purchase Request Detail{% endblock %}
 
 {% block content %}
+{% if purchase_request.project %}
+<div class="card">
+    <h2>Project Budget</h2>
+    <div class="action-row">
+        <a href="{% url 'projects:project_budget_ledger' purchase_request.project.id %}">
+            Open Project Budget Ledger
+        </a>
+    </div>
+</div>
+{% endif %}
 <div class="card">
     <p><a href="{% url 'purchase:pr_list' %}">← Back to Purchase Request List</a></p>
 

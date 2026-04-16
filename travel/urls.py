@@ -10,6 +10,7 @@ urlpatterns = [
     path("<int:pk>/edit/", views.tr_edit, name="tr_edit"),
     path("<int:pk>/submit/", views.tr_submit, name="tr_submit"),
     path("<int:pk>/cancel/", views.tr_cancel, name="tr_cancel"),
+    path("<int:pk>/close/", views.tr_close, name="tr_close"),
     path("<int:pk>/attachments/upload/", views.tr_upload_attachment, name="tr_upload_attachment"),
     path("<int:pk>/attachments/<int:attachment_id>/delete/", views.tr_delete_attachment, name="tr_delete_attachment"),
     path("<int:pk>/actual-expense/record/", views.tr_record_actual_expense, name="tr_record_actual_expense"),

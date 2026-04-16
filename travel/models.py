@@ -4,13 +4,15 @@ from pathlib import Path
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import Sum, Max
+from django.db.models import Sum, Max, Q
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
-from common.choices import CurrencyCode, RequestType, RequestStatus
+from common.choices import CurrencyCode, RequestType, BudgetEntryType
+from common.approval_constants import POOL_APPROVER_TYPES
 
-from approvals.models import ApprovalRule, ApprovalTask, ApprovalTaskStatus
+from approvals.models import ApprovalRule, ApprovalTask, ApprovalTaskStatus, ApprovalTaskCandidate
+from projects.models import ProjectBudgetEntry
 
 class TravelRequestNumberSequence(models.Model):
     sequence_date = models.DateField(unique=True)
@@ -121,6 +123,9 @@ class TravelRequestHistoryActionType(models.TextChoices):
     REJECTED = "REJECTED", "Rejected"
     APPROVED = "APPROVED", "Approved"
     ACTUAL_EXPENSE_RECORDED = "ACTUAL_EXPENSE_RECORDED", "Actual Expense Recorded"
+    CLOSED = "CLOSED", "Closed"
+
+
 class TravelRequest(models.Model):
     travel_no = models.CharField(max_length=30, unique=True, blank=True)
     requester = models.ForeignKey(
@@ -211,6 +216,26 @@ class TravelRequest(models.Model):
             and self.status in [TravelRequestStatus.PENDING_APPROVAL, TravelRequestStatus.APPROVED]
         )
 
+    def can_user_close(self, user):
+        if not getattr(user, "is_authenticated", False):
+            return False
+
+        if getattr(user, "is_superuser", False):
+            return self.status in [
+                TravelRequestStatus.APPROVED,
+                TravelRequestStatus.EXPENSE_PENDING,
+                TravelRequestStatus.EXPENSE_SUBMITTED,
+            ]
+
+        return (
+            self.requester_id == user.id
+            and self.status in [
+                TravelRequestStatus.APPROVED,
+                TravelRequestStatus.EXPENSE_PENDING,
+                TravelRequestStatus.EXPENSE_SUBMITTED,
+            ]
+        )
+
     def can_user_record_actual_expense(self, user):
         if not getattr(user, "is_authenticated", False):
             return False
@@ -254,6 +279,78 @@ class TravelRequest(models.Model):
 
         return None
 
+    def _dedupe_users(self, users):
+        unique_users = {}
+        for user in users:
+            if user and user.id not in unique_users:
+                unique_users[user.id] = user
+        return list(unique_users.values())
+
+    def resolve_step_candidates(self, step):
+        from accounts.models import UserDepartment
+        from common.choices import ApproverType, DepartmentType
+
+        users = []
+
+        if step.approver_type == ApproverType.GLOBAL_APPROVER:
+            users = list(
+                self.requester.__class__.objects.filter(
+                    can_approve_all_departments=True,
+                    is_active=True,
+                ).order_by("id")
+            )
+
+        elif step.approver_type == ApproverType.DEPARTMENT_APPROVER:
+            target_department = step.approver_department or self.request_department
+            links = (
+                UserDepartment.objects.filter(
+                    department=target_department,
+                    can_approve=True,
+                    is_active=True,
+                )
+                .select_related("user")
+                .order_by("user__id")
+            )
+            users = [link.user for link in links]
+
+        elif step.approver_type == ApproverType.FINANCE:
+            links = (
+                UserDepartment.objects.filter(
+                    department__dept_type=DepartmentType.FIN,
+                    can_approve=True,
+                    is_active=True,
+                )
+                .select_related("user")
+                .order_by("user__id")
+            )
+            users = [link.user for link in links]
+
+        elif step.approver_type == ApproverType.PURCHASING:
+            links = (
+                UserDepartment.objects.filter(
+                    department__dept_type=DepartmentType.PUR,
+                    can_approve=True,
+                    is_active=True,
+                )
+                .select_related("user")
+                .order_by("user__id")
+            )
+            users = [link.user for link in links]
+
+        elif step.approver_type == ApproverType.HR:
+            links = (
+                UserDepartment.objects.filter(
+                    department__dept_type=DepartmentType.HR,
+                    can_approve=True,
+                    is_active=True,
+                )
+                .select_related("user")
+                .order_by("user__id")
+            )
+            users = [link.user for link in links]
+
+        return self._dedupe_users(users)
+
     @classmethod
     def generate_next_travel_no(cls, request_date=None):
         sequence_date = request_date or timezone.localdate()
@@ -295,25 +392,62 @@ class TravelRequest(models.Model):
             self.save(update_fields=["estimated_total"])
         return self.estimated_total
 
+    def get_actual_total(self):
+        total = self.actual_expense_lines.aggregate(total=Sum("actual_amount"))["total"]
+        return total or Decimal("0.00")
+
+    def get_project_available_budget(self):
+        if not self.project_id:
+            return Decimal("0.00")
+        return self.project.get_available_amount()
+
+    def get_reserved_remaining_amount(self):
+        reserve_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.TRAVEL,
+                source_id=self.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        release_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.TRAVEL,
+                source_id=self.id,
+                entry_type=BudgetEntryType.RELEASE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        return reserve_total - release_total
+
+    def refresh_actual_total(self, commit=True):
+        self.actual_total = self.get_actual_total()
+        if commit:
+            self.save(update_fields=["actual_total"])
+        return self.actual_total
+
     def get_actual_expense_total(self):
         total = self.actual_expense_lines.aggregate(total=Sum("actual_amount"))["total"]
         return total or Decimal("0.00")
 
     @transaction.atomic
     def record_actual_expense(
-        self,
-        expense_type,
-        expense_date,
-        actual_amount,
-        acting_user=None,
-        estimated_expense_line=None,
-        purchase_request_line=None,
-        currency="",
-        vendor_name="",
-        reference_no="",
-        expense_location="",
-        notes="",
-    ):
+            self,
+            expense_type,
+            expense_date,
+            actual_amount,
+            acting_user=None,
+            estimated_expense_line=None,
+            currency="",
+            vendor_name="",
+            reference_no="",
+            expense_location="",
+            notes="",
+        ):
         next_line_no = (
             self.actual_expense_lines.aggregate(max_line_no=Max("line_no"))["max_line_no"] or 0
         ) + 1
@@ -330,11 +464,63 @@ class TravelRequest(models.Model):
             expense_location=expense_location,
             notes=notes,
             estimated_expense_line=estimated_expense_line,
-            purchase_request_line=purchase_request_line,
             created_by=acting_user,
         )
 
+        reserved_remaining = self.get_reserved_remaining_amount()
+        extra_needed = actual_amount - reserved_remaining if actual_amount > reserved_remaining else Decimal("0.00")
+
+        if extra_needed > 0:
+            available_budget = self.project.get_available_amount()
+            if extra_needed > available_budget:
+                raise ValidationError(
+                    f"Insufficient project budget for overspend. Extra needed is {extra_needed}, "
+                    f"but available budget is {available_budget}."
+                )
+
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.CONSUME,
+            source_type=RequestType.TRAVEL,
+            source_id=self.id,
+            amount=actual_amount,
+            notes=f"Budget consumed by actual expense of {self.travel_no}",
+            created_by=acting_user,
+        )
+
+        amount_to_release = min(actual_amount, reserved_remaining)
+        if amount_to_release > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.TRAVEL,
+                source_id=self.id,
+                amount=amount_to_release,
+                notes=f"Reserved budget converted to actual expense for {self.travel_no}",
+                created_by=acting_user,
+            )
+
         self.refresh_actual_total(commit=True)
+
+        from_status = self.status
+
+        self.refresh_actual_total(commit=False)
+
+        if self.status == TravelRequestStatus.APPROVED:
+            self.status = TravelRequestStatus.EXPENSE_PENDING
+
+        self.save(update_fields=["actual_total", "status"])
+
+        self._add_history(
+            action_type=TravelRequestHistoryActionType.ACTUAL_EXPENSE_RECORDED,
+            from_status=from_status,
+            to_status=self.status,
+            acting_user=acting_user,
+            comment=(
+                f"Actual expense recorded: {currency} {actual_amount}. "
+                f"Expense type: {expense_type}."
+            ),
+        )
 
         if self.status in [TravelRequestStatus.APPROVED, TravelRequestStatus.IN_TRIP]:
             self.status = TravelRequestStatus.EXPENSE_PENDING
@@ -347,8 +533,7 @@ class TravelRequest(models.Model):
             acting_user=acting_user,
             comment=(
                 f"Actual expense recorded: {self.currency} {actual_amount}. "
-                f"Estimated link: {estimated_expense_line.line_no if estimated_expense_line else '-'}; "
-                f"PR line link: {purchase_request_line.request.pr_no + ' / Line ' + str(purchase_request_line.line_no) if purchase_request_line else '-'}."
+                f"Estimated link: {estimated_expense_line.line_no if estimated_expense_line else '-'}. "
             ),
         )
 
@@ -442,47 +627,103 @@ class TravelRequest(models.Model):
 
         self.refresh_estimated_total(commit=True)
 
-        # Reuse the same approval-rule matching logic pattern as PurchaseRequest,
-        # but lock request_type to TRAVEL.
+        available_budget = self.get_project_available_budget()
+        if self.estimated_total > available_budget:
+            raise ValidationError(
+                f"Insufficient project budget. Available budget is {available_budget}, "
+                f"but this travel request needs {self.estimated_total}."
+            )
+
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.TRAVEL,
+            source_id=self.id,
+            amount=self.estimated_total,
+            notes=f"Budget reserved by submitting {self.travel_no}",
+            created_by=acting_user,
+        )
+
         matched_rule = (
             ApprovalRule.objects.filter(
                 is_active=True,
                 request_type=RequestType.TRAVEL,
             )
-            .order_by("id")
+            .filter(
+                Q(department=self.request_department) | Q(department__isnull=True)
+            )
+            .order_by("priority", "rule_code", "id")
             .first()
         )
 
         if not matched_rule:
             raise ValidationError("No active approval rule found for this travel request.")
 
-        self.get_approval_tasks_queryset().exclude(
-            status=ApprovalTaskStatus.APPROVED
-        ).delete()
+        self.get_approval_tasks_queryset().delete()
 
-        content_type = ContentType.objects.get_for_model(TravelRequest)
+        content_type = ContentType.objects.get_for_model(type(self))
+        steps = matched_rule.steps.filter(is_active=True).order_by("step_no", "id")
 
+        if not steps.exists():
+            raise ValidationError("The matched approval rule has no active steps.")
+
+        created_count = 0
         first_task = None
-        for step in matched_rule.steps.all().order_by("step_no", "id"):
-            task = ApprovalTask.objects.create(
-                request_content_type=content_type,
-                request_object_id=self.id,
-                rule=matched_rule,
-                step=step,
-                step_no=step.step_no,
-                step_name=step.step_name,
-                status=ApprovalTaskStatus.WAITING,
-            )
-            if not first_task:
-                first_task = task
 
-        if first_task:
-            try:
-                first_task.activate()
-            except ValidationError as exc:
-                raise ValidationError(
-                    [f"{self.travel_no}: {message}" for message in exc.messages]
+        for step in steps:
+            is_first_step = created_count == 0
+
+            if step.approver_type in POOL_APPROVER_TYPES:
+                candidates = self.resolve_step_candidates(step)
+                if not candidates:
+                    raise ValidationError(
+                        f"Unable to resolve any candidates for step {step.step_no} - {step.step_name}."
+                    )
+
+                task_status = ApprovalTaskStatus.POOL if is_first_step else ApprovalTaskStatus.WAITING
+
+                task = ApprovalTask.objects.create(
+                    request_content_type=content_type,
+                    request_object_id=self.id,
+                    rule=matched_rule,
+                    step=step,
+                    step_no=step.step_no,
+                    step_name=step.step_name,
+                    status=task_status,
+                    assigned_user=None,
                 )
+
+                ApprovalTaskCandidate.objects.bulk_create(
+                    [ApprovalTaskCandidate(task=task, user=user) for user in candidates]
+                )
+
+                if is_first_step:
+                    first_task = task
+
+            else:
+                assigned_user = self.resolve_fixed_step_assignee(step) if is_first_step else None
+                if is_first_step and not assigned_user:
+                    raise ValidationError(
+                        f"Unable to resolve approver for step {step.step_no} - {step.step_name}."
+                    )
+
+                task_status = ApprovalTaskStatus.PENDING if is_first_step else ApprovalTaskStatus.WAITING
+
+                task = ApprovalTask.objects.create(
+                    request_content_type=content_type,
+                    request_object_id=self.id,
+                    rule=matched_rule,
+                    step=step,
+                    step_no=step.step_no,
+                    step_name=step.step_name,
+                    assigned_user=assigned_user,
+                    status=task_status,
+                )
+
+                if is_first_step:
+                    first_task = task
+
+            created_count += 1
 
         from_status = self.status
         self.status = TravelRequestStatus.PENDING_APPROVAL
@@ -502,9 +743,12 @@ class TravelRequest(models.Model):
 
         transaction.on_commit(lambda: notify_tr_submitted(self))
 
-        current_task = self.get_current_task()
-        if current_task:
-            transaction.on_commit(lambda: notify_current_task_activated(current_task))
+        if first_task:
+            transaction.on_commit(
+                lambda task_id=first_task.id: notify_current_task_activated(
+                    ApprovalTask.objects.get(pk=task_id)
+                )
+            )
 
     @transaction.atomic
     def mark_as_approved(self, acting_user=None, comment="", exclude_task_id=None):
@@ -529,6 +773,18 @@ class TravelRequest(models.Model):
         self.status = TravelRequestStatus.RETURNED
         self.save(update_fields=["status"])
 
+        reserved_remaining = self.get_reserved_remaining_amount()
+        if reserved_remaining > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.TRAVEL,
+                source_id=self.id,
+                amount=reserved_remaining,
+                notes=f"Budget released by returning {self.travel_no}",
+                created_by=acting_user,
+            )
+
         self._add_history(
             action_type=TravelRequestHistoryActionType.RETURNED,
             from_status=from_status,
@@ -545,6 +801,18 @@ class TravelRequest(models.Model):
         from_status = self.status
         self.status = TravelRequestStatus.REJECTED
         self.save(update_fields=["status"])
+
+        reserved_remaining = self.get_reserved_remaining_amount()
+        if reserved_remaining > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.TRAVEL,
+                source_id=self.id,
+                amount=reserved_remaining,
+                notes=f"Budget released by rejecting {self.travel_no}",
+                created_by=acting_user,
+            )
 
         self._add_history(
             action_type=TravelRequestHistoryActionType.REJECTED,
@@ -566,6 +834,18 @@ class TravelRequest(models.Model):
         self.status = TravelRequestStatus.CANCELLED
         self.save(update_fields=["status"])
 
+        reserved_remaining = self.get_reserved_remaining_amount()
+        if reserved_remaining > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.TRAVEL,
+                source_id=self.id,
+                amount=reserved_remaining,
+                notes=f"Budget released by cancelling {self.travel_no}",
+                created_by=acting_user,
+            )
+
         self._add_history(
             action_type=TravelRequestHistoryActionType.CANCELLED,
             from_status=from_status,
@@ -573,6 +853,53 @@ class TravelRequest(models.Model):
             acting_user=acting_user,
             comment=comment or f"{self.travel_no} cancelled.",
         )
+
+    @transaction.atomic
+    def close_request(self, acting_user=None, comment=""):
+        if self.status not in [
+            TravelRequestStatus.APPROVED,
+            TravelRequestStatus.EXPENSE_PENDING,
+            TravelRequestStatus.EXPENSE_SUBMITTED,
+        ]:
+            raise ValidationError("Only approved or expense-stage travel requests can be closed.")
+
+        reserved_remaining = self.get_reserved_remaining_amount()
+        if reserved_remaining > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.TRAVEL,
+                source_id=self.id,
+                amount=reserved_remaining,
+                notes=f"Unused reserved budget released by closing {self.travel_no}",
+                created_by=acting_user,
+            )
+
+        from_status = self.status
+        self.refresh_actual_total(commit=False)
+        self.status = TravelRequestStatus.CLOSED
+        self.save(update_fields=["actual_total", "status"])
+
+        self._add_history(
+            action_type=TravelRequestHistoryActionType.CLOSED,
+            from_status=from_status,
+            to_status=self.status,
+            acting_user=acting_user,
+            comment=comment or f"{self.travel_no} closed.",
+        )
+
+        from travel.notifications import notify_tr_closed
+        transaction.on_commit(lambda: notify_tr_closed(self, comment))
+
+    def get_actual_total(self):
+        total = self.actual_expense_lines.aggregate(total=Sum("actual_amount"))["total"]
+        return total or Decimal("0.00")
+
+    def refresh_actual_total(self, commit=True):
+        self.actual_total = self.get_actual_total()
+        if commit:
+            self.save(update_fields=["actual_total"])
+        return self.actual_total
 
 class TravelAttachmentType(models.TextChoices):
     ITINERARY = "ITINERARY", "Itinerary"
@@ -868,39 +1195,26 @@ class TravelActualExpenseLine(models.Model):
     def __str__(self):
         return f"{self.travel_request.travel_no} / Actual {self.line_no}"
 
-    def clean(self):
-        errors = {}
+def clean(self):
+    errors = {}
 
-        if self.actual_amount is not None and self.actual_amount <= 0:
-            errors["actual_amount"] = "Actual amount must be greater than 0."
+    if self.actual_amount is not None and self.actual_amount <= 0:
+        errors["actual_amount"] = "Actual amount must be greater than 0."
 
-        if (
-            self.travel_request_id
-            and self.expense_date
-            and self.travel_request.start_date
-            and self.travel_request.end_date
-        ):
-            if self.expense_date < self.travel_request.start_date or self.expense_date > self.travel_request.end_date:
-                errors["expense_date"] = "Actual expense date must fall within the travel request date range."
+    if self.travel_request_id and self.expense_date:
+        if self.travel_request.start_date and self.expense_date < self.travel_request.start_date:
+            errors["expense_date"] = "Expense date cannot be earlier than the travel start date."
+        if self.travel_request.end_date and self.expense_date > self.travel_request.end_date:
+            errors["expense_date"] = "Expense date cannot be later than the travel end date."
 
-        if not self.estimated_expense_line_id and not self.purchase_request_line_id:
-            errors["estimated_expense_line"] = "Link to an estimated expense line or an approved PR line is required."
+    if self.estimated_expense_line_id:
+        if self.estimated_expense_line.travel_request_id != self.travel_request_id:
+            errors["estimated_expense_line"] = (
+                "Estimated expense line must belong to the same travel request."
+            )
 
-        if self.estimated_expense_line_id:
-            if self.estimated_expense_line.travel_request_id != self.travel_request_id:
-                errors["estimated_expense_line"] = "Estimated expense line must belong to the same travel request."
-
-        if self.purchase_request_line_id:
-            purchase_request = self.purchase_request_line.request
-
-            if purchase_request.status not in [RequestStatus.APPROVED, RequestStatus.CLOSED]:
-                errors["purchase_request_line"] = "Linked PR line must come from an approved or closed purchase request."
-
-            if self.travel_request_id and purchase_request.project_id != self.travel_request.project_id:
-                errors["purchase_request_line"] = "Linked PR line must belong to the same project as this travel request."
-
-        if errors:
-            raise ValidationError(errors)
+    if errors:
+        raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         self.full_clean()

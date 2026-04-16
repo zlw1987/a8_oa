@@ -1,0 +1,122 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Project Budget Ledger{% endblock %}
+{% block page_title %}Project Budget Ledger{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Project</h2>
+    <table>
+        <tr>
+            <th>Project Code</th>
+            <td>{{ project.project_code }}</td>
+        </tr>
+        <tr>
+            <th>Project Name</th>
+            <td>{{ project.project_name }}</td>
+        </tr>
+        <tr>
+            <th>Owning Department</th>
+            <td>{{ project.owning_department }}</td>
+        </tr>
+        <tr>
+            <th>Project Manager</th>
+            <td>{{ project.project_manager|default:"-" }}</td>
+        </tr>
+        <tr>
+            <th>Currency</th>
+            <td>{{ project.currency }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="summary-cards">
+    <div class="summary-card">
+        <div class="label">Budget Amount</div>
+        <div class="value">{{ project.currency }} {{ budget_amount }}</div>
+    </div>
+
+    <div class="summary-card">
+        <div class="label">Reserved Amount</div>
+        <div class="value">{{ project.currency }} {{ reserved_amount }}</div>
+    </div>
+
+    <div class="summary-card">
+        <div class="label">Consumed Amount</div>
+        <div class="value">{{ project.currency }} {{ consumed_amount }}</div>
+    </div>
+
+    <div class="summary-card">
+        <div class="label">Available Amount</div>
+        <div class="value">{{ project.currency }} {{ available_amount }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Budget Summary by Source Type</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Source Type</th>
+                <th>Reserved</th>
+                <th>Consumed</th>
+                <th>Released</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Purchase</td>
+                <td>{{ project.currency }} {{ purchase_reserved }}</td>
+                <td>{{ project.currency }} {{ purchase_consumed }}</td>
+                <td>{{ project.currency }} {{ purchase_released }}</td>
+            </tr>
+            <tr>
+                <td>Travel</td>
+                <td>{{ project.currency }} {{ travel_reserved }}</td>
+                <td>{{ project.currency }} {{ travel_consumed }}</td>
+                <td>{{ project.currency }} {{ travel_released }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Budget Ledger</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Created At</th>
+                <th>Entry Type</th>
+                <th>Source Type</th>
+                <th>Source No</th>
+                <th>Amount</th>
+                <th>Created By</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr>
+                <td>{{ entry.created_at }}</td>
+                <td>{{ entry.get_entry_type_display }}</td>
+                <td>{{ entry.get_source_type_display }}</td>
+                <td>
+                    {% if entry.source_detail_url %}
+                    <a href="{{ entry.source_detail_url }}">{{ entry.source_no }}</a>
+                    {% else %}
+                    {{ entry.source_no }}
+                    {% endif %}
+                </td>
+                <td>{{ project.currency }} {{ entry.amount }}</td>
+                <td>{{ entry.created_by|default:"-" }}</td>
+                <td>{{ entry.notes }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7">No budget entries.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

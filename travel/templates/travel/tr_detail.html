@@ -4,6 +4,16 @@
 {% block page_title %}Travel Request Detail{% endblock %}
 
 {% block content %}
+{% if travel_request.project %}
+<div class="card">
+    <h2>Project Budget</h2>
+    <div class="action-row">
+        <a href="{% url 'projects:project_budget_ledger' travel_request.project.id %}">
+            Open Project Budget Ledger
+        </a>
+    </div>
+</div>
+{% endif %}
 <div class="card">
     <div class="action-row">
         <a href="{% url 'travel:tr_list' %}">Back to Travel Request List</a>
@@ -13,11 +23,17 @@
         {% endif %}
 
         {% if can_submit %}
-        <a href="{% url 'travel:tr_submit' travel_request.id %}">Submit</a>
+        <form method="post" action="{% url 'travel:tr_submit' travel_request.id %}">
+            {% csrf_token %}
+            <button type="submit">Submit</button>
+        </form>
         {% endif %}
 
         {% if can_cancel %}
-        <a href="{% url 'travel:tr_cancel' travel_request.id %}">Cancel</a>
+        <form method="post" action="{% url 'travel:tr_cancel' travel_request.id %}">
+            {% csrf_token %}
+            <button type="submit">Cancel</button>
+        </form>
         {% endif %}
     </div>
 </div>
@@ -232,7 +248,6 @@
                 <th>Expense Date</th>
                 <th>Actual Amount</th>
                 <th>Estimated Link</th>
-                <th>PR Line Link</th>
                 <th>Vendor</th>
                 <th>Reference No</th>
                 <th>Expense Location</th>
@@ -256,13 +271,6 @@
                     -
                     {% endif %}
                 </td>
-                <td>
-                    {% if line.purchase_request_line %}
-                    {{ line.purchase_request_line.request.pr_no }} / Line {{ line.purchase_request_line.line_no }}
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
                 <td>{{ line.vendor_name }}</td>
                 <td>{{ line.reference_no }}</td>
                 <td>{{ line.expense_location }}</td>
@@ -272,12 +280,36 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="12">No actual expense lines.</td>
+                <td colspan="11">No actual expense lines.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+{% if can_close %}
+<div class="card">
+    <h2>Close Travel Request</h2>
+    <p class="muted">
+        Use this action when the trip and expense recording are complete.
+    </p>
+
+    <form method="post" action="{% url 'travel:tr_close' travel_request.id %}">
+        {% csrf_token %}
+        <table>
+            <tr>
+                <th>Close Comment</th>
+                <td>
+                    <textarea name="comment"></textarea>
+                </td>
+            </tr>
+        </table>
+        <div class="action-row">
+            <button type="submit">Close Travel Request</button>
+        </div>
+    </form>
+</div>
+{% endif %}
 
 <div class="card">
     <h2>Content Change Audit</h2>

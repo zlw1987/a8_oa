@@ -10,7 +10,7 @@ from .models import (
     TravelRequestAttachment,
     TravelActualExpenseLine,
 )
-from common.choices import CurrencyCode, RequestStatus
+from common.choices import CurrencyCode
 
 class TravelRequestForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
@@ -242,7 +242,6 @@ class TravelEstimatedExpenseLineForm(forms.ModelForm):
         return any(
             [
                 self.cleaned_data.get("expense_type"),
-                self.cleaned_data.get("location_mode"),
                 self.cleaned_data.get("expense_date"),
                 self.cleaned_data.get("estimated_amount") not in [None, ""],
                 self.cleaned_data.get("currency"),
@@ -258,7 +257,6 @@ class TravelEstimatedExpenseLineForm(forms.ModelForm):
                 self.cleaned_data.get("notes"),
             ]
         )
-
 
 class BaseTravelEstimatedExpenseFormSet(BaseInlineFormSet):
     def clean(self):
@@ -463,7 +461,6 @@ class TravelActualExpenseForm(forms.ModelForm):
             "actual_amount",
             "currency",
             "estimated_expense_line",
-            "purchase_request_line",
             "vendor_name",
             "reference_no",
             "expense_location",
@@ -474,26 +471,41 @@ class TravelActualExpenseForm(forms.ModelForm):
         }
 
     def __init__(self, *args, travel_request=None, **kwargs):
+        self.travel_request = travel_request
         super().__init__(*args, **kwargs)
 
         self.fields["estimated_expense_line"].required = False
-        self.fields["purchase_request_line"].required = False
 
         if travel_request:
             self.fields["estimated_expense_line"].queryset = (
-                travel_request.estimated_expense_lines.all().order_by("line_no")
+                TravelEstimatedExpenseLine.objects.filter(
+                    travel_request_id=travel_request.id
+                ).order_by("line_no")
             )
-
-            self.fields["purchase_request_line"].queryset = (
-                self.fields["purchase_request_line"].queryset.filter(
-                    request__status__in=[RequestStatus.APPROVED, RequestStatus.CLOSED],
-                    request__project=travel_request.project,
-                )
-                .select_related("request")
-                .order_by("request__pr_no", "line_no")
-            )
-
             self.fields["currency"].initial = travel_request.currency
         else:
-            self.fields["estimated_expense_line"].queryset = self.fields["estimated_expense_line"].queryset.none()
-            self.fields["purchase_request_line"].queryset = self.fields["purchase_request_line"].queryset.none()
+            self.fields["estimated_expense_line"].queryset = (
+                self.fields["estimated_expense_line"].queryset.none()
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+
+        estimated_expense_line = cleaned_data.get("estimated_expense_line")
+        actual_amount = cleaned_data.get("actual_amount")
+        currency = cleaned_data.get("currency")
+
+        if actual_amount is not None and actual_amount <= 0:
+            self.add_error("actual_amount", "Actual amount must be greater than 0.")
+
+        if estimated_expense_line and self.travel_request:
+            if estimated_expense_line.travel_request_id != self.travel_request.id:
+                self.add_error(
+                    "estimated_expense_line",
+                    "Estimated expense line must belong to the same travel request.",
+                )
+
+        if not currency and self.travel_request:
+            cleaned_data["currency"] = self.travel_request.currency
+
+        return cleaned_data

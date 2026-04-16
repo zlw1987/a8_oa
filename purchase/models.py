@@ -404,96 +404,96 @@ class PurchaseRequest(models.Model):
 
         return self._dedupe_users(users)
 
-def create_approval_tasks(self):
-    purchase_request_content_type = ContentType.objects.get_for_model(type(self))
+    def create_approval_tasks(self):
+        purchase_request_content_type = ContentType.objects.get_for_model(type(self))
 
-    if not self.matched_rule_id:
-        raise ValidationError("Cannot create approval tasks without a matched approval rule.")
+        if not self.matched_rule_id:
+            raise ValidationError("Cannot create approval tasks without a matched approval rule.")
 
-    steps = self.matched_rule.steps.filter(is_active=True).order_by("step_no")
-    if not steps.exists():
-        raise ValidationError("The matched approval rule has no active steps.")
+        steps = self.matched_rule.steps.filter(is_active=True).order_by("step_no")
+        if not steps.exists():
+            raise ValidationError("The matched approval rule has no active steps.")
 
-    self.approval_tasks.all().delete()
+        self.approval_tasks.all().delete()
 
-    created_count = 0
-    for step in steps:
-        is_first_step = created_count == 0
+        created_count = 0
+        for step in steps:
+            is_first_step = created_count == 0
 
-        if step.approver_type in POOL_APPROVER_TYPES:
-            candidates = self.resolve_step_candidates(step)
-            if not candidates:
-                raise ValidationError(
-                    f"Unable to resolve any candidates for step {step.step_no} - {step.step_name}."
+            if step.approver_type in POOL_APPROVER_TYPES:
+                candidates = self.resolve_step_candidates(step)
+                if not candidates:
+                    raise ValidationError(
+                        f"Unable to resolve any candidates for step {step.step_no} - {step.step_name}."
+                    )
+
+                task_status = ApprovalTaskStatus.POOL if is_first_step else ApprovalTaskStatus.WAITING
+
+                task = ApprovalTask.objects.create(
+                    purchase_request=self,
+                    request_content_type=purchase_request_content_type,
+                    request_object_id=self.id,
+                    rule=self.matched_rule,
+                    step=step,
+                    step_no=step.step_no,
+                    step_name=step.step_name,
+                    status=task_status,
+                    assigned_user=None,
                 )
 
-            task_status = ApprovalTaskStatus.POOL if is_first_step else ApprovalTaskStatus.WAITING
-
-            task = ApprovalTask.objects.create(
-                purchase_request=self,
-                request_content_type=purchase_request_content_type,
-                request_object_id=self.id,
-                rule=self.matched_rule,
-                step=step,
-                step_no=step.step_no,
-                step_name=step.step_name,
-                status=task_status,
-                assigned_user=None,
-            )
-
-            ApprovalTaskCandidate.objects.bulk_create(
-                [
-                    ApprovalTaskCandidate(task=task, user=user)
-                    for user in candidates
-                ]
-            )
-
-            task._add_history(
-                action_type=ApprovalTaskActionType.CREATED,
-                action_by=None,
-                from_status=None,
-                to_status=task.status,
-                from_assignee=None,
-                to_assignee=None,
-                comment=f"Pool task created with {len(candidates)} candidate(s).",
-            )
-
-        else:
-            assigned_user = self.resolve_fixed_step_assignee(step) if is_first_step else None
-            if is_first_step and not assigned_user:
-                raise ValidationError(
-                    f"Unable to resolve approver for step {step.step_no} - {step.step_name}."
+                ApprovalTaskCandidate.objects.bulk_create(
+                    [
+                        ApprovalTaskCandidate(task=task, user=user)
+                        for user in candidates
+                    ]
                 )
 
-            task_status = ApprovalTaskStatus.PENDING if is_first_step else ApprovalTaskStatus.WAITING
+                task._add_history(
+                    action_type=ApprovalTaskActionType.CREATED,
+                    action_by=None,
+                    from_status=None,
+                    to_status=task.status,
+                    from_assignee=None,
+                    to_assignee=None,
+                    comment=f"Pool task created with {len(candidates)} candidate(s).",
+                )
 
-            task = ApprovalTask.objects.create(
-                purchase_request=self,
-                request_content_type=purchase_request_content_type,
-                request_object_id=self.id,
-                rule=self.matched_rule,
-                step=step,
-                step_no=step.step_no,
-                step_name=step.step_name,
-                assigned_user=assigned_user,
-                status=task_status,
-            )
+            else:
+                assigned_user = self.resolve_fixed_step_assignee(step) if is_first_step else None
+                if is_first_step and not assigned_user:
+                    raise ValidationError(
+                        f"Unable to resolve approver for step {step.step_no} - {step.step_name}."
+                    )
 
-            task._add_history(
-                action_type=ApprovalTaskActionType.CREATED,
-                action_by=None,
-                from_status=None,
-                to_status=task.status,
-                from_assignee=None,
-                to_assignee=assigned_user,
-                comment=(
-                    f"Task created and assigned to {assigned_user}."
-                    if assigned_user
-                    else "Waiting task created. Assignee will be resolved on activation."
-                ),
-            )
+                task_status = ApprovalTaskStatus.PENDING if is_first_step else ApprovalTaskStatus.WAITING
 
-        created_count += 1
+                task = ApprovalTask.objects.create(
+                    purchase_request=self,
+                    request_content_type=purchase_request_content_type,
+                    request_object_id=self.id,
+                    rule=self.matched_rule,
+                    step=step,
+                    step_no=step.step_no,
+                    step_name=step.step_name,
+                    assigned_user=assigned_user,
+                    status=task_status,
+                )
+
+                task._add_history(
+                    action_type=ApprovalTaskActionType.CREATED,
+                    action_by=None,
+                    from_status=None,
+                    to_status=task.status,
+                    from_assignee=None,
+                    to_assignee=assigned_user,
+                    comment=(
+                        f"Task created and assigned to {assigned_user}."
+                        if assigned_user
+                        else "Waiting task created. Assignee will be resolved on activation."
+                    ),
+                )
+
+            created_count += 1
 
     def validate_for_submit(self):
         errors = []
@@ -556,8 +556,6 @@ def create_approval_tasks(self):
             created_by=acting_user,
         )
 
-        purchase_request_content_type = ContentType.objects.get_for_model(PurchaseRequest)
-
         self.create_approval_tasks()
 
         from .notifications import notify_pr_submitted, notify_current_task_activated
@@ -590,8 +588,8 @@ def create_approval_tasks(self):
             acting_user=acting_user,
             comment=comment or f"{self.pr_no} approved.",
         )
-        from .notifications import notify_pr_approved
 
+        from .notifications import notify_pr_approved
         transaction.on_commit(lambda: notify_pr_approved(self))
 
     @transaction.atomic
@@ -628,7 +626,6 @@ def create_approval_tasks(self):
         )
 
         from .notifications import notify_pr_returned
-
         transaction.on_commit(lambda: notify_pr_returned(self, comment))
 
     @transaction.atomic
@@ -665,7 +662,6 @@ def create_approval_tasks(self):
         )
 
         from .notifications import notify_pr_rejected
-
         transaction.on_commit(lambda: notify_pr_rejected(self, comment))
 
     def validate_for_cancel(self):
