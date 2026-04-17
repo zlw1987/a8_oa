@@ -196,8 +196,14 @@
         <a href="{% url 'dashboard:home' %}">Dashboard</a>
         <a href="{% url 'purchase:pr_list' %}">Purchase Requests</a>
         <a href="{% url 'travel:tr_list' %}">Travel Requests</a>
+        <a href="{% url 'projects:project_list' %}">Projects</a>
+        {% if nav_can_create_project %}
+        <a href="{% url 'projects:project_create' %}">New Project</a>
+        {% endif %}
         <a href="{% url 'approvals:my_tasks' %}">My Tasks</a>
-        <a href="/admin/">Admin</a>
+        {% if request.user.is_staff %}
+        <a href="{% url 'admin:index' %}">Admin</a>
+        {% endif %}
         <div class="spacer"></div>
         <span class="muted">Signed in as: {{ request.user }}</span>
 

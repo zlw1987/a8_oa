@@ -507,6 +507,10 @@ class PurchaseRequest(models.Model):
         if not self.request_department_id:
             errors.append("Request department is required.")
 
+        if self.project_id:
+            if hasattr(self.project, "is_open") and not self.project.is_open():
+                errors.append("Only open projects can be linked to purchase requests.")
+
         if not self.project_id:
             errors.append("Project is required.")
 

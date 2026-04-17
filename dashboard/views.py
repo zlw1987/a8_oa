@@ -8,7 +8,12 @@ from approvals.models import ApprovalTask
 from common.choices import ApprovalTaskStatus, RequestStatus
 from purchase.models import PurchaseRequest
 from travel.models import TravelRequest, TravelRequestStatus
+from accounts.models import Department
 
+def _can_create_project(user):
+    if user.is_superuser:
+        return True
+    return Department.objects.filter(manager=user).exists()
 
 def _get_request_detail_url(task):
     request_obj = task.get_request_object()
@@ -190,5 +195,6 @@ def home(request):
         "my_recent_requests": my_recent_requests,
         "assigned_tasks": assigned_tasks[:5],
         "pool_tasks": pool_tasks[:5],
+        "can_create_project": _can_create_project(request.user),
     }
     return render(request, "dashboard/home.html", context)

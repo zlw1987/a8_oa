@@ -1,0 +1,50 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Adjust Project Budget{% endblock %}
+{% block page_title %}Adjust Project Budget{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Project</h2>
+    <table>
+        <tr>
+            <th>Project Code</th>
+            <td>{{ project.project_code }}</td>
+        </tr>
+        <tr>
+            <th>Project Name</th>
+            <td>{{ project.project_name }}</td>
+        </tr>
+        <tr>
+            <th>Current Base Budget</th>
+            <td>{{ project.currency }} {{ project.budget_amount }}</td>
+        </tr>
+        <tr>
+            <th>Current Adjustment Total</th>
+            <td>{{ project.currency }} {{ project.get_adjustment_amount }}</td>
+        </tr>
+        <tr>
+            <th>Current Effective Budget</th>
+            <td>{{ project.currency }} {{ project.get_effective_budget_amount }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Add Budget Adjustment</h2>
+    <p class="muted">
+        Use a positive amount to increase effective budget. Use a negative amount to decrease it.
+    </p>
+
+    <form method="post">
+        {% csrf_token %}
+        <table>
+            {{ form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Save Adjustment</button>
+            <a href="{% url 'projects:project_budget_ledger' project.id %}">Back to Budget Ledger</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

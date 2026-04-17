@@ -256,3 +256,169 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
                 source_type=RequestType.TRAVEL,
             ).exists()
         )
+
+    def test_project_list_shows_visible_project_for_requester(self):
+        self.client.login(username="req_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.project.project_code)
+        self.assertContains(response, self.project.project_name)
+        self.assertContains(response, reverse("projects:project_detail", args=[self.project.id]))
+        self.assertContains(response, reverse("projects:project_budget_ledger", args=[self.project.id]))
+
+    def test_project_list_hides_project_from_unrelated_user(self):
+        self.client.login(username="outsider_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, self.project.project_code)
+
+    def test_project_detail_loads_for_related_requester(self):
+        pr = self._create_purchase_with_budget_entries()
+        tr = self._create_travel_with_budget_entries()
+
+        self.client.login(username="req_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_detail", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.project.project_code)
+        self.assertContains(response, self.project.project_name)
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, tr.travel_no)
+        self.assertContains(response, reverse("projects:project_budget_ledger", args=[self.project.id]))
+
+    def test_project_detail_blocks_unrelated_user(self):
+        self.client.login(username="outsider_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_detail", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_project_manager_can_add_positive_budget_adjustment(self):
+        self.project.project_manager = self.manager
+        self.project.save(update_fields=["project_manager"])
+
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_add_budget_adjustment", args=[self.project.id]),
+            data={
+                "amount": "1000.00",
+                "notes": "Budget increase approved",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.project.refresh_from_db()
+
+        self.assertEqual(self.project.get_adjustment_amount(), Decimal("1000.00"))
+        self.assertEqual(self.project.get_effective_budget_amount(), Decimal("11000.00"))
+        self.assertEqual(self.project.get_available_amount(), Decimal("11000.00"))
+
+        self.assertTrue(
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                entry_type=BudgetEntryType.ADJUST,
+                source_type=RequestType.PROJECT,
+                source_id=self.project.id,
+                amount=Decimal("1000.00"),
+            ).exists()
+        )
+
+    def test_project_manager_can_add_negative_budget_adjustment(self):
+        self.project.project_manager = self.manager
+        self.project.save(update_fields=["project_manager"])
+
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_add_budget_adjustment", args=[self.project.id]),
+            data={
+                "amount": "-500.00",
+                "notes": "Budget reduction",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.project.refresh_from_db()
+
+        self.assertEqual(self.project.get_adjustment_amount(), Decimal("-500.00"))
+        self.assertEqual(self.project.get_effective_budget_amount(), Decimal("9500.00"))
+        self.assertEqual(self.project.get_available_amount(), Decimal("9500.00"))
+
+    def test_visible_but_unauthorized_user_cannot_add_budget_adjustment(self):
+        self._create_purchase_with_budget_entries()
+
+        self.client.login(username="req_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_add_budget_adjustment", args=[self.project.id]),
+            data={
+                "amount": "300.00",
+                "notes": "Unauthorized adjustment attempt",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                entry_type=BudgetEntryType.ADJUST,
+                source_type=RequestType.PROJECT,
+                source_id=self.project.id,
+            ).count(),
+            0,
+        )
+
+    def test_project_manager_can_create_project(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_create"),
+            data={
+                "project_code": "PJT-NEW-01",
+                "project_name": "New Managed Project",
+                "project_manager": self.manager.id,
+                "owning_department": self.department.id,
+                "budget_amount": "5000.00",
+                "currency": "USD",
+                "start_date": date.today(),
+                "end_date": date.today() + timedelta(days=90),
+                "is_active": "on",
+                "notes": "Created in regression test",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Project.objects.filter(project_code="PJT-NEW-01").exists())
+
+    def test_project_manager_can_create_project(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_create"),
+            data={
+                "project_code": "PJT-NEW-01",
+                "project_name": "New Managed Project",
+                "project_manager": self.manager.id,
+                "owning_department": self.department.id,
+                "budget_amount": "5000.00",
+                "currency": "USD",
+                "start_date": date.today(),
+                "end_date": date.today() + timedelta(days=90),
+                "is_active": "on",
+                "notes": "Created in regression test",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Project.objects.filter(project_code="PJT-NEW-01").exists())
+
+    def test_project_list_shows_create_link_for_manager(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("projects:project_create"))
+
+    def test_project_list_hides_create_link_for_non_manager(self):
+        self.client.login(username="req_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, reverse("projects:project_create"))

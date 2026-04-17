@@ -1,0 +1,20 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}New Project{% endblock %}
+{% block page_title %}New Project{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Create Project</h2>
+    <form method="post">
+        {% csrf_token %}
+        <table>
+            {{ form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Create Project</button>
+            <a href="{% url 'projects:project_list' %}">Back to Projects</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

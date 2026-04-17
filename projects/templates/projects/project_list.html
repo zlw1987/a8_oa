@@ -1,0 +1,54 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Projects{% endblock %}
+{% block page_title %}Projects{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        {% if can_create_project %}
+        <a href="{{ project_create_url }}">New Project</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Visible Projects</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Project Code</th>
+                <th>Project Name</th>
+                <th>Owning Department</th>
+                <th>Budget</th>
+                <th>Reserved</th>
+                <th>Consumed</th>
+                <th>Available</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for project in projects %}
+            <tr>
+                <td><a href="{{ project.project_detail_url }}">{{ project.project_code }}</a></td>
+                <td>{{ project.project_name }}</td>
+                <td>{{ project.owning_department }}</td>
+                <td>{{ project.currency }} {{ project.budget_amount }}</td>
+                <td>{{ project.currency }} {{ project.get_reserved_amount }}</td>
+                <td>{{ project.currency }} {{ project.get_consumed_amount }}</td>
+                <td>{{ project.currency }} {{ project.get_available_amount }}</td>
+                <td>
+                    <a href="{{ project.project_detail_url }}">Open</a>
+                    |
+                    <a href="{{ project.project_budget_url }}">Budget Ledger</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8">No visible projects.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

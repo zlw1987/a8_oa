@@ -30,8 +30,12 @@
     <div class="action-row">
         <a href="{% url 'purchase:pr_create' %}">Create Purchase Request</a>
         <a href="{% url 'travel:tr_create' %}">Create Travel Request</a>
+        {% if can_create_project %}
+        <a href="{% url 'projects:project_create' %}">Create Project</a>
+        {% endif %}
         <a href="{% url 'purchase:pr_list' %}">Open Purchase Request List</a>
         <a href="{% url 'travel:tr_list' %}">Open Travel Request List</a>
+        <a href="{% url 'projects:project_list' %}">Open Projects</a>
         <a href="{% url 'approvals:my_tasks' %}">Open My Tasks</a>
     </div>
 </div>

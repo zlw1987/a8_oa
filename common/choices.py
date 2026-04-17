@@ -12,6 +12,7 @@ class ApprovalLevel(models.TextChoices):
 class RequestType(models.TextChoices):
     PURCHASE = "PURCHASE", "Purchase Request"
     TRAVEL = "TRAVEL", "Travel Request"
+    PROJECT = "PROJECT", "Project"
 
 
 class RequestStatus(models.TextChoices):

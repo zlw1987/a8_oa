@@ -1,6 +1,9 @@
 from django import forms
 from django.forms import BaseInlineFormSet, inlineformset_factory
 
+from projects.access import get_usable_projects_queryset_for_user, user_can_use_project_for_request
+from projects.models import Project
+
 from .models import (
     PurchaseRequest,
     PurchaseRequestLine,
@@ -10,6 +13,7 @@ from .models import (
 
 class PurchaseRequestForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
+        self.user = user
         super().__init__(*args, **kwargs)
 
         if user and user.is_authenticated and not user.is_superuser:
@@ -24,6 +28,30 @@ class PurchaseRequestForm(forms.ModelForm):
 
             if user.primary_department_id and not self.instance.pk:
                 self.fields["request_department"].initial = user.primary_department
+
+        usable_projects = get_usable_projects_queryset_for_user(user) if user else Project.objects.none()
+
+        if self.instance.pk and self.instance.project_id:
+            self.fields["project"].queryset = (usable_projects | Project.objects.filter(pk=self.instance.project_id)).distinct()
+        else:
+            self.fields["project"].queryset = usable_projects
+
+    def clean_project(self):
+        project = self.cleaned_data.get("project")
+
+        if not project:
+            return project
+
+        if not self.user or not self.user.is_authenticated:
+            raise forms.ValidationError("You must be logged in to use a project.")
+
+        if not project.is_open():
+            raise forms.ValidationError("Only open projects can be linked to purchase requests.")
+
+        if not user_can_use_project_for_request(self.user, project):
+            raise forms.ValidationError("You are not a member of this project.")
+
+        return project
 
     class Meta:
         model = PurchaseRequest
@@ -44,7 +72,6 @@ class PurchaseRequestForm(forms.ModelForm):
             "request_date": forms.DateInput(attrs={"type": "date"}),
             "needed_by_date": forms.DateInput(attrs={"type": "date"}),
         }
-
 
 class PurchaseRequestLineForm(forms.ModelForm):
     class Meta:

@@ -1,0 +1,188 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Project Detail{% endblock %}
+{% block page_title %}Project Detail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Project Information</h2>
+    <table>
+        <tr>
+            <th>Project Code</th>
+            <td>{{ project.project_code }}</td>
+        </tr>
+        <tr>
+            <th>Project Name</th>
+            <td>{{ project.project_name }}</td>
+        </tr>
+        <tr>
+            <th>Owning Department</th>
+            <td>{{ project.owning_department }}</td>
+        </tr>
+        <tr>
+            <th>Project Manager</th>
+            <td>{{ project.project_manager|default:"-" }}</td>
+        </tr>
+        <tr>
+            <th>Currency</th>
+            <td>{{ project.currency }}</td>
+        </tr>
+        <tr>
+            <th>Active</th>
+            <td>{{ project.is_active }}</td>
+        </tr>
+        <tr>
+            <th>Notes</th>
+            <td>{{ project.notes|default:"-" }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'projects:project_detail' project.id %}">Open Project Detail</a>
+        {% if can_manage_members %}
+        <a href="{% url 'projects:project_members' project.id %}">Manage Project Members</a>
+        {% endif %}
+        {% if can_manage_budget %}
+        <a href="{{ project_adjust_budget_url }}">Add Budget Adjustment</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="summary-cards">
+    <div class="summary-card">
+        <div class="label">Base Budget</div>
+        <div class="value">{{ project.currency }} {{ budget_amount }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="label">Adjustments</div>
+        <div class="value">{{ project.currency }} {{ adjustment_amount }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="label">Effective Budget</div>
+        <div class="value">{{ project.currency }} {{ effective_budget_amount }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="label">Reserved Amount</div>
+        <div class="value">{{ project.currency }} {{ reserved_amount }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="label">Consumed Amount</div>
+        <div class="value">{{ project.currency }} {{ consumed_amount }}</div>
+    </div>
+    <div class="summary-card">
+        <div class="label">Available Amount</div>
+        <div class="value">{{ project.currency }} {{ available_amount }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="action-row">
+        <a href="{{ project_budget_url }}">Open Project Budget Ledger</a>
+        {% if can_manage_budget %}
+        <a href="{{ project_adjust_budget_url }}">Add Budget Adjustment</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Recent Purchase Requests</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>PR No</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pr in recent_purchase_requests %}
+            <tr>
+                <td>{{ pr.pr_no }}</td>
+                <td>{{ pr.title }}</td>
+                <td>{{ pr.get_status_display }}</td>
+                <td>{{ pr.currency }} {{ pr.estimated_total }}</td>
+                <td><a href="{% url 'purchase:pr_detail' pr.id %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5">No purchase requests.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Recent Travel Requests</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Travel No</th>
+                <th>Purpose</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for tr in recent_travel_requests %}
+            <tr>
+                <td>{{ tr.travel_no }}</td>
+                <td>{{ tr.purpose }}</td>
+                <td>{{ tr.get_status_display }}</td>
+                <td>{{ tr.currency }} {{ tr.estimated_total }}</td>
+                <td><a href="{% url 'travel:tr_detail' tr.id %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5">No travel requests.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Recent Budget Entries</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Created At</th>
+                <th>Entry Type</th>
+                <th>Source Type</th>
+                <th>Source No</th>
+                <th>Amount</th>
+                <th>Created By</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in recent_entries %}
+            <tr>
+                <td>{{ entry.created_at }}</td>
+                <td>{{ entry.get_entry_type_display }}</td>
+                <td>{{ entry.get_source_type_display }}</td>
+                <td>
+                    {% if entry.source_detail_url %}
+                    <a href="{{ entry.source_detail_url }}">{{ entry.source_no }}</a>
+                    {% else %}
+                    {{ entry.source_no }}
+                    {% endif %}
+                </td>
+                <td>{{ project.currency }} {{ entry.amount }}</td>
+                <td>{{ entry.created_by|default:"-" }}</td>
+                <td>{{ entry.notes }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7">No budget entries.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

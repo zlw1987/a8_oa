@@ -616,6 +616,11 @@ class TravelRequest(models.Model):
 
     @transaction.atomic
     def submit(self, acting_user):
+
+        if self.project_id:
+            if hasattr(self.project, "is_open") and not self.project.is_open():
+                raise ValidationError("Only open projects can be linked to travel requests.")
+
         if self.status not in [TravelRequestStatus.DRAFT, TravelRequestStatus.RETURNED]:
             raise ValidationError("Only draft or returned travel requests can be submitted.")
 

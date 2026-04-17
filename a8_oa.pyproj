@@ -67,8 +67,11 @@
     <Compile Include="dashboard\views.py" />
     <Compile Include="dashboard\__init__.py" />
     <Compile Include="manage.py" />
+    <Compile Include="projects\access.py" />
     <Compile Include="projects\admin.py" />
     <Compile Include="projects\apps.py" />
+    <Compile Include="projects\context_processors.py" />
+    <Compile Include="projects\forms.py" />
     <Compile Include="projects\migrations\0001_initial.py" />
     <Compile Include="projects\migrations\__init__.py" />
     <Compile Include="projects\models.py" />
@@ -111,7 +114,12 @@
     <Content Include="approvals\templates\approvals\my_tasks.html" />
     <Content Include="dashboard\templates\dashboard\home.html" />
     <Content Include="dashboard\templates\registration\login.html" />
+    <Content Include="projects\templates\projects\project_budget_adjustment.html" />
     <Content Include="projects\templates\projects\project_budget_ledger.html" />
+    <Content Include="projects\templates\projects\project_create.html" />
+    <Content Include="projects\templates\projects\project_detail.html" />
+    <Content Include="projects\templates\projects\project_list.html" />
+    <Content Include="projects\templates\projects\project_members.html" />
     <Content Include="purchase\templates\approvals\my_tasks.html" />
     <Content Include="purchase\templates\purchase\base.html" />
     <Content Include="purchase\templates\purchase\pr_create.html" />

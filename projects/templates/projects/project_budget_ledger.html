@@ -5,6 +5,15 @@
 
 {% block content %}
 <div class="card">
+    <div class="action-row">
+        <a href="{% url 'projects:project_detail' project.id %}">Open Project Detail</a>
+        {% if can_manage_budget %}
+        <a href="{{ project_adjust_budget_url }}">Add Budget Adjustment</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
     <h2>Project</h2>
     <table>
         <tr>

@@ -1,0 +1,85 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Project Members{% endblock %}
+{% block page_title %}Project Members{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Project</h2>
+    <table>
+        <tr>
+            <th>Project Code</th>
+            <td>{{ project.project_code }}</td>
+        </tr>
+        <tr>
+            <th>Project Name</th>
+            <td>{{ project.project_name }}</td>
+        </tr>
+        <tr>
+            <th>Status</th>
+            <td>{{ project.get_status_display }}</td>
+        </tr>
+        <tr>
+            <th>Project Manager</th>
+            <td>{{ project.project_manager|default:"-" }}</td>
+        </tr>
+        <tr>
+            <th>Created By</th>
+            <td>{{ project.created_by|default:"-" }}</td>
+        </tr>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Add Member</h2>
+    <form method="post" action="{% url 'projects:project_add_member' project.id %}">
+        {% csrf_token %}
+        <table>
+            {{ form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Add User to Project</button>
+            <a href="{% url 'projects:project_detail' project.id %}">Back to Project Detail</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Current Members</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Added By</th>
+                <th>Added At</th>
+                <th>Active</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for member in members %}
+            <tr>
+                <td>{{ member.user }}</td>
+                <td>{{ member.added_by|default:"-" }}</td>
+                <td>{{ member.added_at }}</td>
+                <td>{{ member.is_active }}</td>
+                <td>
+                    {% if member.is_active %}
+                    <form method="post" action="{% url 'projects:project_remove_member' project.id member.id %}">
+                        {% csrf_token %}
+                        <button type="submit">Remove</button>
+                    </form>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5">No members.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

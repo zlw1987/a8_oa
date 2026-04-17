@@ -184,3 +184,25 @@ class DashboardCrossRequestRegressionTest(TestCase):
         self.assertContains(response, tr.travel_no)
         self.assertContains(response, reverse("purchase:pr_detail", args=[pr.id]))
         self.assertContains(response, reverse("travel:tr_detail", args=[tr.id]))
+
+
+    def test_dashboard_home_loads(self):
+        self.client.login(username="dashboard_user", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_dashboard_nav_shows_projects_link_for_authenticated_user(self):
+        self.client.login(username="dashboard_user", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("projects:project_list"))
+        self.assertNotContains(response, reverse("projects:project_create"))
+
+    def test_dashboard_nav_shows_new_project_link_for_department_manager(self):
+        self.client.login(username="dashboard_manager", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("projects:project_list"))
+        self.assertContains(response, reverse("projects:project_create"))
