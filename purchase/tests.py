@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.core.exceptions import ValidationError
 
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
@@ -17,7 +18,8 @@ from common.choices import (
     DepartmentType,
     BudgetEntryType,
 )
-from projects.models import Project, ProjectBudgetEntry
+from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus
+from purchase.forms import PurchaseRequestForm
 from purchase.models import (
     PurchaseRequest,
     PurchaseRequestLine,
@@ -689,3 +691,150 @@ class PurchaseSmokeTest(TestCase):
         self.assertEqual(response.status_code, 404)
         pr.refresh_from_db()
         self.assertEqual(pr.attachments.count(), 0)
+
+    def test_purchase_form_shows_only_open_member_projects(self):
+        open_member_project = Project.objects.create(
+            project_code="PJT-PUR-MEMBER-OPEN",
+            project_name="Purchase Open Member Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+        closed_member_project = Project.objects.create(
+            project_code="PJT-PUR-MEMBER-CLOSED",
+            project_name="Purchase Closed Member Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.CLOSED,
+            is_active=True,
+        )
+        open_nonmember_project = Project.objects.create(
+            project_code="PJT-PUR-NONMEMBER-OPEN",
+            project_name="Purchase Open Nonmember Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+
+        ProjectMember.objects.create(project=open_member_project, user=self.requester, is_active=True, added_by=self.manager)
+        ProjectMember.objects.create(project=closed_member_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        form = PurchaseRequestForm(user=self.requester)
+
+        project_ids = list(form.fields["project"].queryset.values_list("id", flat=True))
+        self.assertIn(open_member_project.id, project_ids)
+        self.assertNotIn(closed_member_project.id, project_ids)
+        self.assertNotIn(open_nonmember_project.id, project_ids)
+
+    def test_purchase_submit_rejects_closed_project_on_server_side(self):
+        closed_project = Project.objects.create(
+            project_code="PJT-PUR-SUBMIT-CLOSED",
+            project_name="Purchase Submit Closed Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.CLOSED,
+            is_active=True,
+        )
+
+        ProjectMember.objects.create(project=closed_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        pr = PurchaseRequest.objects.create(
+            title="Submit Closed Project Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=closed_project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Closed project submit server-side check",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Server Check Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        with self.assertRaises(ValidationError):
+            pr.submit(acting_user=self.requester)
+        
+    def test_purchase_form_shows_only_open_member_projects(self):
+        open_member_project = Project.objects.create(
+            project_code="PJT-PUR-MEMBER-OPEN",
+            project_name="Purchase Open Member Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+        closed_member_project = Project.objects.create(
+            project_code="PJT-PUR-MEMBER-CLOSED",
+            project_name="Purchase Closed Member Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.CLOSED,
+            is_active=True,
+        )
+        open_nonmember_project = Project.objects.create(
+            project_code="PJT-PUR-NONMEMBER-OPEN",
+            project_name="Purchase Open Nonmember Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+
+        ProjectMember.objects.create(project=open_member_project, user=self.requester, is_active=True, added_by=self.manager)
+        ProjectMember.objects.create(project=closed_member_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        form = PurchaseRequestForm(user=self.requester)
+
+        project_ids = list(form.fields["project"].queryset.values_list("id", flat=True))
+        self.assertIn(open_member_project.id, project_ids)
+        self.assertNotIn(closed_member_project.id, project_ids)
+        self.assertNotIn(open_nonmember_project.id, project_ids)
+
+    def test_purchase_form_rejects_closed_project_even_for_member(self):
+        closed_project = Project.objects.create(
+            project_code="PJT-PUR-CLOSED",
+            project_name="Purchase Closed Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.CLOSED,
+            is_active=True,
+        )
+
+        ProjectMember.objects.create(project=closed_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Closed Project Purchase",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": closed_project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Trying to use closed project",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            user=self.requester,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("project", form.errors)
+

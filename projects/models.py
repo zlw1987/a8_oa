@@ -3,7 +3,6 @@ from django.conf import settings
 from django.db.models import Sum
 from django.utils import timezone
 
-
 from common.choices import BudgetEntryType, RequestType
 
 from decimal import Decimal

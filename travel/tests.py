@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.core.exceptions import ValidationError
 
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
@@ -17,7 +18,8 @@ from common.choices import (
     DepartmentType,
     BudgetEntryType,
 )
-from projects.models import Project, ProjectBudgetEntry
+from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus
+from travel.forms import TravelRequestForm
 from travel.models import (
     TravelRequest,
     TravelItinerary,
@@ -847,3 +849,145 @@ class TravelSmokeTest(TestCase):
         self.assertEqual(response.status_code, 404)
         tr.refresh_from_db()
         self.assertEqual(tr.attachments.count(), 0)
+
+    def test_travel_form_shows_only_open_member_projects(self):
+        open_member_project = Project.objects.create(
+            project_code="PJT-TRV-MEMBER-OPEN",
+            project_name="Travel Open Member Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+        closed_member_project = Project.objects.create(
+            project_code="PJT-TRV-MEMBER-CLOSED",
+            project_name="Travel Closed Member Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.CLOSED,
+            is_active=True,
+        )
+        open_nonmember_project = Project.objects.create(
+            project_code="PJT-TRV-NONMEMBER-OPEN",
+            project_name="Travel Open Nonmember Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+
+        ProjectMember.objects.create(project=open_member_project, user=self.requester, is_active=True, added_by=self.manager)
+        ProjectMember.objects.create(project=closed_member_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        form = TravelRequestForm(user=self.requester)
+
+        project_ids = list(form.fields["project"].queryset.values_list("id", flat=True))
+        self.assertIn(open_member_project.id, project_ids)
+        self.assertNotIn(closed_member_project.id, project_ids)
+        self.assertNotIn(open_nonmember_project.id, project_ids)
+
+    def test_travel_form_shows_only_open_member_projects(self):
+        open_member_project = Project.objects.create(
+            project_code="PJT-TRV-MEMBER-OPEN",
+            project_name="Travel Open Member Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+        closed_member_project = Project.objects.create(
+            project_code="PJT-TRV-MEMBER-CLOSED",
+            project_name="Travel Closed Member Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.CLOSED,
+            is_active=True,
+        )
+        open_nonmember_project = Project.objects.create(
+            project_code="PJT-TRV-NONMEMBER-OPEN",
+            project_name="Travel Open Nonmember Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+
+        ProjectMember.objects.create(project=open_member_project, user=self.requester, is_active=True, added_by=self.manager)
+        ProjectMember.objects.create(project=closed_member_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        form = TravelRequestForm(user=self.requester)
+
+        project_ids = list(form.fields["project"].queryset.values_list("id", flat=True))
+        self.assertIn(open_member_project.id, project_ids)
+        self.assertNotIn(closed_member_project.id, project_ids)
+        self.assertNotIn(open_nonmember_project.id, project_ids)
+
+    def test_travel_form_rejects_non_member_project(self):
+        nonmember_project = Project.objects.create(
+            project_code="PJT-TRV-NONMEMBER",
+            project_name="Travel Nonmember Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+
+        form = TravelRequestForm(
+            data={
+                "purpose": "Unauthorized Travel",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": nonmember_project.id,
+                "request_date": date.today(),
+                "start_date": date.today() + timedelta(days=3),
+                "end_date": date.today() + timedelta(days=5),
+                "origin_city": "San Jose",
+                "destination_city": "Seattle",
+                "currency": "USD",
+                "notes": "",
+            },
+            user=self.requester,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("project", form.errors)
+
+    def test_travel_form_rejects_closed_project_even_for_member(self):
+        closed_project = Project.objects.create(
+            project_code="PJT-TRV-CLOSED",
+            project_name="Travel Closed Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.CLOSED,
+            is_active=True,
+        )
+
+        ProjectMember.objects.create(project=closed_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        form = TravelRequestForm(
+            data={
+                "purpose": "Closed Travel Project",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": closed_project.id,
+                "request_date": date.today(),
+                "start_date": date.today() + timedelta(days=3),
+                "end_date": date.today() + timedelta(days=5),
+                "origin_city": "San Jose",
+                "destination_city": "Seattle",
+                "currency": "USD",
+                "notes": "",
+            },
+            user=self.requester,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("project", form.errors)

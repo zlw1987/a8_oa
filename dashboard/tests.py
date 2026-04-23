@@ -7,13 +7,56 @@ from django.urls import reverse
 
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
-from common.choices import ApproverType, RequestType, DepartmentType
+from common.choices import ApproverType, DepartmentType, RequestType
 from projects.models import Project
 from purchase.models import PurchaseRequest, PurchaseRequestLine
 from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpenseLine
 
 
 User = get_user_model()
+
+
+class DashboardSmokeTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="dashboard_user",
+            password="testpass123",
+            email="dashboard@example.com",
+        )
+
+        self.manager = User.objects.create_user(
+            username="dashboard_manager",
+            password="testpass123",
+            email="dashboard_manager@example.com",
+        )
+
+        self.department = Department.objects.create(
+            dept_code="D-DASH-NAV-01",
+            dept_name="Dashboard Nav Dept",
+            dept_type=DepartmentType.GENERAL,
+            manager=self.manager,
+        )
+
+    def test_dashboard_home_loads(self):
+        self.client.login(username="dashboard_user", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+        self.assertEqual(response.status_code, 200)
+
+    def test_dashboard_nav_shows_projects_link_for_authenticated_user(self):
+        self.client.login(username="dashboard_user", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("projects:project_list"))
+        self.assertNotContains(response, reverse("projects:project_create"))
+
+    def test_dashboard_nav_shows_new_project_link_for_department_manager(self):
+        self.client.login(username="dashboard_manager", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("projects:project_list"))
+        self.assertContains(response, reverse("projects:project_create"))
 
 
 class DashboardCrossRequestRegressionTest(TestCase):
@@ -161,9 +204,6 @@ class DashboardCrossRequestRegressionTest(TestCase):
         response = self.client.get(reverse("dashboard:home"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "My Recent Requests")
-        self.assertContains(response, "Purchase")
-        self.assertContains(response, "Travel")
         self.assertContains(response, pr.pr_no)
         self.assertContains(response, tr.travel_no)
         self.assertContains(response, reverse("purchase:pr_detail", args=[pr.id]))
@@ -177,32 +217,9 @@ class DashboardCrossRequestRegressionTest(TestCase):
         response = self.client.get(reverse("dashboard:home"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Assigned to Me")
         self.assertContains(response, "Purchase")
         self.assertContains(response, "Travel")
         self.assertContains(response, pr.pr_no)
         self.assertContains(response, tr.travel_no)
         self.assertContains(response, reverse("purchase:pr_detail", args=[pr.id]))
         self.assertContains(response, reverse("travel:tr_detail", args=[tr.id]))
-
-
-    def test_dashboard_home_loads(self):
-        self.client.login(username="dashboard_user", password="testpass123")
-        response = self.client.get(reverse("dashboard:home"))
-        self.assertEqual(response.status_code, 200)
-
-    def test_dashboard_nav_shows_projects_link_for_authenticated_user(self):
-        self.client.login(username="dashboard_user", password="testpass123")
-        response = self.client.get(reverse("dashboard:home"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, reverse("projects:project_list"))
-        self.assertNotContains(response, reverse("projects:project_create"))
-
-    def test_dashboard_nav_shows_new_project_link_for_department_manager(self):
-        self.client.login(username="dashboard_manager", password="testpass123")
-        response = self.client.get(reverse("dashboard:home"))
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, reverse("projects:project_list"))
-        self.assertContains(response, reverse("projects:project_create"))

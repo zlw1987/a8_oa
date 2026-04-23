@@ -4,13 +4,17 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.core.exceptions import ValidationError
 
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
 from common.choices import ApproverType, RequestType, DepartmentType, BudgetEntryType
-from projects.models import Project, ProjectBudgetEntry
+from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus
 from purchase.models import PurchaseRequest, PurchaseRequestLine
 from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpenseLine
+
+
+
 
 
 User = get_user_model()
@@ -401,6 +405,7 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
                 "currency": "USD",
                 "start_date": date.today(),
                 "end_date": date.today() + timedelta(days=90),
+                "status": "OPEN",
                 "is_active": "on",
                 "notes": "Created in regression test",
             },
@@ -408,6 +413,28 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(Project.objects.filter(project_code="PJT-NEW-01").exists())
+
+    def test_non_manager_cannot_create_project(self):
+        self.client.login(username="req_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_create"),
+            data={
+                "project_code": "PJT-NOPE-01",
+                "project_name": "Unauthorized Project",
+                "project_manager": self.requester.id,
+                "owning_department": self.department.id,
+                "budget_amount": "3000.00",
+                "currency": "USD",
+                "start_date": date.today(),
+                "end_date": date.today() + timedelta(days=60),
+                "status": "OPEN",
+                "is_active": "on",
+                "notes": "Should not be created",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Project.objects.filter(project_code="PJT-NOPE-01").exists())
 
     def test_project_list_shows_create_link_for_manager(self):
         self.client.login(username="mgr_project_budget", password="testpass123")
@@ -422,3 +449,133 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, reverse("projects:project_create"))
+
+    def test_project_create_auto_adds_creator_and_project_manager_as_members(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_create"),
+            data={
+                "project_code": "PJT-MBR-01",
+                "project_name": "Membership Auto Add Project",
+                "project_manager": self.requester.id,
+                "owning_department": self.department.id,
+                "budget_amount": "5000.00",
+                "currency": "USD",
+                "start_date": date.today(),
+                "end_date": date.today() + timedelta(days=90),
+                "status": "OPEN",
+                "is_active": "on",
+                "notes": "Membership auto add regression",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        project = Project.objects.get(project_code="PJT-MBR-01")
+        self.assertEqual(project.created_by, self.manager)
+        self.assertEqual(project.project_manager, self.requester)
+
+        self.assertTrue(
+            ProjectMember.objects.filter(
+                project=project,
+                user=self.manager,
+                is_active=True,
+            ).exists()
+        )
+        self.assertTrue(
+            ProjectMember.objects.filter(
+                project=project,
+                user=self.requester,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_project_create_auto_adds_creator_and_project_manager_as_members(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_create"),
+            data={
+                "project_code": "PJT-MBR-01",
+                "project_name": "Membership Auto Add Project",
+                "project_manager": self.requester.id,
+                "owning_department": self.department.id,
+                "budget_amount": "5000.00",
+                "currency": "USD",
+                "start_date": date.today(),
+                "end_date": date.today() + timedelta(days=90),
+                "status": "OPEN",
+                "is_active": "on",
+                "notes": "Membership auto add regression",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        project = Project.objects.get(project_code="PJT-MBR-01")
+        self.assertEqual(project.created_by, self.manager)
+        self.assertEqual(project.project_manager, self.requester)
+
+        self.assertTrue(
+            ProjectMember.objects.filter(
+                project=project,
+                user=self.manager,
+                is_active=True,
+            ).exists()
+        )
+        self.assertTrue(
+            ProjectMember.objects.filter(
+                project=project,
+                user=self.requester,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_non_manager_member_cannot_add_project_member(self):
+        self.project.created_by = self.manager
+        self.project.project_manager = self.manager
+        self.project.status = ProjectStatus.OPEN
+        self.project.save(update_fields=["created_by", "project_manager", "status"])
+
+        ProjectMember.objects.get_or_create(
+            project=self.project,
+            user=self.manager,
+            defaults={"is_active": True, "added_by": self.manager},
+        )
+        ProjectMember.objects.get_or_create(
+            project=self.project,
+            user=self.requester,
+            defaults={"is_active": True, "added_by": self.manager},
+        )
+
+        self.client.login(username="req_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_add_member", args=[self.project.id]),
+            data={"user": self.outsider.id},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(
+            ProjectMember.objects.filter(
+                project=self.project,
+                user=self.outsider,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_project_members_page_loads_for_manager(self):
+        self.project.created_by = self.manager
+        self.project.project_manager = self.manager
+        self.project.save(update_fields=["created_by", "project_manager"])
+
+        ProjectMember.objects.get_or_create(
+            project=self.project,
+            user=self.manager,
+            defaults={"is_active": True, "added_by": self.manager},
+        )
+
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_members", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.project.project_code)
+        self.assertContains(response, "Add User to Project")

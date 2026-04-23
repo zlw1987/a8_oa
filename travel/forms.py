@@ -36,7 +36,9 @@ class TravelRequestForm(forms.ModelForm):
         usable_projects = get_usable_projects_queryset_for_user(user) if user else Project.objects.none()
 
         if self.instance.pk and self.instance.project_id:
-            self.fields["project"].queryset = (usable_projects | Project.objects.filter(pk=self.instance.project_id)).distinct()
+            self.fields["project"].queryset = (
+                usable_projects | Project.objects.filter(pk=self.instance.project_id)
+            ).distinct()
         else:
             self.fields["project"].queryset = usable_projects
 

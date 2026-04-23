@@ -4,7 +4,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 
 from accounts.models import Department
-from .models import Project, ProjectMember
+from .models import Project
 
 
 User = get_user_model()
@@ -72,7 +72,9 @@ class ProjectMemberAddForm(forms.Form):
         if project:
             existing_ids = project.members.filter(is_active=True).values_list("user_id", flat=True)
 
-        self.fields["user"].queryset = User.objects.filter(is_active=True).exclude(id__in=existing_ids).order_by("username", "id")
+        self.fields["user"].queryset = User.objects.filter(is_active=True).exclude(
+            id__in=existing_ids
+        ).order_by("username", "id")
 
 
 class ProjectBudgetAdjustmentForm(forms.Form):
