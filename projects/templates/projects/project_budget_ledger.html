@@ -39,10 +39,17 @@
     </table>
 </div>
 
+
 <div class="summary-cards">
+
     <div class="summary-card">
         <div class="label">Budget Amount</div>
         <div class="value">{{ project.currency }} {{ budget_amount }}</div>
+    </div>
+
+    <div class="summary-card">
+        <div class="label">Adjust Total</div>
+        <div class="value">{{ project.currency }} {{ adjust_total }}</div>
     </div>
 
     <div class="summary-card">
@@ -53,6 +60,11 @@
     <div class="summary-card">
         <div class="label">Consumed Amount</div>
         <div class="value">{{ project.currency }} {{ consumed_amount }}</div>
+    </div>
+
+    <div class="summary-card">
+        <div class="label">Effective Budget Amount</div>
+        <div class="value">{{ project.currency }} {{ effective_budget_amount }}</div>
     </div>
 
     <div class="summary-card">
@@ -67,6 +79,7 @@
         <thead>
             <tr>
                 <th>Source Type</th>
+                <th>Adjusted</th>
                 <th>Reserved</th>
                 <th>Consumed</th>
                 <th>Released</th>
@@ -74,13 +87,22 @@
         </thead>
         <tbody>
             <tr>
+                <td>Project</td>
+                <td>{{ project.currency }} {{ project_adjusted }}</td>
+                <td>{{ project.currency }} 0.00</td>
+                <td>{{ project.currency }} 0.00</td>
+                <td>{{ project.currency }} 0.00</td>
+            </tr>
+            <tr>
                 <td>Purchase</td>
+                <td>{{ project.currency }} {{ purchase_adjusted }}</td>
                 <td>{{ project.currency }} {{ purchase_reserved }}</td>
                 <td>{{ project.currency }} {{ purchase_consumed }}</td>
                 <td>{{ project.currency }} {{ purchase_released }}</td>
             </tr>
             <tr>
                 <td>Travel</td>
+                <td>{{ project.currency }} {{ travel_adjusted }}</td>
                 <td>{{ project.currency }} {{ travel_reserved }}</td>
                 <td>{{ project.currency }} {{ travel_consumed }}</td>
                 <td>{{ project.currency }} {{ travel_released }}</td>
@@ -88,7 +110,25 @@
         </tbody>
     </table>
 </div>
-
+<div class="card">
+    <h2>Ledger Meaning</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Entry Type</th>
+                <th>Meaning</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for code, meaning in ledger_legend %}
+            <tr>
+                <td>{{ code }}</td>
+                <td>{{ meaning }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 <div class="card">
     <h2>Budget Ledger</h2>
     <table>
@@ -97,9 +137,10 @@
                 <th>Created At</th>
                 <th>Entry Type</th>
                 <th>Source Type</th>
-                <th>Source No</th>
+                <th>Source</th>
                 <th>Amount</th>
                 <th>Created By</th>
+                <th>Meaning</th>
                 <th>Notes</th>
             </tr>
         </thead>
@@ -113,16 +154,33 @@
                     {% if entry.source_detail_url %}
                     <a href="{{ entry.source_detail_url }}">{{ entry.source_no }}</a>
                     {% else %}
-                    {{ entry.source_no }}
+                    {{ entry.source_no|default:"-" }}
+                    {% endif %}
+                    {% if entry.source_summary and entry.source_summary != "-" %}
+                    <br>
+                    <span class="muted">{{ entry.source_summary }}</span>
                     {% endif %}
                 </td>
-                <td>{{ project.currency }} {{ entry.amount }}</td>
+                <td>
+                    {{ project.currency }} {{ entry.amount }}
+                    {% if entry.amount_direction == "hold" %}
+                    <br><span class="muted">Reserved from available budget</span>
+                    {% elif entry.amount_direction == "use" %}
+                    <br><span class="muted">Converted into actual spending</span>
+                    {% elif entry.amount_direction == "return" %}
+                    <br><span class="muted">Returned to available budget</span>
+                    {% elif entry.amount_direction == "adjust" %}
+                    <br><span class="muted">Manual budget adjustment</span>
+                    {% endif %}
+                </td>
                 <td>{{ entry.created_by|default:"-" }}</td>
-                <td>{{ entry.notes }}</td>
+
+                <td>{{ entry.entry_type_explained }}</td>
+                <td>{{ entry.notes|default:"-" }}</td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="7">No budget entries.</td>
+                <td colspan="8">No budget entries.</td>
             </tr>
             {% endfor %}
         </tbody>

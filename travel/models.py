@@ -181,79 +181,36 @@ class TravelRequest(models.Model):
 
     @classmethod
     def get_visible_queryset(cls, user):
-        if not getattr(user, "is_authenticated", False):
-            return cls.objects.none()
+        from .access import get_visible_travel_queryset_for_user
+        return get_visible_travel_queryset_for_user(user)
 
-        if getattr(user, "is_superuser", False):
-            return cls.objects.all()
-
-        return cls.objects.filter(requester=user).distinct()
+    def can_user_view(self, user):
+        from .access import user_can_view_travel
+        return user_can_view_travel(user, self)
 
     def can_user_edit(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        if getattr(user, "is_superuser", False):
-            return self.status in [TravelRequestStatus.DRAFT, TravelRequestStatus.RETURNED]
-
-        return (
-            self.requester_id == user.id
-            and self.status in [TravelRequestStatus.DRAFT, TravelRequestStatus.RETURNED]
-        )
+        from .access import user_can_edit_travel
+        return user_can_edit_travel(user, self)
 
     def can_user_submit(self, user):
-        return self.can_user_edit(user)
+        from .access import user_can_submit_travel
+        return user_can_submit_travel(user, self)
 
     def can_user_cancel(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        if getattr(user, "is_superuser", False):
-            return self.status in [TravelRequestStatus.PENDING_APPROVAL, TravelRequestStatus.APPROVED]
-
-        return (
-            self.requester_id == user.id
-            and self.status in [TravelRequestStatus.PENDING_APPROVAL, TravelRequestStatus.APPROVED]
-        )
+        from .access import user_can_cancel_travel
+        return user_can_cancel_travel(user, self)
 
     def can_user_close(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        if getattr(user, "is_superuser", False):
-            return self.status in [
-                TravelRequestStatus.APPROVED,
-                TravelRequestStatus.EXPENSE_PENDING,
-                TravelRequestStatus.EXPENSE_SUBMITTED,
-            ]
-
-        return (
-            self.requester_id == user.id
-            and self.status in [
-                TravelRequestStatus.APPROVED,
-                TravelRequestStatus.EXPENSE_PENDING,
-                TravelRequestStatus.EXPENSE_SUBMITTED,
-            ]
-        )
+        from .access import user_can_close_travel
+        return user_can_close_travel(user, self)
 
     def can_user_record_actual_expense(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        allowed_statuses = [
-            TravelRequestStatus.APPROVED,
-            TravelRequestStatus.IN_TRIP,
-            TravelRequestStatus.EXPENSE_PENDING,
-            TravelRequestStatus.EXPENSE_SUBMITTED,
-        ]
-
-        if getattr(user, "is_superuser", False):
-            return self.status in allowed_statuses
-
-        return self.requester_id == user.id and self.status in allowed_statuses
+        from .access import user_can_record_actual_expense_travel
+        return user_can_record_actual_expense_travel(user, self)
 
     def can_user_manage_attachments(self, user):
-        return self.can_user_edit(user)
+        from .access import user_can_manage_travel_attachment
+        return user_can_manage_travel_attachment(user, self)
 
     def resolve_fixed_step_assignee(self, step):
         # 1. If the rule step directly specifies a user, use that first.
@@ -434,6 +391,8 @@ class TravelRequest(models.Model):
         total = self.actual_expense_lines.aggregate(total=Sum("actual_amount"))["total"]
         return total or Decimal("0.00")
 
+
+
     @transaction.atomic
     def record_actual_expense(
             self,
@@ -448,6 +407,18 @@ class TravelRequest(models.Model):
             expense_location="",
             notes="",
         ):
+        allowed_statuses = [
+            TravelRequestStatus.APPROVED,
+            TravelRequestStatus.IN_TRIP,
+            TravelRequestStatus.EXPENSE_PENDING,
+            TravelRequestStatus.EXPENSE_SUBMITTED,
+        ]
+
+        if self.status not in allowed_statuses:
+            raise ValidationError(
+                "Actual expenses can only be recorded when the travel request is "
+                "Approved, In Trip, Expense Pending, or Expense Submitted."
+            )
         next_line_no = (
             self.actual_expense_lines.aggregate(max_line_no=Max("line_no"))["max_line_no"] or 0
         ) + 1

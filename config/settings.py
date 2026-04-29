@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'purchase',
     'dashboard',
     'travel',
+    'common',
 ]
 
 MIDDLEWARE = [

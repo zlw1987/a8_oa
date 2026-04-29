@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django import forms
 from django.forms import BaseInlineFormSet, inlineformset_factory
 
@@ -30,13 +31,16 @@ class PurchaseRequestForm(forms.ModelForm):
                 self.fields["request_department"].initial = user.primary_department
 
         usable_projects = get_usable_projects_queryset_for_user(user) if user else Project.objects.none()
+        usable_project_ids = usable_projects.values_list("pk", flat=True)
 
         if self.instance.pk and self.instance.project_id:
-            self.fields["project"].queryset = (
-                usable_projects | Project.objects.filter(pk=self.instance.project_id)
+            self.fields["project"].queryset = Project.objects.filter(
+                Q(pk__in=usable_project_ids) | Q(pk=self.instance.project_id)
             ).distinct()
         else:
-            self.fields["project"].queryset = usable_projects
+            self.fields["project"].queryset = Project.objects.filter(
+                pk__in=usable_project_ids
+            )
 
     def clean_project(self):
         project = self.cleaned_data.get("project")

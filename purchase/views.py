@@ -5,7 +5,6 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -22,9 +21,40 @@ from .forms import (
 from .models import (
     PurchaseRequest,
     PurchaseRequestAttachment,
-    PurchaseRequestContentAuditActionType,
 )
-
+from purchase.access import (
+    user_can_view_purchase,
+    user_can_edit_purchase,
+    user_can_submit_purchase,
+    user_can_cancel_purchase,
+    enforce_purchase_permission,
+    user_can_manage_attachment,
+    user_can_close_purchase,
+    user_can_record_actual_spend,
+)
+from approvals.access import (
+    user_can_claim_task,
+    user_can_release_task,
+    user_can_approve_task,
+    user_can_return_task,
+    user_can_reject_task,
+    enforce_approval_permission,
+)
+from .presentation import (
+    decorate_purchase_list_item,
+    build_purchase_detail_ui_flags,
+)
+from approvals.presentation import build_request_workflow_context
+from .audit import (
+    snapshot_request_header,
+    snapshot_request_lines,
+    log_create_content_audit,
+    log_edit_content_audit,
+)
+from .services import (
+    create_purchase_request_from_forms,
+    update_purchase_request_from_forms,
+)
 
 def _get_request_total_from_formset(formset):
     total = Decimal("0.00")
@@ -78,183 +108,6 @@ def _build_querystring(request_get, exclude_keys=None):
 
     return params.urlencode()
 
-
-def _get_request_status_badge_class(status):
-    mapping = {
-        RequestStatus.DRAFT: "badge-neutral",
-        RequestStatus.SUBMITTED: "badge-warning",
-        RequestStatus.PENDING: "badge-warning",
-        RequestStatus.APPROVED: "badge-success",
-        RequestStatus.REJECTED: "badge-danger",
-        RequestStatus.RETURNED: "badge-info",
-        RequestStatus.CANCELLED: "badge-dark",
-        RequestStatus.CLOSED: "badge-dark",
-    }
-    return mapping.get(status, "badge-neutral")
-
-def _stringify_audit_value(value):
-    if value is None:
-        return ""
-
-    if isinstance(value, Decimal):
-        return format(value, "f")
-
-    return str(value)
-
-
-HEADER_AUDIT_FIELDS = [
-    ("title", "Title"),
-    ("request_department", "Department"),
-    ("project", "Project"),
-    ("request_date", "Request Date"),
-    ("needed_by_date", "Needed By"),
-    ("currency", "Currency"),
-    ("justification", "Justification"),
-    ("vendor_suggestion", "Vendor Suggestion"),
-    ("delivery_location", "Delivery Location"),
-    ("notes", "Notes"),
-]
-
-
-LINE_AUDIT_FIELDS = [
-    ("item_name", "Item Name"),
-    ("item_description", "Description"),
-    ("quantity", "Quantity"),
-    ("uom", "UOM"),
-    ("unit_price", "Unit Price"),
-    ("notes", "Notes"),
-]
-
-
-def _snapshot_request_header(purchase_request):
-    return {
-        "title": purchase_request.title or "",
-        "request_department": str(purchase_request.request_department) if purchase_request.request_department else "",
-        "project": str(purchase_request.project) if purchase_request.project else "",
-        "request_date": _stringify_audit_value(purchase_request.request_date),
-        "needed_by_date": _stringify_audit_value(purchase_request.needed_by_date),
-        "currency": purchase_request.currency or "",
-        "justification": purchase_request.justification or "",
-        "vendor_suggestion": purchase_request.vendor_suggestion or "",
-        "delivery_location": purchase_request.delivery_location or "",
-        "notes": purchase_request.notes or "",
-    }
-
-
-def _snapshot_request_lines(purchase_request):
-    data = {}
-
-    for line in purchase_request.lines.all().order_by("line_no", "id"):
-        data[line.id] = {
-            "line_no": line.line_no,
-            "item_name": line.item_name or "",
-            "item_description": line.item_description or "",
-            "quantity": _stringify_audit_value(line.quantity),
-            "uom": line.get_uom_display() if hasattr(line, "get_uom_display") else (line.uom or ""),
-            "unit_price": _stringify_audit_value(line.unit_price),
-            "notes": line.notes or "",
-        }
-
-    return data
-
-
-def _format_line_summary(line_data):
-    return (
-        f"{line_data.get('item_name', '')} / "
-        f"Qty {line_data.get('quantity', '')} / "
-        f"UOM {line_data.get('uom', '')} / "
-        f"Unit Price {line_data.get('unit_price', '')}"
-    )
-
-
-def _log_create_content_audit(purchase_request, acting_user):
-    purchase_request._add_content_audit(
-        action_type=PurchaseRequestContentAuditActionType.HEADER_CREATED,
-        changed_by=acting_user,
-        notes="Purchase request created.",
-    )
-
-    for line in purchase_request.lines.all().order_by("line_no", "id"):
-        line_snapshot = {
-            "line_no": line.line_no,
-            "item_name": line.item_name or "",
-            "item_description": line.item_description or "",
-            "quantity": _stringify_audit_value(line.quantity),
-            "uom": line.get_uom_display() if hasattr(line, "get_uom_display") else (line.uom or ""),
-            "unit_price": _stringify_audit_value(line.unit_price),
-            "notes": line.notes or "",
-        }
-
-        purchase_request._add_content_audit(
-            action_type=PurchaseRequestContentAuditActionType.LINE_ADDED,
-            changed_by=acting_user,
-            line_no=line.line_no,
-            new_value=_format_line_summary(line_snapshot),
-            notes="Initial line added during create.",
-        )
-
-
-def _log_edit_content_audit(purchase_request, old_header, old_lines, acting_user):
-    new_header = _snapshot_request_header(purchase_request)
-    new_lines = _snapshot_request_lines(purchase_request)
-
-    for field_key, field_label in HEADER_AUDIT_FIELDS:
-        old_value = old_header.get(field_key, "")
-        new_value = new_header.get(field_key, "")
-
-        if old_value != new_value:
-            purchase_request._add_content_audit(
-                action_type=PurchaseRequestContentAuditActionType.HEADER_UPDATED,
-                changed_by=acting_user,
-                field_name=field_label,
-                old_value=old_value,
-                new_value=new_value,
-                notes=f"Header field '{field_label}' updated.",
-            )
-
-    old_ids = set(old_lines.keys())
-    new_ids = set(new_lines.keys())
-
-    for deleted_id in sorted(old_ids - new_ids):
-        old_line = old_lines[deleted_id]
-        purchase_request._add_content_audit(
-            action_type=PurchaseRequestContentAuditActionType.LINE_DELETED,
-            changed_by=acting_user,
-            line_no=old_line.get("line_no"),
-            old_value=_format_line_summary(old_line),
-            notes="Line deleted.",
-        )
-
-    for added_id in sorted(new_ids - old_ids):
-        new_line = new_lines[added_id]
-        purchase_request._add_content_audit(
-            action_type=PurchaseRequestContentAuditActionType.LINE_ADDED,
-            changed_by=acting_user,
-            line_no=new_line.get("line_no"),
-            new_value=_format_line_summary(new_line),
-            notes="Line added.",
-        )
-
-    for common_id in sorted(old_ids & new_ids):
-        old_line = old_lines[common_id]
-        new_line = new_lines[common_id]
-        line_no = new_line.get("line_no") or old_line.get("line_no")
-
-        for field_key, field_label in LINE_AUDIT_FIELDS:
-            old_value = old_line.get(field_key, "")
-            new_value = new_line.get(field_key, "")
-
-            if old_value != new_value:
-                purchase_request._add_content_audit(
-                    action_type=PurchaseRequestContentAuditActionType.LINE_UPDATED,
-                    changed_by=acting_user,
-                    field_name=field_label,
-                    line_no=line_no,
-                    old_value=old_value,
-                    new_value=new_value,
-                    notes=f"Line {line_no} field '{field_label}' updated.",
-                )
-
 @login_required
 def pr_list(request):
     base_queryset = (
@@ -295,11 +148,7 @@ def pr_list(request):
     page_obj = paginator.get_page(request.GET.get("page"))
 
     for pr in page_obj.object_list:
-        pr.current_step = pr.get_current_step_name()
-        pr.current_approver = pr.get_current_approver()
-        pr.approval_progress = pr.get_approval_progress_text()
-        pr.can_edit = pr.can_user_edit(request.user)
-        pr.status_badge_class = _get_request_status_badge_class(pr.status)
+        decorate_purchase_list_item(pr, request.user, RequestStatus)
 
     context = {
         "purchase_requests": page_obj.object_list,
@@ -320,6 +169,7 @@ def pr_detail(request, pk):
         PurchaseRequest.get_visible_queryset(request.user),
         pk=pk,
     )
+    enforce_purchase_permission(user_can_view_purchase(request.user, purchase_request))
 
     lines = purchase_request.lines.all().order_by("line_no")
     attachments = purchase_request.attachments.all()
@@ -327,84 +177,70 @@ def pr_detail(request, pk):
     content_audits = purchase_request.content_audits.all()
     approval_tasks = purchase_request.approval_tasks.all().order_by("step_no")
     histories = purchase_request.history_entries.all()
-    current_task = purchase_request.get_current_task()
+    workflow_ui = build_request_workflow_context(purchase_request, request.user)
     budget_summary = _build_budget_summary(
         purchase_request.project,
         purchase_request.get_lines_total(),
     )
 
-    can_edit = purchase_request.can_user_edit(request.user)
-    attachment_form = PurchaseRequestAttachmentForm() if can_edit else None
-    can_submit = purchase_request.can_user_submit(request.user)
-    can_cancel = purchase_request.can_user_cancel(request.user)
-    can_close_purchase = purchase_request.can_user_close_purchase(request.user)
+    workflow_ui = build_request_workflow_context(purchase_request, request.user)
+    budget_summary = _build_budget_summary(
+        purchase_request.project,
+        purchase_request.get_lines_total(),
+    )
 
-    can_record_actual_spend = purchase_request.can_user_record_actual_spend(request.user)
-    actual_spend_form = PurchaseActualSpendForm(
-        initial={"spend_date": date.today()}
-    ) if can_record_actual_spend else None
+    ui_flags = build_purchase_detail_ui_flags(
+        purchase_request,
+        request.user,
+        workflow_ui["current_task"],
+    )
 
-    can_claim_current_task = False
-    can_release_current_task = False
-    can_approve_current_task = False
-    can_return_current_task = False
-    can_reject_current_task = False
+    attachment_form = (
+        PurchaseRequestAttachmentForm()
+        if ui_flags["show_attachment_form"]
+        else None
+    )
 
-    if current_task:
-        can_claim_current_task = (
-            current_task.status == ApprovalTaskStatus.POOL
-            and current_task.can_user_claim(request.user)
-        )
-
-        can_release_current_task = (
-            current_task.status == ApprovalTaskStatus.PENDING
-            and current_task.assigned_user_id == request.user.id
-            and current_task.candidates.exists()
-        )
-
-        can_approve_current_task = (
-            current_task.status == ApprovalTaskStatus.PENDING
-            and current_task.assigned_user_id == request.user.id
-        )
-
-        can_return_current_task = (
-            current_task.status == ApprovalTaskStatus.PENDING
-            and current_task.assigned_user_id == request.user.id
-        )
-
-        can_reject_current_task = (
-            current_task.status == ApprovalTaskStatus.PENDING
-            and current_task.assigned_user_id == request.user.id
-        )
+    actual_spend_form = (
+        PurchaseActualSpendForm(initial=ui_flags["actual_spend_initial"])
+        if ui_flags["show_actual_spend_form"]
+        else None
+    )
 
     context = {
         "purchase_request": purchase_request,
         "lines": lines,
         "approval_tasks": approval_tasks,
         "histories": histories,
-        "current_task": current_task,
-        "current_step": purchase_request.get_current_step_name(),
-        "current_approver": purchase_request.get_current_approver(),
-        "approval_progress": purchase_request.get_approval_progress_text(),
+
+        "current_task": workflow_ui["current_task"],
+        "current_step": workflow_ui["current_step"],
+        "current_approver": workflow_ui["current_approver"],
+        "approval_progress": workflow_ui["approval_progress"],
+        "can_claim_current_task": workflow_ui["can_claim_current_task"],
+        "can_release_current_task": workflow_ui["can_release_current_task"],
+        "can_approve_current_task": workflow_ui["can_approve_current_task"],
+        "can_return_current_task": workflow_ui["can_return_current_task"],
+        "can_reject_current_task": workflow_ui["can_reject_current_task"],
+
         "budget_summary": budget_summary,
-        "can_edit": can_edit,
-        "can_submit": can_submit,
-        "can_cancel": can_cancel,
-        "can_claim_current_task": can_claim_current_task,
-        "can_release_current_task": can_release_current_task,
-        "can_approve_current_task": can_approve_current_task,
-        "can_return_current_task": can_return_current_task,
-        "can_reject_current_task": can_reject_current_task,
+
+        "can_edit": ui_flags["can_edit"],
+        "can_submit": ui_flags["can_submit"],
+        "can_cancel": ui_flags["can_cancel"],
+
+        "can_manage_attachments": ui_flags["can_manage_attachments"],
+        "can_record_actual_spend": ui_flags["can_record_actual_spend"],
+        "can_close_purchase": ui_flags["can_close_purchase"],
+
         "content_audits":content_audits,
         "attachments": attachments,
         "attachment_form": attachment_form,
-        "can_manage_attachments": can_edit,
         "actual_spend_entries": actual_spend_entries,
         "actual_spent_total": purchase_request.get_actual_spent_total(),
-        "reserved_remaining": purchase_request.get_reserved_remaining_amount(),
-        "can_record_actual_spend": can_record_actual_spend,
         "actual_spend_form": actual_spend_form,
-        "can_close_purchase": can_close_purchase,
+        "reserved_remaining": purchase_request.get_reserved_remaining_amount(),
+        "current_task_assignment_label": workflow_ui["current_task_assignment_label"],
     }
     return render(request, "purchase/pr_detail.html", context)
 
@@ -426,30 +262,17 @@ def pr_create(request):
 
         if form_valid and formset_valid:
             try:
-                with transaction.atomic():
-                    purchase_request = form.save(commit=False)
+                purchase_request = create_purchase_request_from_forms(
+                    form=form,
+                    formset=formset,
+                    acting_user=request.user,
+                    action=action,
+                )
 
-                    if not request.user.is_superuser:
-                        purchase_request.requester = request.user
-
-                    purchase_request.status = RequestStatus.DRAFT
-                    purchase_request.estimated_total = 0
-                    purchase_request.matched_rule = None
-                    purchase_request.save()
-
-                    formset.instance = purchase_request
-                    formset.save()
-
-                    purchase_request.estimated_total = purchase_request.get_lines_total()
-                    purchase_request.save(update_fields=["estimated_total"])
-
-                    _log_create_content_audit(purchase_request, request.user)
-
-                    if action == "submit":
-                        purchase_request.submit(acting_user=request.user)
-                        messages.success(request, f"{purchase_request.pr_no} submitted successfully.")
-                    else:
-                        messages.success(request, f"{purchase_request.pr_no} saved as draft.")
+                if action == "submit":
+                    messages.success(request, f"{purchase_request.pr_no} submitted successfully.")
+                else:
+                    messages.success(request, f"{purchase_request.pr_no} saved as draft.")
 
                 return redirect("purchase:pr_detail", pk=purchase_request.pk)
 
@@ -482,7 +305,7 @@ def pr_edit(request, pk):
         pk=pk,
     )
 
-    if not purchase_request.can_user_edit(request.user):
+    if not user_can_edit_purchase(request.user, purchase_request):
         messages.error(
             request,
             f"{purchase_request.pr_no} cannot be edited by you in its current status."
@@ -492,8 +315,8 @@ def pr_edit(request, pk):
     if request.method == "POST":
         action = request.POST.get("action", "draft")
 
-        old_header_snapshot = _snapshot_request_header(purchase_request)
-        old_line_snapshot = _snapshot_request_lines(purchase_request)
+        old_header_snapshot = snapshot_request_header(purchase_request)
+        old_line_snapshot = snapshot_request_lines(purchase_request)
 
         form = PurchaseRequestForm(request.POST, instance=purchase_request, user=request.user)
         formset = PurchaseRequestLineEditFormSet(
@@ -515,32 +338,18 @@ def pr_edit(request, pk):
 
         if form_valid and formset_valid:
             try:
-                with transaction.atomic():
-                    purchase_request = form.save(commit=False)
+                purchase_request = update_purchase_request_from_forms(
+                    purchase_request=purchase_request,
+                    form=form,
+                    formset=formset,
+                    acting_user=request.user,
+                    action=action,
+                )
 
-                    if not request.user.is_superuser:
-                        purchase_request.requester = request.user
-
-                    purchase_request.save()
-
-                    formset.instance = purchase_request
-                    formset.save()
-
-                    purchase_request.estimated_total = purchase_request.get_lines_total()
-                    purchase_request.save(update_fields=["estimated_total"])
-
-                    _log_edit_content_audit(
-                        purchase_request,
-                        old_header_snapshot,
-                        old_line_snapshot,
-                        request.user,
-                    )
-
-                    if action == "submit":
-                        purchase_request.submit(acting_user=request.user)
-                        messages.success(request, f"{purchase_request.pr_no} updated and submitted successfully.")
-                    else:
-                        messages.success(request, f"{purchase_request.pr_no} updated successfully.")
+                if action == "submit":
+                    messages.success(request, f"{purchase_request.pr_no} updated and submitted successfully.")
+                else:
+                    messages.success(request, f"{purchase_request.pr_no} updated successfully.")
 
                 return redirect("purchase:pr_detail", pk=purchase_request.pk)
 
@@ -576,8 +385,9 @@ def pr_upload_attachment(request, pk):
         pk=pk,
     )
 
-    if not purchase_request.can_user_edit(request.user):
-        raise PermissionDenied("You do not have permission to upload attachments for this purchase request.")
+    enforce_purchase_permission(
+        user_can_manage_attachment(request.user, purchase_request)
+    )
 
     form = PurchaseRequestAttachmentForm(request.POST, request.FILES)
 
@@ -603,8 +413,9 @@ def pr_delete_attachment(request, pk, attachment_id):
         pk=pk,
     )
 
-    if not purchase_request.can_user_edit(request.user):
-        raise PermissionDenied("You do not have permission to delete attachments for this purchase request.")
+    enforce_purchase_permission(
+        user_can_manage_attachment(request.user, purchase_request)
+    )
 
     attachment = get_object_or_404(
         PurchaseRequestAttachment,
@@ -626,8 +437,9 @@ def pr_close(request, pk):
         pk=pk,
     )
 
-    if not purchase_request.can_user_close_purchase(request.user):
-        raise PermissionDenied("You do not have permission to close this purchase request.")
+    enforce_purchase_permission(
+        user_can_close_purchase(request.user, purchase_request)
+    )
 
     comment = request.POST.get("comment", "").strip()
 
@@ -654,8 +466,9 @@ def pr_record_actual_spend(request, pk):
         pk=pk,
     )
 
-    if not purchase_request.can_user_record_actual_spend(request.user):
-        raise PermissionDenied("You do not have permission to record actual spend for this purchase request.")
+    enforce_purchase_permission(
+        user_can_record_actual_spend(request.user, purchase_request)
+    )
 
     form = PurchaseActualSpendForm(request.POST)
 
@@ -692,8 +505,9 @@ def pr_submit(request, pk):
         pk=pk,
     )
 
-    if not purchase_request.can_user_submit(request.user):
-        raise PermissionDenied("You do not have permission to submit this purchase request.")
+    enforce_purchase_permission(
+        user_can_submit_purchase(request.user, purchase_request)
+    )
 
     try:
         purchase_request.submit(acting_user=request.user)
@@ -713,8 +527,9 @@ def pr_cancel(request, pk):
         pk=pk,
     )
 
-    if not purchase_request.can_user_cancel(request.user):
-        raise PermissionDenied("You do not have permission to cancel this purchase request.")
+    enforce_purchase_permission(
+        user_can_cancel_purchase(request.user, purchase_request)
+    )
 
     try:
         purchase_request.cancel(acting_user=request.user)
@@ -736,6 +551,7 @@ def task_claim(request, pk, task_id):
     task = get_object_or_404(ApprovalTask, pk=task_id, purchase_request=purchase_request)
 
     try:
+        enforce_approval_permission(user_can_claim_task(request.user, task))
         task.claim(request.user)
         messages.success(request, f"Task '{task.step_name}' claimed successfully.")
     except ValidationError as exc:
@@ -755,6 +571,7 @@ def task_release(request, pk, task_id):
     task = get_object_or_404(ApprovalTask, pk=task_id, purchase_request=purchase_request)
 
     try:
+        enforce_approval_permission(user_can_release_task(request.user, task))
         task.release_to_pool(request.user)
         messages.success(request, f"Task '{task.step_name}' released back to pool.")
     except ValidationError as exc:
@@ -775,6 +592,7 @@ def task_approve(request, pk, task_id):
     comment = request.POST.get("comment", "").strip()
 
     try:
+        enforce_approval_permission(user_can_approve_task(request.user, task))
         task.approve(request.user, comment=comment)
         messages.success(request, f"Task '{task.step_name}' approved successfully.")
     except ValidationError as exc:
@@ -795,6 +613,7 @@ def task_return(request, pk, task_id):
     comment = request.POST.get("comment", "").strip()
 
     try:
+        enforce_approval_permission(user_can_return_task(request.user, task))
         task.return_to_requester(request.user, comment=comment)
         messages.success(request, f"Task '{task.step_name}' returned to requester successfully.")
     except ValidationError as exc:
@@ -815,6 +634,7 @@ def task_reject(request, pk, task_id):
     comment = request.POST.get("comment", "").strip()
 
     try:
+        enforce_approval_permission(user_can_reject_task(request.user, task))
         task.reject(request.user, comment=comment)
         messages.success(request, f"Task '{task.step_name}' rejected successfully.")
     except ValidationError as exc:

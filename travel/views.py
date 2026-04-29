@@ -3,7 +3,6 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
-from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -21,7 +20,26 @@ from .models import (
     TravelRequestAttachment,
     TravelRequestContentAuditActionType,
 )
+from travel.access import (
+    user_can_view_travel,
+    user_can_edit_travel,
+    user_can_submit_travel,
+    user_can_cancel_travel,
+    user_can_close_travel,
+    user_can_record_actual_expense_travel,
+    user_can_manage_travel_attachment,
+    enforce_travel_permission,
+)
+from approvals.presentation import build_request_workflow_context
 
+from .presentation import (
+    decorate_travel_list_item,
+    build_travel_detail_ui_flags,
+)
+from .services import (
+    create_travel_request_from_forms,
+    update_travel_request_from_forms,
+)
 
 def _get_estimated_total_from_formset(formset):
     total = Decimal("0.00")
@@ -43,289 +61,6 @@ def _get_estimated_total_from_formset(formset):
 
     return total
 
-def _stringify_audit_value(value):
-    if value is None:
-        return ""
-    if isinstance(value, Decimal):
-        return format(value, "f")
-    return str(value)
-
-
-TRAVEL_HEADER_AUDIT_FIELDS = [
-    ("purpose", "Purpose"),
-    ("request_department", "Department"),
-    ("project", "Project"),
-    ("request_date", "Request Date"),
-    ("start_date", "Start Date"),
-    ("end_date", "End Date"),
-    ("origin_city", "Origin City"),
-    ("destination_city", "Destination City"),
-    ("currency", "Currency"),
-    ("notes", "Notes"),
-]
-
-
-TRAVEL_ITINERARY_AUDIT_FIELDS = [
-    ("trip_date", "Trip Date"),
-    ("from_city", "From City"),
-    ("to_city", "To City"),
-    ("transport_type", "Transport Type"),
-    ("departure_time", "Departure Time"),
-    ("arrival_time", "Arrival Time"),
-    ("notes", "Notes"),
-]
-
-
-TRAVEL_EXPENSE_AUDIT_FIELDS = [
-    ("expense_type", "Expense Type"),
-    ("location_mode", "Location Mode"),
-    ("expense_date", "Expense Date"),
-    ("estimated_amount", "Estimated Amount"),
-    ("currency", "Currency"),
-    ("from_location", "From Location"),
-    ("to_location", "To Location"),
-    ("departure_dt", "Departure"),
-    ("arrival_dt", "Arrival"),
-    ("expense_location", "Expense Location"),
-    ("checkin_date", "Check-in Date"),
-    ("checkout_date", "Check-out Date"),
-    ("nights", "Nights"),
-    ("itinerary_line_no", "Itinerary Ref"),
-    ("exception_reason", "Exception Reason"),
-    ("notes", "Notes"),
-]
-
-
-def _snapshot_travel_header(travel_request):
-    return {
-        "purpose": travel_request.purpose or "",
-        "request_department": str(travel_request.request_department) if travel_request.request_department else "",
-        "project": str(travel_request.project) if travel_request.project else "",
-        "request_date": _stringify_audit_value(travel_request.request_date),
-        "start_date": _stringify_audit_value(travel_request.start_date),
-        "end_date": _stringify_audit_value(travel_request.end_date),
-        "origin_city": travel_request.origin_city or "",
-        "destination_city": travel_request.destination_city or "",
-        "currency": travel_request.currency or "",
-        "notes": travel_request.notes or "",
-    }
-
-
-def _snapshot_travel_itineraries(travel_request):
-    data = {}
-
-    for line in travel_request.itineraries.all().order_by("line_no", "id"):
-        data[line.id] = {
-            "line_no": line.line_no,
-            "trip_date": _stringify_audit_value(line.trip_date),
-            "from_city": line.from_city or "",
-            "to_city": line.to_city or "",
-            "transport_type": line.get_transport_type_display() if hasattr(line, "get_transport_type_display") else (line.transport_type or ""),
-            "departure_time": _stringify_audit_value(line.departure_time),
-            "arrival_time": _stringify_audit_value(line.arrival_time),
-            "notes": line.notes or "",
-        }
-
-    return data
-
-
-def _snapshot_travel_expenses(travel_request):
-    data = {}
-
-    for line in travel_request.estimated_expense_lines.all().order_by("line_no", "id"):
-        data[line.id] = {
-            "line_no": line.line_no,
-            "expense_type": line.get_expense_type_display() if hasattr(line, "get_expense_type_display") else (line.expense_type or ""),
-            "location_mode": line.get_location_mode_display() if hasattr(line, "get_location_mode_display") else (line.location_mode or ""),
-            "expense_date": _stringify_audit_value(line.expense_date),
-            "estimated_amount": _stringify_audit_value(line.estimated_amount),
-            "currency": line.currency or "",
-            "from_location": line.from_location or "",
-            "to_location": line.to_location or "",
-            "departure_dt": _stringify_audit_value(line.departure_dt),
-            "arrival_dt": _stringify_audit_value(line.arrival_dt),
-            "expense_location": line.expense_location or "",
-            "checkin_date": _stringify_audit_value(line.checkin_date),
-            "checkout_date": _stringify_audit_value(line.checkout_date),
-            "nights": _stringify_audit_value(line.nights),
-            "itinerary_line_no": _stringify_audit_value(line.itinerary_line_no),
-            "exception_reason": line.exception_reason or "",
-            "notes": line.notes or "",
-        }
-
-    return data
-
-
-def _format_itinerary_summary(line_data):
-    return (
-        f"{line_data.get('trip_date', '')} / "
-        f"{line_data.get('from_city', '')} -> {line_data.get('to_city', '')} / "
-        f"{line_data.get('transport_type', '')}"
-    )
-
-
-def _format_expense_summary(line_data):
-    return (
-        f"{line_data.get('expense_type', '')} / "
-        f"{line_data.get('currency', '')} {line_data.get('estimated_amount', '')} / "
-        f"{line_data.get('location_mode', '')}"
-    )
-
-
-def _log_travel_create_content_audit(travel_request, acting_user):
-    travel_request._add_content_audit(
-        action_type=TravelRequestContentAuditActionType.HEADER_CREATED,
-        changed_by=acting_user,
-        section="HEADER",
-        notes="Travel request created.",
-    )
-
-    for line in travel_request.itineraries.all().order_by("line_no", "id"):
-        snapshot = {
-            "line_no": line.line_no,
-            "trip_date": _stringify_audit_value(line.trip_date),
-            "from_city": line.from_city or "",
-            "to_city": line.to_city or "",
-            "transport_type": line.get_transport_type_display() if hasattr(line, "get_transport_type_display") else (line.transport_type or ""),
-        }
-
-        travel_request._add_content_audit(
-            action_type=TravelRequestContentAuditActionType.ITINERARY_ADDED,
-            changed_by=acting_user,
-            section="ITINERARY",
-            line_no=line.line_no,
-            new_value=_format_itinerary_summary(snapshot),
-            notes="Initial itinerary line added during create.",
-        )
-
-    for line in travel_request.estimated_expense_lines.all().order_by("line_no", "id"):
-        snapshot = {
-            "line_no": line.line_no,
-            "expense_type": line.get_expense_type_display() if hasattr(line, "get_expense_type_display") else (line.expense_type or ""),
-            "currency": line.currency or "",
-            "estimated_amount": _stringify_audit_value(line.estimated_amount),
-            "location_mode": line.get_location_mode_display() if hasattr(line, "get_location_mode_display") else (line.location_mode or ""),
-        }
-
-        travel_request._add_content_audit(
-            action_type=TravelRequestContentAuditActionType.EXPENSE_ADDED,
-            changed_by=acting_user,
-            section="EXPENSE",
-            line_no=line.line_no,
-            new_value=_format_expense_summary(snapshot),
-            notes="Initial estimated expense line added during create.",
-        )
-
-
-def _log_travel_edit_content_audit(travel_request, old_header, old_itineraries, old_expenses, acting_user):
-    new_header = _snapshot_travel_header(travel_request)
-    new_itineraries = _snapshot_travel_itineraries(travel_request)
-    new_expenses = _snapshot_travel_expenses(travel_request)
-
-    for field_key, field_label in TRAVEL_HEADER_AUDIT_FIELDS:
-        old_value = old_header.get(field_key, "")
-        new_value = new_header.get(field_key, "")
-        if old_value != new_value:
-            travel_request._add_content_audit(
-                action_type=TravelRequestContentAuditActionType.HEADER_UPDATED,
-                changed_by=acting_user,
-                section="HEADER",
-                field_name=field_label,
-                old_value=old_value,
-                new_value=new_value,
-                notes=f"Header field '{field_label}' updated.",
-            )
-
-    old_itinerary_ids = set(old_itineraries.keys())
-    new_itinerary_ids = set(new_itineraries.keys())
-
-    for deleted_id in sorted(old_itinerary_ids - new_itinerary_ids):
-        old_line = old_itineraries[deleted_id]
-        travel_request._add_content_audit(
-            action_type=TravelRequestContentAuditActionType.ITINERARY_DELETED,
-            changed_by=acting_user,
-            section="ITINERARY",
-            line_no=old_line.get("line_no"),
-            old_value=_format_itinerary_summary(old_line),
-            notes="Itinerary line deleted.",
-        )
-
-    for added_id in sorted(new_itinerary_ids - old_itinerary_ids):
-        new_line = new_itineraries[added_id]
-        travel_request._add_content_audit(
-            action_type=TravelRequestContentAuditActionType.ITINERARY_ADDED,
-            changed_by=acting_user,
-            section="ITINERARY",
-            line_no=new_line.get("line_no"),
-            new_value=_format_itinerary_summary(new_line),
-            notes="Itinerary line added.",
-        )
-
-    for common_id in sorted(old_itinerary_ids & new_itinerary_ids):
-        old_line = old_itineraries[common_id]
-        new_line = new_itineraries[common_id]
-        line_no = new_line.get("line_no") or old_line.get("line_no")
-
-        for field_key, field_label in TRAVEL_ITINERARY_AUDIT_FIELDS:
-            old_value = old_line.get(field_key, "")
-            new_value = new_line.get(field_key, "")
-            if old_value != new_value:
-                travel_request._add_content_audit(
-                    action_type=TravelRequestContentAuditActionType.ITINERARY_UPDATED,
-                    changed_by=acting_user,
-                    section="ITINERARY",
-                    field_name=field_label,
-                    line_no=line_no,
-                    old_value=old_value,
-                    new_value=new_value,
-                    notes=f"Itinerary line {line_no} field '{field_label}' updated.",
-                )
-
-    old_expense_ids = set(old_expenses.keys())
-    new_expense_ids = set(new_expenses.keys())
-
-    for deleted_id in sorted(old_expense_ids - new_expense_ids):
-        old_line = old_expenses[deleted_id]
-        travel_request._add_content_audit(
-            action_type=TravelRequestContentAuditActionType.EXPENSE_DELETED,
-            changed_by=acting_user,
-            section="EXPENSE",
-            line_no=old_line.get("line_no"),
-            old_value=_format_expense_summary(old_line),
-            notes="Estimated expense line deleted.",
-        )
-
-    for added_id in sorted(new_expense_ids - old_expense_ids):
-        new_line = new_expenses[added_id]
-        travel_request._add_content_audit(
-            action_type=TravelRequestContentAuditActionType.EXPENSE_ADDED,
-            changed_by=acting_user,
-            section="EXPENSE",
-            line_no=new_line.get("line_no"),
-            new_value=_format_expense_summary(new_line),
-            notes="Estimated expense line added.",
-        )
-
-    for common_id in sorted(old_expense_ids & new_expense_ids):
-        old_line = old_expenses[common_id]
-        new_line = new_expenses[common_id]
-        line_no = new_line.get("line_no") or old_line.get("line_no")
-
-        for field_key, field_label in TRAVEL_EXPENSE_AUDIT_FIELDS:
-            old_value = old_line.get(field_key, "")
-            new_value = new_line.get(field_key, "")
-            if old_value != new_value:
-                travel_request._add_content_audit(
-                    action_type=TravelRequestContentAuditActionType.EXPENSE_UPDATED,
-                    changed_by=acting_user,
-                    section="EXPENSE",
-                    field_name=field_label,
-                    line_no=line_no,
-                    old_value=old_value,
-                    new_value=new_value,
-                    notes=f"Expense line {line_no} field '{field_label}' updated.",
-                )
-
 @login_required
 def tr_list(request):
     travel_requests = (
@@ -335,7 +70,7 @@ def tr_list(request):
     )
 
     for tr in travel_requests:
-        tr.can_edit = tr.can_user_edit(request.user)
+        decorate_travel_list_item(tr, request.user)
 
     context = {
         "travel_requests": travel_requests,
@@ -349,14 +84,22 @@ def tr_detail(request, pk):
         TravelRequest.get_visible_queryset(request.user),
         pk=pk,
     )
-    
-    can_record_actual_expense = travel_request.can_user_record_actual_expense(request.user)
+    enforce_travel_permission(user_can_view_travel(request.user, travel_request))
+
+    workflow_ui = build_request_workflow_context(travel_request, request.user)
+    ui_flags = build_travel_detail_ui_flags(
+        travel_request,
+        request.user,
+        workflow_ui["current_task"],
+    )
+
     actual_expense_form = (
         TravelActualExpenseForm(
             travel_request=travel_request,
-            initial={"expense_date": travel_request.end_date, "currency": travel_request.currency},
+            initial=ui_flags["actual_expense_initial"],
         )
-        if can_record_actual_expense else None
+        if ui_flags["show_actual_expense_form"]
+        else None
     )
 
     itineraries = travel_request.itineraries.all().order_by("line_no")
@@ -365,28 +108,41 @@ def tr_detail(request, pk):
     attachments = travel_request.attachments.all()
     content_audits = travel_request.content_audits.all()
     histories = travel_request.history_entries.all()
-    can_manage_attachments = travel_request.can_user_manage_attachments(request.user)
-    attachment_form = TravelRequestAttachmentForm() if can_manage_attachments else None
+
+    attachment_form = (
+        TravelRequestAttachmentForm()
+        if ui_flags["show_attachment_form"]
+        else None
+    )
 
     context = {
         "travel_request": travel_request,
         "itineraries": itineraries,
         "expense_lines": expense_lines,
-        "histories": histories,
-        "content_audits": content_audits,
-        "current_step": travel_request.get_current_step_name(),
-        "current_approver": travel_request.get_current_approver(),
-        "approval_progress": travel_request.get_approval_progress_text(),
-        "can_edit": travel_request.can_user_edit(request.user),
-        "can_submit": travel_request.can_user_submit(request.user),
-        "can_cancel": travel_request.can_user_cancel(request.user),
+        "actual_expense_lines": actual_expense_lines,
         "attachments": attachments,
         "attachment_form": attachment_form,
-        "can_manage_attachments": can_manage_attachments,
-        "actual_expense_lines": actual_expense_lines,
-        "can_record_actual_expense": can_record_actual_expense,
         "actual_expense_form": actual_expense_form,
-        "can_close": travel_request.can_user_close(request.user),
+        "histories": histories,
+        "content_audits": content_audits,
+
+        "current_task": workflow_ui["current_task"],
+        "current_step": workflow_ui["current_step"],
+        "current_approver": workflow_ui["current_approver"],
+        "approval_progress": workflow_ui["approval_progress"],
+        "can_claim_current_task": workflow_ui["can_claim_current_task"],
+        "can_release_current_task": workflow_ui["can_release_current_task"],
+        "can_approve_current_task": workflow_ui["can_approve_current_task"],
+        "can_return_current_task": workflow_ui["can_return_current_task"],
+        "can_reject_current_task": workflow_ui["can_reject_current_task"],
+
+        "can_edit": ui_flags["can_edit"],
+        "can_submit": ui_flags["can_submit"],
+        "can_cancel": ui_flags["can_cancel"],
+        "can_close": ui_flags["can_close"],
+        "can_record_actual_expense": ui_flags["can_record_actual_expense"],
+        "can_manage_attachments": ui_flags["can_manage_attachments"],
+        "current_task_assignment_label": workflow_ui["current_task_assignment_label"],
     }
     return render(request, "travel/tr_detail.html", context)
 
@@ -410,27 +166,16 @@ def tr_create(request):
 
         if form_valid and itinerary_valid and expense_valid:
             try:
-                with transaction.atomic():
-                    travel_request = form.save(commit=False)
+                travel_request = create_travel_request_from_forms(
+                    form=form,
+                    itinerary_formset=itinerary_formset,
+                    expense_formset=expense_formset,
+                    acting_user=request.user,
+                )
 
-                    if not request.user.is_superuser:
-                        travel_request.requester = request.user
-
-                    travel_request.estimated_total = Decimal("0.00")
-                    travel_request.save()
-
-                    itinerary_formset.instance = travel_request
-                    itinerary_formset.save()
-
-                    expense_formset.instance = travel_request
-                    expense_formset.save()
-
-                    travel_request.refresh_estimated_total(commit=True)
-
-                    _log_travel_create_content_audit(travel_request, request.user)
-
-                    messages.success(request, f"{travel_request.travel_no} saved as draft successfully.")
+                messages.success(request, f"{travel_request.travel_no} saved as draft successfully.")
                 return redirect("travel:tr_detail", pk=travel_request.pk)
+
             except ValidationError as exc:
                 for message in exc.messages:
                     form.add_error(None, message)
@@ -460,14 +205,11 @@ def tr_edit(request, pk):
         pk=pk,
     )
 
-    if not travel_request.can_user_edit(request.user):
+    if not user_can_edit_travel(request.user, travel_request):
         messages.error(request, f"{travel_request.travel_no} cannot be edited by you in its current status.")
         return redirect("travel:tr_detail", pk=travel_request.pk)
 
     if request.method == "POST":
-        old_header_snapshot = _snapshot_travel_header(travel_request)
-        old_itinerary_snapshot = _snapshot_travel_itineraries(travel_request)
-        old_expense_snapshot = _snapshot_travel_expenses(travel_request)
 
         form = TravelRequestForm(request.POST, instance=travel_request, user=request.user)
         itinerary_formset = TravelItineraryEditFormSet(
@@ -493,32 +235,17 @@ def tr_edit(request, pk):
 
         if form_valid and itinerary_valid and expense_valid:
             try:
-                with transaction.atomic():
-                    travel_request = form.save(commit=False)
+                travel_request = update_travel_request_from_forms(
+                    travel_request=travel_request,
+                    form=form,
+                    itinerary_formset=itinerary_formset,
+                    expense_formset=expense_formset,
+                    acting_user=request.user,
+                )
 
-                    if not request.user.is_superuser:
-                        travel_request.requester = request.user
-
-                    travel_request.save()
-
-                    itinerary_formset.instance = travel_request
-                    itinerary_formset.save()
-
-                    expense_formset.instance = travel_request
-                    expense_formset.save()
-
-                    travel_request.refresh_estimated_total(commit=True)
-
-                    _log_travel_edit_content_audit(
-                        travel_request,
-                        old_header_snapshot,
-                        old_itinerary_snapshot,
-                        old_expense_snapshot,
-                        request.user,
-                    )
-
-                    messages.success(request, f"{travel_request.travel_no} updated successfully.")
+                messages.success(request, f"{travel_request.travel_no} updated successfully.")
                 return redirect("travel:tr_detail", pk=travel_request.pk)
+
             except ValidationError as exc:
                 for message in exc.messages:
                     form.add_error(None, message)
@@ -552,9 +279,9 @@ def tr_submit(request, pk):
         pk=pk,
     )
 
-    if not travel_request.can_user_submit(request.user):
-        messages.error(request, "You do not have permission to submit this travel request.")
-        return redirect("travel:tr_detail", pk=travel_request.pk)
+    enforce_travel_permission(
+        user_can_submit_travel(request.user, travel_request)
+    )
 
     try:
         travel_request.submit(acting_user=request.user)
@@ -574,9 +301,9 @@ def tr_cancel(request, pk):
         pk=pk,
     )
 
-    if not travel_request.can_user_cancel(request.user):
-        messages.error(request, "You do not have permission to cancel this travel request.")
-        return redirect("travel:tr_detail", pk=travel_request.pk)
+    enforce_travel_permission(
+        user_can_cancel_travel(request.user, travel_request)
+    )
 
     try:
         travel_request.cancel(acting_user=request.user)
@@ -597,9 +324,9 @@ def tr_upload_attachment(request, pk):
         pk=pk,
     )
 
-    if not travel_request.can_user_manage_attachments(request.user):
-        messages.error(request, "You do not have permission to manage attachments for this travel request.")
-        return redirect("travel:tr_detail", pk=travel_request.pk)
+    enforce_travel_permission(
+        user_can_manage_travel_attachment(request.user, travel_request)
+    )
 
     form = TravelRequestAttachmentForm(request.POST, request.FILES)
 
@@ -627,9 +354,9 @@ def tr_delete_attachment(request, pk, attachment_id):
         pk=pk,
     )
 
-    if not travel_request.can_user_manage_attachments(request.user):
-        messages.error(request, "You do not have permission to manage attachments for this travel request.")
-        return redirect("travel:tr_detail", pk=travel_request.pk)
+    enforce_travel_permission(
+        user_can_manage_travel_attachment(request.user, travel_request)
+    )
 
     attachment = get_object_or_404(
         TravelRequestAttachment,
@@ -653,9 +380,9 @@ def tr_record_actual_expense(request, pk):
         pk=pk,
     )
 
-    if not travel_request.can_user_record_actual_expense(request.user):
-        messages.error(request, "You do not have permission to record actual expense for this travel request.")
-        return redirect("travel:tr_detail", pk=travel_request.pk)
+    enforce_travel_permission(
+        user_can_record_actual_expense_travel(request.user, travel_request)
+    )
 
     form = TravelActualExpenseForm(request.POST, travel_request=travel_request)
 
@@ -693,9 +420,9 @@ def tr_close(request, pk):
         pk=pk,
     )
 
-    if not travel_request.can_user_close(request.user):
-        messages.error(request, "You do not have permission to close this travel request.")
-        return redirect("travel:tr_detail", pk=travel_request.pk)
+    enforce_travel_permission(
+        user_can_close_travel(request.user, travel_request)
+    )
 
     comment = request.POST.get("comment", "").strip()
 

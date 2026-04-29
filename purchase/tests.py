@@ -8,6 +8,7 @@ from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.core.exceptions import ValidationError
+from django.db.models import Sum
 
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
@@ -17,15 +18,20 @@ from common.choices import (
     RequestType,
     DepartmentType,
     BudgetEntryType,
+    ApprovalTaskStatus,
 )
 from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus
-from purchase.forms import PurchaseRequestForm
+from purchase.forms import PurchaseRequestForm, PurchaseRequestLineCreateFormSet, PurchaseRequestLineEditFormSet
 from purchase.models import (
     PurchaseRequest,
     PurchaseRequestLine,
     PurchaseFulfillmentStatus,
     PurchaseRequestAttachment, 
-    PurchaseRequestContentAudit
+    PurchaseRequestContentAudit,
+)
+from purchase.services import (
+    create_purchase_request_from_forms,
+    update_purchase_request_from_forms,
 )
 
 
@@ -74,6 +80,13 @@ class PurchaseSmokeTest(TestCase):
             start_date=date.today(),
             end_date=date.today() + timedelta(days=90),
             is_active=True,
+        )
+
+        ProjectMember.objects.create(
+            project=self.project,
+            user=self.requester,
+            is_active=True,
+            added_by=self.manager,
         )
 
         self.rule = ApprovalRule.objects.create(
@@ -731,6 +744,37 @@ class PurchaseSmokeTest(TestCase):
         self.assertNotIn(closed_member_project.id, project_ids)
         self.assertNotIn(open_nonmember_project.id, project_ids)
 
+    def test_purchase_form_rejects_non_member_project(self):
+        nonmember_project = Project.objects.create(
+            project_code="PJT-PUR-NONMEMBER",
+            project_name="Purchase Nonmember Project",
+            owning_department=self.department,
+            budget_amount=Decimal("5000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Unauthorized Purchase",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": nonmember_project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Trying to use nonmember project",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            user=self.requester,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("project", form.errors)
+
     def test_purchase_submit_rejects_closed_project_on_server_side(self):
         closed_project = Project.objects.create(
             project_code="PJT-PUR-SUBMIT-CLOSED",
@@ -838,3 +882,1306 @@ class PurchaseSmokeTest(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("project", form.errors)
 
+    def test_purchase_department_manager_can_view_request_detail(self):
+        pr = PurchaseRequest.objects.create(
+            title="Manager Visible Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Department manager visibility test",
+        )
+
+        self.client.login(username="mgr_purchase", password="testpass123")
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.title)
+
+    def test_purchase_create_service_saves_lines_and_audit(self):
+        form = PurchaseRequestForm(
+            data={
+                "title": "Service Create Purchase",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": self.project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Service create test",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            user=self.requester,
+        )
+
+        formset = PurchaseRequestLineCreateFormSet(
+            data={
+                "lines-TOTAL_FORMS": "1",
+                "lines-INITIAL_FORMS": "0",
+                "lines-MIN_NUM_FORMS": "0",
+                "lines-MAX_NUM_FORMS": "1000",
+                "lines-0-line_no": "",
+                "lines-0-item_name": "Keyboard",
+                "lines-0-item_description": "Mechanical keyboard",
+                "lines-0-quantity": "2",
+                "lines-0-uom": "EA",
+                "lines-0-unit_price": "80.00",
+                "lines-0-notes": "",
+            },
+            prefix="lines",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        pr = create_purchase_request_from_forms(
+            form=form,
+            formset=formset,
+            acting_user=self.requester,
+            action="draft",
+        )
+
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.requester, self.requester)
+        self.assertEqual(pr.status, RequestStatus.DRAFT)
+        self.assertEqual(pr.lines.count(), 1)
+        self.assertEqual(pr.estimated_total, Decimal("160.00"))
+        self.assertTrue(pr.content_audits.exists())
+
+    def test_purchase_update_service_can_submit_request(self):
+        pr = PurchaseRequest.objects.create(
+            title="Service Update Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Original",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Mouse",
+            quantity=Decimal("1"),
+            unit_price=Decimal("20.00"),
+        )
+        pr.estimated_total = pr.get_lines_total()
+        pr.save(update_fields=["estimated_total"])
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Service Update Purchase Revised",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": self.project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Updated by service",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            instance=pr,
+            user=self.requester,
+        )
+
+        formset = PurchaseRequestLineEditFormSet(
+            data={
+                "lines-TOTAL_FORMS": "1",
+                "lines-INITIAL_FORMS": "1",
+                "lines-MIN_NUM_FORMS": "0",
+                "lines-MAX_NUM_FORMS": "1000",
+                "lines-0-id": pr.lines.first().id,
+                "lines-0-line_no": "1",
+                "lines-0-item_name": "Monitor",
+                "lines-0-item_description": "",
+                "lines-0-quantity": "2",
+                "lines-0-uom": "EA",
+                "lines-0-unit_price": "100.00",
+                "lines-0-notes": "",
+            },
+            instance=pr,
+            prefix="lines",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        pr = update_purchase_request_from_forms(
+            purchase_request=pr,
+            form=form,
+            formset=formset,
+            acting_user=self.requester,
+            action="submit",
+        )
+
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.title, "Service Update Purchase Revised")
+        self.assertEqual(pr.estimated_total, Decimal("200.00"))
+        self.assertNotEqual(pr.status, RequestStatus.DRAFT)
+        self.assertTrue(pr.content_audits.exists())
+        self.assertTrue(pr.approval_tasks.exists())
+
+    def test_purchase_create_service_rolls_back_on_submit_failure(self):
+        self.rule.is_active = False
+        self.rule.save(update_fields=["is_active"])
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Rollback Create Purchase",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": self.project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Rollback create test",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            user=self.requester,
+        )
+
+        formset = PurchaseRequestLineCreateFormSet(
+            data={
+                "lines-TOTAL_FORMS": "1",
+                "lines-INITIAL_FORMS": "0",
+                "lines-MIN_NUM_FORMS": "0",
+                "lines-MAX_NUM_FORMS": "1000",
+                "lines-0-line_no": "",
+                "lines-0-item_name": "Rollback Item",
+                "lines-0-item_description": "",
+                "lines-0-quantity": "1",
+                "lines-0-uom": "EA",
+                "lines-0-unit_price": "50.00",
+                "lines-0-notes": "",
+            },
+            prefix="lines",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        before_count = PurchaseRequest.objects.count()
+
+        with self.assertRaises(ValidationError):
+            create_purchase_request_from_forms(
+                form=form,
+                formset=formset,
+                acting_user=self.requester,
+                action="submit",
+            )
+
+        self.assertEqual(PurchaseRequest.objects.count(), before_count)
+        self.assertFalse(
+            PurchaseRequest.objects.filter(title="Rollback Create Purchase").exists()
+        )
+
+    def test_purchase_update_service_rolls_back_on_submit_failure(self):
+        pr = PurchaseRequest.objects.create(
+            title="Rollback Update Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Original justification",
+        )
+
+        line = PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Original Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("20.00"),
+        )
+        pr.estimated_total = pr.get_lines_total()
+        pr.save(update_fields=["estimated_total"])
+
+        self.rule.is_active = False
+        self.rule.save(update_fields=["is_active"])
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Rollback Update Purchase Revised",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": self.project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Revised justification",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            instance=pr,
+            user=self.requester,
+        )
+
+        formset = PurchaseRequestLineEditFormSet(
+            data={
+                "lines-TOTAL_FORMS": "1",
+                "lines-INITIAL_FORMS": "1",
+                "lines-MIN_NUM_FORMS": "0",
+                "lines-MAX_NUM_FORMS": "1000",
+                "lines-0-id": line.id,
+                "lines-0-line_no": "1",
+                "lines-0-item_name": "Revised Item",
+                "lines-0-item_description": "",
+                "lines-0-quantity": "2",
+                "lines-0-uom": "EA",
+                "lines-0-unit_price": "100.00",
+                "lines-0-notes": "",
+            },
+            instance=pr,
+            prefix="lines",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        with self.assertRaises(ValidationError):
+            update_purchase_request_from_forms(
+                purchase_request=pr,
+                form=form,
+                formset=formset,
+                acting_user=self.requester,
+                action="submit",
+            )
+
+        pr.refresh_from_db()
+        line.refresh_from_db()
+
+        self.assertEqual(pr.title, "Rollback Update Purchase")
+        self.assertEqual(pr.justification, "Original justification")
+        self.assertEqual(pr.status, RequestStatus.DRAFT)
+        self.assertEqual(pr.estimated_total, Decimal("20.00"))
+        self.assertEqual(line.item_name, "Original Item")
+        self.assertEqual(line.quantity, Decimal("1.00"))
+        self.assertEqual(line.unit_price, Decimal("20.00"))
+
+    def test_purchase_full_lifecycle_budget_regression(self):
+        pr = PurchaseRequest.objects.create(
+            title="Full Lifecycle Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Full lifecycle purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Lifecycle Monitor",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        pr.refresh_from_db()
+
+        self.assertTrue(
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RESERVE,
+                amount=Decimal("500.00"),
+            ).exists()
+        )
+
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(self.manager)
+            task.refresh_from_db()
+
+        task.approve(self.manager, comment="Approve full lifecycle purchase")
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.status, RequestStatus.APPROVED)
+
+        pr.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("450.00"),
+            acting_user=self.requester,
+            vendor_name="Lifecycle Vendor",
+            reference_no="LC-PR-001",
+            notes="Lifecycle actual spend",
+        )
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.get_actual_spent_total(), Decimal("450.00"))
+        self.assertEqual(pr.get_reserved_remaining_amount(), Decimal("50.00"))
+
+        pr.close_purchase(
+            acting_user=self.requester,
+            comment="Close lifecycle purchase",
+        )
+        pr.refresh_from_db()
+
+        reserve_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        consume_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.CONSUME,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        release_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RELEASE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        self.assertEqual(pr.status, RequestStatus.CLOSED)
+        self.assertEqual(reserve_total, Decimal("500.00"))
+        self.assertEqual(consume_total, Decimal("450.00"))
+        self.assertEqual(release_total, Decimal("500.00"))
+        self.assertEqual(pr.get_reserved_remaining_amount(), Decimal("0.00"))
+
+    def test_purchase_submit_then_cancel_releases_budget_and_cancels_tasks(self):
+        pr = PurchaseRequest.objects.create(
+            title="Cancel Lifecycle Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Cancel lifecycle purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Cancel Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.status, RequestStatus.SUBMITTED)
+        self.assertTrue(
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RESERVE,
+                amount=Decimal("500.00"),
+            ).exists()
+        )
+        self.assertTrue(pr.approval_tasks.exists())
+
+        pr.cancel(acting_user=self.requester)
+        pr.refresh_from_db()
+
+        reserve_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        release_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RELEASE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        self.assertEqual(pr.status, RequestStatus.CANCELLED)
+        self.assertEqual(reserve_total, Decimal("500.00"))
+        self.assertEqual(release_total, Decimal("500.00"))
+        self.assertEqual(pr.get_reserved_remaining_amount(), Decimal("0.00"))
+
+        active_task_count = pr.approval_tasks.filter(
+            status__in=[
+                ApprovalTaskStatus.WAITING,
+                ApprovalTaskStatus.POOL,
+                ApprovalTaskStatus.PENDING,
+            ]
+        ).count()
+        self.assertEqual(active_task_count, 0)
+
+    def test_purchase_return_releases_budget_and_cancels_remaining_tasks(self):
+        pr = PurchaseRequest.objects.create(
+            title="Return Lifecycle Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Return lifecycle purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Return Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        pr.refresh_from_db()
+
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(self.manager)
+            task.refresh_from_db()
+
+        task.return_to_requester(self.manager, comment="Return for revision")
+        pr.refresh_from_db()
+
+        release_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RELEASE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        self.assertEqual(pr.status, RequestStatus.RETURNED)
+        self.assertEqual(release_total, Decimal("500.00"))
+        self.assertEqual(pr.get_reserved_remaining_amount(), Decimal("0.00"))
+
+        active_task_count = pr.approval_tasks.filter(
+            status__in=[
+                ApprovalTaskStatus.WAITING,
+                ApprovalTaskStatus.POOL,
+                ApprovalTaskStatus.PENDING,
+            ]
+        ).count()
+        self.assertEqual(active_task_count, 0)
+
+    def test_purchase_reject_releases_budget_and_cancels_remaining_tasks(self):
+        pr = PurchaseRequest.objects.create(
+            title="Reject Lifecycle Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Reject lifecycle purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Reject Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        pr.refresh_from_db()
+
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(self.manager)
+            task.refresh_from_db()
+
+        task.reject(self.manager, comment="Rejected")
+        pr.refresh_from_db()
+
+        release_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RELEASE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        self.assertEqual(pr.status, RequestStatus.REJECTED)
+        self.assertEqual(release_total, Decimal("500.00"))
+        self.assertEqual(pr.get_reserved_remaining_amount(), Decimal("0.00"))
+
+        active_task_count = pr.approval_tasks.filter(
+            status__in=[
+                ApprovalTaskStatus.WAITING,
+                ApprovalTaskStatus.POOL,
+                ApprovalTaskStatus.PENDING,
+            ]
+        ).count()
+        self.assertEqual(active_task_count, 0)
+
+    def test_purchase_return_edit_resubmit_regression(self):
+        pr = PurchaseRequest.objects.create(
+            title="Return Resubmit Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Return and resubmit purchase test",
+        )
+
+        line = PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Original Purchase Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+        pr.estimated_total = pr.get_lines_total()
+        pr.save(update_fields=["estimated_total"])
+
+        pr.submit(acting_user=self.requester)
+        pr.refresh_from_db()
+
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(self.manager)
+            task.refresh_from_db()
+
+        task.return_to_requester(self.manager, comment="Please revise and resubmit")
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.status, RequestStatus.RETURNED)
+        self.assertTrue(pr.can_user_edit(self.requester))
+        self.assertEqual(pr.get_reserved_remaining_amount(), Decimal("0.00"))
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Return Resubmit Purchase Revised",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": self.project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=10),
+                "currency": "USD",
+                "justification": "Revised after return",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            instance=pr,
+            user=self.requester,
+        )
+
+        formset = PurchaseRequestLineEditFormSet(
+            data={
+                "lines-TOTAL_FORMS": "1",
+                "lines-INITIAL_FORMS": "1",
+                "lines-MIN_NUM_FORMS": "0",
+                "lines-MAX_NUM_FORMS": "1000",
+                "lines-0-id": line.id,
+                "lines-0-line_no": "1",
+                "lines-0-item_name": "Revised Purchase Item",
+                "lines-0-item_description": "",
+                "lines-0-quantity": "1",
+                "lines-0-uom": "EA",
+                "lines-0-unit_price": "600.00",
+                "lines-0-notes": "",
+            },
+            instance=pr,
+            prefix="lines",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        pr = update_purchase_request_from_forms(
+            purchase_request=pr,
+            form=form,
+            formset=formset,
+            acting_user=self.requester,
+            action="submit",
+        )
+        pr.refresh_from_db()
+
+        reserve_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+        release_total = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RELEASE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        active_task_count = pr.approval_tasks.filter(
+            status__in=[
+                ApprovalTaskStatus.WAITING,
+                ApprovalTaskStatus.POOL,
+                ApprovalTaskStatus.PENDING,
+            ]
+        ).count()
+
+        self.assertEqual(pr.status, RequestStatus.SUBMITTED)
+        self.assertEqual(pr.title, "Return Resubmit Purchase Revised")
+        self.assertEqual(pr.estimated_total, Decimal("600.00"))
+        self.assertEqual(reserve_total, Decimal("1100.00"))
+        self.assertEqual(release_total, Decimal("500.00"))
+        self.assertEqual(pr.get_reserved_remaining_amount(), Decimal("600.00"))
+        self.assertEqual(active_task_count, 1)
+        self.assertIsNotNone(pr.get_current_task())
+
+    def test_purchase_detail_loads_for_historical_request_after_project_closed(self):
+        pr = PurchaseRequest.objects.create(
+            title="Historical Closed Project Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Historical closed project detail test",
+        )
+
+        self.project.status = ProjectStatus.CLOSED
+        self.project.save(update_fields=["status"])
+
+        self.client.login(username="req_purchase", password="testpass123")
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.title)
+        self.assertContains(response, self.project.project_code)
+
+    def test_purchase_returned_request_cannot_resubmit_when_original_project_closed(self):
+        pr = PurchaseRequest.objects.create(
+            title="Returned Closed Project Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Returned closed project resubmit test",
+            status=RequestStatus.RETURNED,
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Returned Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+        pr.estimated_total = pr.get_lines_total()
+        pr.save(update_fields=["estimated_total"])
+
+        self.project.status = ProjectStatus.CLOSED
+        self.project.save(update_fields=["status"])
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Returned Closed Project Purchase Revised",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": self.project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Try resubmit with closed project",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            instance=pr,
+            user=self.requester,
+        )
+
+        formset = PurchaseRequestLineEditFormSet(
+            data={
+                "lines-TOTAL_FORMS": "1",
+                "lines-INITIAL_FORMS": "1",
+                "lines-MIN_NUM_FORMS": "0",
+                "lines-MAX_NUM_FORMS": "1000",
+                "lines-0-id": pr.lines.first().id,
+                "lines-0-line_no": "1",
+                "lines-0-item_name": "Returned Item Revised",
+                "lines-0-item_description": "",
+                "lines-0-quantity": "1",
+                "lines-0-uom": "EA",
+                "lines-0-unit_price": "500.00",
+                "lines-0-notes": "",
+            },
+            instance=pr,
+            prefix="lines",
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("project", form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+    def test_purchase_returned_request_can_move_to_new_open_project_and_resubmit(self):
+        pr = PurchaseRequest.objects.create(
+            title="Move Project Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Move to new project test",
+            status=RequestStatus.RETURNED,
+        )
+
+        line = PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Move Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+        pr.estimated_total = pr.get_lines_total()
+        pr.save(update_fields=["estimated_total"])
+
+        self.project.status = ProjectStatus.CLOSED
+        self.project.save(update_fields=["status"])
+
+        new_project = Project.objects.create(
+            project_code="PJT-PUR-NEW-OPEN",
+            project_name="New Open Purchase Project",
+            owning_department=self.department,
+            budget_amount=Decimal("8000.00"),
+            currency="USD",
+            status=ProjectStatus.OPEN,
+            is_active=True,
+        )
+        ProjectMember.objects.create(
+            project=new_project,
+            user=self.requester,
+            is_active=True,
+            added_by=self.manager,
+        )
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Move Project Purchase Revised",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": new_project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Move to new open project",
+                "vendor_suggestion": "",
+                "delivery_location": "",
+                "notes": "",
+            },
+            instance=pr,
+            user=self.requester,
+        )
+
+        formset = PurchaseRequestLineEditFormSet(
+            data={
+                "lines-TOTAL_FORMS": "1",
+                "lines-INITIAL_FORMS": "1",
+                "lines-MIN_NUM_FORMS": "0",
+                "lines-MAX_NUM_FORMS": "1000",
+                "lines-0-id": line.id,
+                "lines-0-line_no": "1",
+                "lines-0-item_name": "Move Item Revised",
+                "lines-0-item_description": "",
+                "lines-0-quantity": "1",
+                "lines-0-uom": "EA",
+                "lines-0-unit_price": "600.00",
+                "lines-0-notes": "",
+            },
+            instance=pr,
+            prefix="lines",
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertTrue(formset.is_valid(), formset.errors)
+
+        pr = update_purchase_request_from_forms(
+            purchase_request=pr,
+            form=form,
+            formset=formset,
+            acting_user=self.requester,
+            action="submit",
+        )
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.project, new_project)
+        self.assertEqual(pr.status, RequestStatus.SUBMITTED)
+        self.assertEqual(pr.estimated_total, Decimal("600.00"))
+
+    def test_purchase_submit_twice_does_not_duplicate_reserve_or_tasks(self):
+        pr = PurchaseRequest.objects.create(
+            title="Duplicate Submit Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Duplicate submit guard test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Duplicate Submit Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        pr.refresh_from_db()
+
+        first_task_count = pr.approval_tasks.count()
+
+        reserve_total_after_first_submit = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        self.assertEqual(pr.status, RequestStatus.SUBMITTED)
+        self.assertEqual(reserve_total_after_first_submit, Decimal("500.00"))
+        self.assertGreater(first_task_count, 0)
+
+        with self.assertRaises(ValidationError):
+            pr.submit(acting_user=self.requester)
+
+        pr.refresh_from_db()
+
+        reserve_total_after_second_submit = (
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).aggregate(total=Sum("amount"))["total"]
+            or Decimal("0.00")
+        )
+
+        self.assertEqual(pr.status, RequestStatus.SUBMITTED)
+        self.assertEqual(reserve_total_after_second_submit, Decimal("500.00"))
+        self.assertEqual(pr.approval_tasks.count(), first_task_count)
+
+    def test_purchase_closed_request_cannot_record_actual_spend(self):
+        pr = PurchaseRequest.objects.create(
+            title="Closed Purchase No Spend",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Closed purchase spend guard test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Closed Purchase Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        task = pr.get_current_task()
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(self.manager)
+            task.refresh_from_db()
+
+        task.approve(self.manager, comment="Approve before close")
+        pr.refresh_from_db()
+
+        pr.close_purchase(
+            acting_user=self.requester,
+            comment="Close before invalid spend attempt",
+        )
+        pr.refresh_from_db()
+
+        before_consume_count = ProjectBudgetEntry.objects.filter(
+            project=self.project,
+            source_type=RequestType.PURCHASE,
+            source_id=pr.id,
+            entry_type=BudgetEntryType.CONSUME,
+        ).count()
+
+        with self.assertRaises(ValidationError):
+            pr.record_actual_spend(
+                spend_date=date.today(),
+                amount=Decimal("100.00"),
+                acting_user=self.requester,
+                vendor_name="Late Vendor",
+                reference_no="LATE-PR-001",
+                notes="Should fail after close",
+            )
+
+        self.assertEqual(
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                source_type=RequestType.PURCHASE,
+                source_id=pr.id,
+                entry_type=BudgetEntryType.CONSUME,
+            ).count(),
+            before_consume_count,
+        )
+
+    def test_purchase_task_cannot_be_approved_twice(self):
+        pr = PurchaseRequest.objects.create(
+            title="Stale Approve Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Task stale approve test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Approve Twice Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(self.manager)
+            task.refresh_from_db()
+
+        task.approve(self.manager, comment="First approval")
+        task.refresh_from_db()
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.status, RequestStatus.APPROVED)
+
+        with self.assertRaises(ValidationError):
+            task.approve(self.manager, comment="Second approval should fail")
+
+    def test_purchase_cancelled_request_task_cannot_be_approved_after_system_cancel(self):
+        pr = PurchaseRequest.objects.create(
+            title="Cancelled Task Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Cancelled task stale action test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Cancel Task Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(self.manager)
+            task.refresh_from_db()
+
+        pr.cancel(acting_user=self.requester)
+        pr.refresh_from_db()
+        task.refresh_from_db()
+
+        self.assertEqual(pr.status, RequestStatus.CANCELLED)
+        self.assertNotIn(task.status, [ApprovalTaskStatus.POOL, ApprovalTaskStatus.PENDING])
+
+        with self.assertRaises(ValidationError):
+            task.approve(self.manager, comment="Approve after cancel should fail")
+
+    def test_purchase_released_task_old_assignee_cannot_approve_without_reclaim(self):
+        step = self.rule.steps.order_by("step_no", "id").first()
+        step.approver_type = ApproverType.DEPARTMENT_APPROVER
+        step.approver_department = self.department
+        step.save(update_fields=["approver_type", "approver_department"])
+
+        manager_link, _ = UserDepartment.objects.get_or_create(
+            user=self.manager,
+            department=self.department,
+            defaults={
+                "is_active": True,
+                "can_approve": True,
+            },
+        )
+        if not manager_link.is_active or not manager_link.can_approve:
+            manager_link.is_active = True
+            manager_link.can_approve = True
+            manager_link.save(update_fields=["is_active", "can_approve"])
+
+        pr = PurchaseRequest.objects.create(
+            title="Released Pool Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Release to pool stale approve test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Released Pool Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+
+        task.claim(self.manager)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.PENDING)
+
+        task.release_to_pool(self.manager)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+
+        with self.assertRaises(ValidationError):
+            task.approve(self.manager, comment="Approve after release should fail")
+
+    def test_purchase_released_task_can_be_reclaimed_and_approved(self):
+        step = self.rule.steps.order_by("step_no", "id").first()
+        step.approver_type = ApproverType.DEPARTMENT_APPROVER
+        step.approver_department = self.department
+        step.save(update_fields=["approver_type", "approver_department"])
+
+        manager_link, _ = UserDepartment.objects.get_or_create(
+            user=self.manager,
+            department=self.department,
+            defaults={
+                "is_active": True,
+                "can_approve": True,
+            },
+        )
+        if not manager_link.is_active or not manager_link.can_approve:
+            manager_link.is_active = True
+            manager_link.can_approve = True
+            manager_link.save(update_fields=["is_active", "can_approve"])
+
+        pr = PurchaseRequest.objects.create(
+            title="Reclaim Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Reclaim purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Reclaim Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+
+        task.claim(self.manager)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.PENDING)
+
+        task.release_to_pool(self.manager)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+
+        task.claim(self.manager)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.PENDING)
+
+        task.approve(self.manager, comment="Approve after reclaim")
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.status, RequestStatus.APPROVED)
+
+    def test_purchase_second_candidate_claim_after_release_regression(self):
+        other_approver = User.objects.create_user(
+            username="alt_purchase_approver",
+            password="testpass123",
+            email="alt_purchase_approver@example.com",
+        )
+
+        rule = ApprovalRule.objects.filter(
+            request_type=RequestType.PURCHASE,
+            department=self.department,
+            is_active=True,
+        ).order_by("priority", "id").first()
+        self.assertIsNotNone(rule)
+
+        step = rule.steps.order_by("step_no", "id").first()
+        self.assertIsNotNone(step)
+
+        step.approver_type = ApproverType.DEPARTMENT_APPROVER
+        step.approver_department = self.department
+        step.save(update_fields=["approver_type", "approver_department"])
+
+        for approver in [self.manager, other_approver]:
+            link, _ = UserDepartment.objects.get_or_create(
+                user=approver,
+                department=self.department,
+                defaults={
+                    "is_active": True,
+                    "can_approve": True,
+                },
+            )
+            if not link.is_active or not link.can_approve:
+                link.is_active = True
+                link.can_approve = True
+                link.save(update_fields=["is_active", "can_approve"])
+
+        pr = PurchaseRequest.objects.create(
+            title="Second Candidate Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Second candidate pool claim test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Pool Claim Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("500.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        task = pr.get_current_task()
+        self.assertIsNotNone(task)
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+
+        task.claim(self.manager)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.PENDING)
+        self.assertEqual(task.assigned_user, self.manager)
+
+        with self.assertRaises(ValidationError):
+            task.claim(other_approver)
+
+        task.release_to_pool(self.manager)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+        self.assertIsNone(task.assigned_user)
+
+        task.claim(other_approver)
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.PENDING)
+        self.assertEqual(task.assigned_user, other_approver)
+
+        with self.assertRaises(ValidationError):
+            task.approve(self.manager, comment="Old assignee should fail")
+
+        task.approve(other_approver, comment="New assignee approves")
+        pr.refresh_from_db()
+
+        self.assertEqual(pr.status, RequestStatus.APPROVED)
+
+    def test_purchase_detail_shows_matched_rule_and_task_assignment_label(self):
+        pr = PurchaseRequest.objects.create(
+            title="Explainability Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Explainability purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Explain Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        pr.refresh_from_db()
+
+        self.client.login(username="req_purchase", password="testpass123")
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Matched Approval Rule")
+        self.assertContains(response, "Current Task Ownership")

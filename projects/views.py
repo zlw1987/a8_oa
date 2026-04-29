@@ -7,7 +7,6 @@ from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
-from accounts.models import Department
 from common.choices import BudgetEntryType, RequestType
 from purchase.models import PurchaseRequest
 from travel.models import TravelRequest
@@ -15,41 +14,11 @@ from .forms import ProjectBudgetAdjustmentForm, ProjectCreateForm, ProjectMember
 from .models import Project, ProjectBudgetEntry, ProjectMember
 from .access import (
     get_visible_projects_queryset_for_user,
-    get_usable_projects_queryset_for_user,
+    get_manageable_departments_queryset_for_user,
+    user_can_create_project,
     user_can_manage_project_members,
+    user_can_manage_project_budget,
 )
-
-
-def _get_visible_projects_queryset(user):
-    qs = Project.objects.select_related("project_manager", "owning_department")
-
-    if user.is_superuser:
-        return qs
-
-    filters = (
-        Q(project_manager=user)
-        | Q(purchase_requests__requester=user)
-        | Q(travel_requests__requester=user)
-    )
-
-    primary_department = getattr(user, "primary_department", None)
-    if primary_department:
-        filters |= Q(owning_department=primary_department)
-
-    return qs.filter(filters).distinct()
-
-
-def _get_manageable_departments_queryset(user):
-    if user.is_superuser:
-        return Department.objects.all()
-    return Department.objects.filter(manager=user)
-
-
-def _can_create_project(user):
-    if user.is_superuser:
-        return True
-    return _get_manageable_departments_queryset(user).exists()
-
 
 def _can_manage_project_budget(user, project):
     if user.is_superuser:
@@ -70,46 +39,69 @@ def _sum_budget_entries(project, entry_type, source_type=None):
         qs = qs.filter(source_type=source_type)
     return qs.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
 
-
 def _decorate_budget_entries(entries):
     purchase_ids = [entry.source_id for entry in entries if entry.source_type == RequestType.PURCHASE]
     travel_ids = [entry.source_id for entry in entries if entry.source_type == RequestType.TRAVEL]
 
     purchase_map = {
         obj.id: obj
-        for obj in PurchaseRequest.objects.filter(id__in=purchase_ids).only("id", "pr_no")
+        for obj in PurchaseRequest.objects.filter(id__in=purchase_ids).only("id", "pr_no", "title")
     }
     travel_map = {
         obj.id: obj
-        for obj in TravelRequest.objects.filter(id__in=travel_ids).only("id", "travel_no")
+        for obj in TravelRequest.objects.filter(id__in=travel_ids).only("id", "travel_no", "purpose")
     }
 
     for entry in entries:
-        entry.source_no = f"{entry.source_type} #{entry.source_id}"
+        entry.source_no = f"{entry.source_type} #{entry.source_id}" if entry.source_id else entry.source_type
         entry.source_detail_url = ""
+        entry.source_summary = "-"
+        entry.entry_type_explained = entry.entry_type
+        entry.amount_direction = "neutral"
 
         if entry.source_type == RequestType.PURCHASE:
             purchase = purchase_map.get(entry.source_id)
             if purchase:
                 entry.source_no = purchase.pr_no
+                entry.source_summary = purchase.title
                 entry.source_detail_url = reverse("purchase:pr_detail", args=[purchase.id])
 
         elif entry.source_type == RequestType.TRAVEL:
             travel = travel_map.get(entry.source_id)
             if travel:
                 entry.source_no = travel.travel_no
+                entry.source_summary = travel.purpose
                 entry.source_detail_url = reverse("travel:tr_detail", args=[travel.id])
 
         elif entry.source_type == RequestType.PROJECT:
             entry.source_no = entry.project.project_code
+            entry.source_summary = entry.project.project_name
             entry.source_detail_url = reverse("projects:project_detail", args=[entry.project.id])
+
+        if entry.entry_type == BudgetEntryType.RESERVE:
+            entry.entry_type_explained = "Reserve budget for submitted request"
+            entry.amount_direction = "hold"
+        elif entry.entry_type == BudgetEntryType.CONSUME:
+            entry.entry_type_explained = "Convert budget into actual spending"
+            entry.amount_direction = "use"
+        elif entry.entry_type == BudgetEntryType.RELEASE:
+            entry.entry_type_explained = "Release reserved budget back to available"
+            entry.amount_direction = "return"
+        elif entry.entry_type == BudgetEntryType.ADJUST:
+            if entry.amount >= 0:
+                entry.entry_type_explained = "Increase project budget"
+            else:
+                entry.entry_type_explained = "Decrease project budget"
+            entry.amount_direction = "adjust"
 
     return entries
 
 
 @login_required
 def project_list(request):
-    projects = list(_get_visible_projects_queryset(request.user).order_by("project_code", "id"))
+    projects = list(
+        get_visible_projects_queryset_for_user(request.user).order_by("project_code", "id")
+    )
 
     for project in projects:
         project.project_detail_url = reverse("projects:project_detail", args=[project.id])
@@ -117,7 +109,7 @@ def project_list(request):
 
     context = {
         "projects": projects,
-        "can_create_project": _can_create_project(request.user),
+        "can_create_project": user_can_create_project(request.user),
         "project_create_url": reverse("projects:project_create"),
     }
     return render(request, "projects/project_list.html", context)
@@ -125,7 +117,7 @@ def project_list(request):
 
 @login_required
 def project_create(request):
-    if not _can_create_project(request.user):
+    if not user_can_create_project(request.user):
         raise PermissionDenied("You do not have permission to create projects.")
 
     if request.method == "POST":
@@ -243,7 +235,10 @@ def project_members(request, pk):
 
 @login_required
 def project_detail(request, pk):
-    project = get_object_or_404(_get_visible_projects_queryset(request.user), pk=pk)
+    project = get_object_or_404(
+        get_visible_projects_queryset_for_user(request.user),
+        pk=pk,
+    )
 
     recent_entries = list(
         ProjectBudgetEntry.objects.filter(project=project)
@@ -276,7 +271,7 @@ def project_detail(request, pk):
         "consumed_amount": project.get_consumed_amount(),
         "available_amount": project.get_available_amount(),
         "project_budget_url": reverse("projects:project_budget_ledger", args=[project.id]),
-        "can_manage_budget": _can_manage_project_budget(request.user, project),
+        "can_manage_budget": user_can_manage_project_budget(request.user, project),
         "project_adjust_budget_url": reverse("projects:project_add_budget_adjustment", args=[project.id]),
         "can_manage_members": user_can_manage_project_members(request.user, project),
     }
@@ -285,13 +280,32 @@ def project_detail(request, pk):
 
 @login_required
 def project_budget_ledger(request, pk):
-    project = get_object_or_404(_get_visible_projects_queryset(request.user), pk=pk)
+    project = get_object_or_404(
+        get_visible_projects_queryset_for_user(request.user),
+        pk=pk,
+    )
 
     entries = list(
         ProjectBudgetEntry.objects.filter(project=project)
         .select_related("created_by")
         .order_by("-created_at", "-id")
     )
+    for entry in entries:
+        if entry.source_type == "PURCHASE":
+            entry.source_label = f"Purchase #{entry.source_id}"
+        elif entry.source_type == "TRAVEL":
+            entry.source_label = f"Travel #{entry.source_id}"
+        else:
+            entry.source_label = f"{entry.source_type} #{entry.source_id}" if entry.source_id else entry.source_type
+
+        if entry.entry_type == "RESERVE":
+            entry.entry_type_explained = "Reserve budget for submitted request"
+        elif entry.entry_type == "CONSUME":
+            entry.entry_type_explained = "Convert budget into actual spending"
+        elif entry.entry_type == "RELEASE":
+            entry.entry_type_explained = "Release reserved budget back to available"
+        else:
+            entry.entry_type_explained = entry.entry_type
     _decorate_budget_entries(entries)
 
     context = {
@@ -305,23 +319,35 @@ def project_budget_ledger(request, pk):
         "released_total": _sum_budget_entries(project, BudgetEntryType.RELEASE),
         "adjust_total": _sum_budget_entries(project, BudgetEntryType.ADJUST),
         "available_amount": project.get_available_amount(),
+        "project_adjusted": _sum_budget_entries(project, BudgetEntryType.ADJUST, RequestType.PROJECT),
         "purchase_reserved": _sum_budget_entries(project, BudgetEntryType.RESERVE, RequestType.PURCHASE),
         "purchase_consumed": _sum_budget_entries(project, BudgetEntryType.CONSUME, RequestType.PURCHASE),
         "purchase_released": _sum_budget_entries(project, BudgetEntryType.RELEASE, RequestType.PURCHASE),
+        "purchase_adjusted": _sum_budget_entries(project, BudgetEntryType.ADJUST, RequestType.PURCHASE),
         "travel_reserved": _sum_budget_entries(project, BudgetEntryType.RESERVE, RequestType.TRAVEL),
         "travel_consumed": _sum_budget_entries(project, BudgetEntryType.CONSUME, RequestType.TRAVEL),
         "travel_released": _sum_budget_entries(project, BudgetEntryType.RELEASE, RequestType.TRAVEL),
-        "can_manage_budget": _can_manage_project_budget(request.user, project),
+        "travel_adjusted": _sum_budget_entries(project, BudgetEntryType.ADJUST, RequestType.TRAVEL),
+        "can_manage_budget": user_can_manage_project_budget(request.user, project),
         "project_adjust_budget_url": reverse("projects:project_add_budget_adjustment", args=[project.id]),
+        "ledger_legend": [
+            ("RESERVE", "Reserve budget for submitted request"),
+            ("CONSUME", "Convert budget into actual spending"),
+            ("RELEASE", "Release reserved budget back to available"),
+            ("ADJUST", "Manual project budget adjustment"),
+        ],
     }
     return render(request, "projects/project_budget_ledger.html", context)
 
 
 @login_required
 def project_add_budget_adjustment(request, pk):
-    project = get_object_or_404(_get_visible_projects_queryset(request.user), pk=pk)
+    project = get_object_or_404(
+        get_visible_projects_queryset_for_user(request.user),
+        pk=pk,
+    )
 
-    if not _can_manage_project_budget(request.user, project):
+    if not user_can_manage_project_budget(request.user, project):
         raise PermissionDenied("You do not have permission to adjust this project budget.")
 
     if request.method == "POST":

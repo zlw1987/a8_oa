@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 
 from accounts.models import Department
 from .models import Project
-
+from common.choices import CurrencyCode
 
 User = get_user_model()
 
@@ -34,6 +34,9 @@ class ProjectCreateForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         self.user = user
         super().__init__(*args, **kwargs)
+
+        self.fields["currency"].choices = CurrencyCode.choices
+        self.fields["currency"].widget = forms.Select(choices=CurrencyCode.choices)
 
         self.fields["project_manager"].required = False
         self.fields["project_manager"].queryset = User.objects.filter(is_active=True).order_by("username", "id")

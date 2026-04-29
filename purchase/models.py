@@ -152,86 +152,32 @@ class PurchaseRequest(models.Model):
     
     @classmethod
     def get_visible_queryset(cls, user):
-        if not getattr(user, "is_authenticated", False):
-            return cls.objects.none()
-
-        if getattr(user, "is_superuser", False):
-            return cls.objects.all()
-
-        return cls.objects.filter(
-            Q(requester=user)
-            | Q(approval_tasks__assigned_user=user)
-            | Q(
-                approval_tasks__candidates__user=user,
-                approval_tasks__candidates__is_active=True,
-            )
-            | Q(approval_tasks__acted_by=user)
-        ).distinct()
+        from .access import get_visible_purchase_queryset_for_user
+        return get_visible_purchase_queryset_for_user(user)
 
     def can_user_view(self, user):
-        return self.__class__.get_visible_queryset(user).filter(pk=self.pk).exists()
+        from .access import user_can_view_purchase
+        return user_can_view_purchase(user, self)
 
     def can_user_edit(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        if getattr(user, "is_superuser", False):
-            return self.status in [RequestStatus.DRAFT, RequestStatus.RETURNED]
-
-        return (
-            self.requester_id == user.id
-            and self.status in [RequestStatus.DRAFT, RequestStatus.RETURNED]
-        )
+        from .access import user_can_edit_purchase
+        return user_can_edit_purchase(user, self)
 
     def can_user_submit(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        if getattr(user, "is_superuser", False):
-            return self.status in [RequestStatus.DRAFT, RequestStatus.RETURNED]
-
-        return (
-            self.requester_id == user.id
-            and self.status in [RequestStatus.DRAFT, RequestStatus.RETURNED]
-        )
+        from .access import user_can_submit_purchase
+        return user_can_submit_purchase(user, self)
 
     def can_user_record_actual_spend(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        if getattr(user, "is_superuser", False):
-            return self.status == RequestStatus.APPROVED
-
-        return self.requester_id == user.id and self.status == RequestStatus.APPROVED
+        from .access import user_can_record_actual_spend
+        return user_can_record_actual_spend(user, self)
 
     def can_user_cancel(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        if getattr(user, "is_superuser", False):
-            return self.status in [
-                RequestStatus.SUBMITTED,
-                RequestStatus.PENDING,
-                RequestStatus.APPROVED,
-            ]
-
-        return (
-            self.requester_id == user.id
-            and self.status in [
-                RequestStatus.SUBMITTED,
-                RequestStatus.PENDING,
-                RequestStatus.APPROVED,
-            ]
-        )
+        from .access import user_can_cancel_purchase
+        return user_can_cancel_purchase(user, self)
 
     def can_user_close_purchase(self, user):
-        if not getattr(user, "is_authenticated", False):
-            return False
-
-        if getattr(user, "is_superuser", False):
-            return self.status == RequestStatus.APPROVED
-
-        return self.requester_id == user.id and self.status == RequestStatus.APPROVED
+        from .access import user_can_close_purchase
+        return user_can_close_purchase(user, self)
 
     def get_current_task(self):
         return (

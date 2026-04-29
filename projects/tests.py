@@ -16,7 +16,6 @@ from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpense
 
 
 
-
 User = get_user_model()
 
 
@@ -64,7 +63,12 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
             end_date=date.today() + timedelta(days=120),
             is_active=True,
         )
-
+        ProjectMember.objects.create(
+            project=self.project,
+            user=self.requester,
+            is_active=True,
+            added_by=self.manager,
+        )
         self.purchase_rule = ApprovalRule.objects.create(
             rule_code="PUR-LEDGER",
             rule_name="Purchase Ledger Rule",
@@ -530,6 +534,43 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
             ).exists()
         )
 
+    def test_project_manager_can_add_and_remove_member(self):
+        self.project.created_by = self.manager
+        self.project.project_manager = self.manager
+        self.project.status = ProjectStatus.OPEN
+        self.project.save(update_fields=["created_by", "project_manager", "status"])
+
+        ProjectMember.objects.get_or_create(
+            project=self.project,
+            user=self.manager,
+            defaults={"is_active": True, "added_by": self.manager},
+        )
+
+        self.client.login(username="mgr_project_budget", password="testpass123")
+
+        add_response = self.client.post(
+            reverse("projects:project_add_member", args=[self.project.id]),
+            data={"user": self.requester.id},
+        )
+        self.assertEqual(add_response.status_code, 302)
+        self.assertTrue(
+            ProjectMember.objects.filter(
+                project=self.project,
+                user=self.requester,
+                is_active=True,
+            ).exists()
+        )
+
+        membership = ProjectMember.objects.get(project=self.project, user=self.requester)
+
+        remove_response = self.client.post(
+            reverse("projects:project_remove_member", args=[self.project.id, membership.id]),
+        )
+        self.assertEqual(remove_response.status_code, 302)
+
+        membership.refresh_from_db()
+        self.assertFalse(membership.is_active)
+
     def test_non_manager_member_cannot_add_project_member(self):
         self.project.created_by = self.manager
         self.project.project_manager = self.manager
@@ -579,3 +620,82 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, self.project.project_code)
         self.assertContains(response, "Add User to Project")
+
+    def test_project_budget_ledger_shows_source_and_meaning_columns(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_budget_ledger", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Source")
+        self.assertContains(response, "Meaning")
+
+    def test_project_budget_ledger_shows_source_and_meaning_columns(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_budget_ledger", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Source")
+        self.assertContains(response, "Meaning")
+
+    def test_project_budget_ledger_shows_project_adjust_row(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_budget_ledger", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Budget Summary by Source Type")
+        self.assertContains(response, "Adjusted")
+        self.assertContains(response, "<td>Project</td>", html=True)
+
+    def test_project_create_uses_currency_dropdown(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'name="currency"', html=False)
+        self.assertContains(response, "<select", html=False)
+
+    def test_project_budget_ledger_source_column_shows_summary_when_available(self):
+        pr = PurchaseRequest.objects.create(
+            title="Ledger Source Summary Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Ledger source summary test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Ledger Source Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_budget_ledger", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, pr.title)
+
+    def test_project_detail_shows_budget_meaning_section(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_detail", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Budget Meaning")
+        self.assertContains(response, "Effective Budget")
+        self.assertContains(response, "Available Amount")
+
+    def test_project_detail_recent_budget_entries_show_meaning_column(self):
+        self.client.login(username="mgr_project_budget", password="testpass123")
+        response = self.client.get(reverse("projects:project_detail", args=[self.project.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Recent Budget Entries")
+        self.assertContains(response, "Meaning")

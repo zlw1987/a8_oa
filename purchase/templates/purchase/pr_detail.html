@@ -59,8 +59,14 @@
         <div class="summary-label">Project</div>
         <div>{{ purchase_request.project }}</div>
 
-        <div class="summary-label">Matched Rule</div>
-        <div>{{ purchase_request.matched_rule }}</div>
+        <div class="summary-label">Matched Approval Rule</div>
+        <div>
+            {% if purchase_request.matched_rule %}
+            {{ purchase_request.matched_rule.rule_code }} - {{ purchase_request.matched_rule.rule_name }}
+            {% else %}
+            -
+            {% endif %}
+        </div>
 
         <div class="summary-label">Current Step</div>
         <div>{{ current_step }}</div>
@@ -145,8 +151,8 @@
         <div class="summary-label">Task Status</div>
         <div>{{ current_task.status }}</div>
 
-        <div class="summary-label">Assigned User</div>
-        <div>{{ current_task.assigned_user }}</div>
+        <div class="summary-label">Current Task Ownership</div>
+        <div>{{ current_task_assignment_label }}</div>
     </div>
 
     <div class="action-row">

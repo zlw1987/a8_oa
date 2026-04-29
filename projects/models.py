@@ -3,7 +3,7 @@ from django.conf import settings
 from django.db.models import Sum
 from django.utils import timezone
 
-from common.choices import BudgetEntryType, RequestType
+from common.choices import BudgetEntryType, RequestType, CurrencyCode
 
 from decimal import Decimal
 
@@ -41,7 +41,11 @@ class Project(models.Model):
     )
 
     budget_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
-    currency = models.CharField(max_length=10, default="USD")
+    currency = models.CharField(
+        max_length=10,
+        choices=CurrencyCode.choices,
+        default=CurrencyCode.USD,
+    )
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
