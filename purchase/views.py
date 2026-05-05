@@ -8,8 +8,12 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+from django.urls import reverse
 
+from approvals.action_handlers import handle_task_action
+from .filters import PurchaseRequestListFilterForm
 from approvals.models import ApprovalTask
+from projects.presentation import build_project_budget_summary
 from common.choices import ApprovalTaskStatus, RequestStatus
 from .forms import (
     PurchaseRequestForm,
@@ -110,58 +114,68 @@ def _build_querystring(request_get, exclude_keys=None):
 
 @login_required
 def pr_list(request):
-    base_queryset = (
+    queryset = (
         PurchaseRequest.get_visible_queryset(request.user)
-        .select_related("project", "request_department", "requester", "matched_rule")
+        .select_related("requester", "request_department", "project", "matched_rule")
+        .order_by("-request_date", "-id")
     )
 
-    search_q = request.GET.get("q", "").strip()
-    selected_status = request.GET.get("status", "").strip()
-    selected_project = request.GET.get("project", "").strip()
-
-    project_options = (
-        base_queryset.exclude(project__isnull=True)
-        .values("project_id", "project__project_code", "project__project_name")
-        .distinct()
-        .order_by("project__project_code")
+    filter_form = PurchaseRequestListFilterForm(
+        request.GET or None,
+        visible_queryset=queryset,
     )
 
-    purchase_requests = base_queryset
+    if filter_form.is_valid():
+        keyword = (filter_form.cleaned_data.get("keyword") or "").strip()
+        status = filter_form.cleaned_data.get("status")
+        department = filter_form.cleaned_data.get("department")
+        requester = filter_form.cleaned_data.get("requester")
+        project = filter_form.cleaned_data.get("project")
+        request_date_from = filter_form.cleaned_data.get("request_date_from")
+        request_date_to = filter_form.cleaned_data.get("request_date_to")
 
-    if search_q:
-        purchase_requests = purchase_requests.filter(
-            Q(pr_no__icontains=search_q)
-            | Q(title__icontains=search_q)
-            | Q(project__project_code__icontains=search_q)
-            | Q(project__project_name__icontains=search_q)
-        )
+        if keyword:
+            queryset = queryset.filter(
+                Q(pr_no__icontains=keyword)
+                | Q(title__icontains=keyword)
+                | Q(justification__icontains=keyword)
+            )
 
-    if selected_status:
-        purchase_requests = purchase_requests.filter(status=selected_status)
+        if status:
+            queryset = queryset.filter(status=status)
 
-    if selected_project:
-        purchase_requests = purchase_requests.filter(project_id=selected_project)
+        if department:
+            queryset = queryset.filter(request_department=department)
 
-    purchase_requests = purchase_requests.order_by("-request_date", "-id")
+        if requester:
+            queryset = queryset.filter(requester=requester)
 
-    paginator = Paginator(purchase_requests, 10)
-    page_obj = paginator.get_page(request.GET.get("page"))
+        if project:
+            queryset = queryset.filter(project=project)
+
+        if request_date_from:
+            queryset = queryset.filter(request_date__gte=request_date_from)
+
+        if request_date_to:
+            queryset = queryset.filter(request_date__lte=request_date_to)
+
+    paginator = Paginator(queryset, 10)
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
 
     for pr in page_obj.object_list:
         decorate_purchase_list_item(pr, request.user, RequestStatus)
 
+    querydict = request.GET.copy()
+    querydict.pop("page", None)
+    filter_query = querydict.urlencode()
+
     context = {
-        "purchase_requests": page_obj.object_list,
         "page_obj": page_obj,
-        "pagination_querystring": _build_querystring(request.GET, ["page"]),
-        "search_q": search_q,
-        "selected_status": selected_status,
-        "selected_project": selected_project,
-        "status_choices": RequestStatus.choices,
-        "project_options": project_options,
+        "filter_form": filter_form,
+        "pagination_querystring": filter_query,
     }
     return render(request, "purchase/pr_list.html", context)
-
 
 @login_required
 def pr_detail(request, pk):
@@ -177,17 +191,114 @@ def pr_detail(request, pk):
     content_audits = purchase_request.content_audits.all()
     approval_tasks = purchase_request.approval_tasks.all().order_by("step_no")
     histories = purchase_request.history_entries.all()
-    workflow_ui = build_request_workflow_context(purchase_request, request.user)
-    budget_summary = _build_budget_summary(
-        purchase_request.project,
-        purchase_request.get_lines_total(),
-    )
 
     workflow_ui = build_request_workflow_context(purchase_request, request.user)
-    budget_summary = _build_budget_summary(
+
+    current_task = workflow_ui["current_task"]
+
+    current_task_ui = {
+        "task": current_task,
+        "assignment_label": workflow_ui["current_task_assignment_label"],
+        "can_claim": workflow_ui["can_claim_current_task"],
+        "can_release": workflow_ui["can_release_current_task"],
+        "can_approve": workflow_ui["can_approve_current_task"],
+        "can_return": workflow_ui["can_return_current_task"],
+        "can_reject": workflow_ui["can_reject_current_task"],
+        "claim_url": reverse("purchase:task_claim", args=[purchase_request.id, current_task.id]) if current_task else "",
+        "release_url": reverse("purchase:task_release", args=[purchase_request.id, current_task.id]) if current_task else "",
+        "approve_url": reverse("purchase:task_approve", args=[purchase_request.id, current_task.id]) if current_task else "",
+        "return_url": reverse("purchase:task_return", args=[purchase_request.id, current_task.id]) if current_task else "",
+        "reject_url": reverse("purchase:task_reject", args=[purchase_request.id, current_task.id]) if current_task else "",
+        "due_at": current_task.due_at if current_task else None,
+        "completed_at": current_task.completed_at if current_task else None,
+        "due_status": current_task.due_status_label if current_task else "-",
+        "is_overdue": current_task.is_overdue if current_task else False,
+    }
+
+    budget_summary = build_project_budget_summary(
         purchase_request.project,
         purchase_request.get_lines_total(),
-    )
+    )   
+
+    budget_snapshot_ui = None
+    if budget_summary:
+        budget_snapshot_ui = {
+            "cards": [
+                {
+                    "label": "This Request Total",
+                    "value": f"{purchase_request.currency} {budget_summary['request_total']}",
+                },
+                {
+                    "label": "Available Amount",
+                    "value": f"{purchase_request.currency} {budget_summary['available_amount']}",
+                },
+                {
+                    "label": "Reserved Amount",
+                    "value": f"{purchase_request.currency} {budget_summary['reserved_amount']}",
+                },
+                {
+                    "label": "Remaining After This Request",
+                    "value": f"{purchase_request.currency} {budget_summary['remaining_after_request']}",
+                },
+            ],
+            "rows": [
+                {
+                    "label": "Project",
+                    "value": f"{budget_summary['project_code']} - {budget_summary['project_name']}",
+                },
+                {
+                    "label": "Project Budget",
+                    "value": f"{purchase_request.currency} {budget_summary['budget_amount']}",
+                },
+            ],
+            "warning": (
+                "Warning: This request exceeds the currently available project budget."
+                if budget_summary["over_available"]
+                else ""
+            ),
+        }
+
+    budget_meaning = {
+        "rows": [
+            {
+                "label": "Project Budget",
+                "meaning": "Original project budget before manual adjustments.",
+            },
+            {
+                "label": "Reserved Amount",
+                "meaning": "Budget already held by submitted or approved requests but not yet fully converted into actual spending.",
+            },
+            {
+                "label": "Available Amount",
+                "meaning": "Budget currently available for new requests and approved overspend.",
+            },
+            {
+                "label": "This Request Total",
+                "meaning": "Total amount this purchase request plans to use.",
+            },
+            {
+                "label": "Remaining After This Request",
+                "meaning": "Available Amount - This Request Total.",
+            },
+        ]
+    }
+
+    request_header = {
+        "request_label": "Purchase Request",
+        "request_no": purchase_request.pr_no,
+        "request_title": purchase_request.title,
+        "request_status": purchase_request.get_status_display(),
+        "requester": purchase_request.requester,
+        "request_department": purchase_request.request_department,
+        "project": purchase_request.project,
+        "matched_rule": purchase_request.matched_rule,
+        "current_step": workflow_ui["current_step"],
+        "current_approver": workflow_ui["current_approver"],
+        "approval_progress": workflow_ui["approval_progress"],
+        "current_task_assignment_label": workflow_ui["current_task_assignment_label"],
+        "request_currency": purchase_request.currency,
+        "request_amount": purchase_request.estimated_total,
+    }
 
     ui_flags = build_purchase_detail_ui_flags(
         purchase_request,
@@ -201,12 +312,53 @@ def pr_detail(request, pk):
         else None
     )
 
+    attachments_ui = {
+        "can_manage": ui_flags["can_manage_attachments"],
+        "upload_url": reverse("purchase:pr_upload_attachment", args=[purchase_request.id]),
+    }
+
+    for attachment in attachments:
+        attachment.delete_url = reverse(
+            "purchase:pr_delete_attachment",
+            args=[purchase_request.id, attachment.id],
+        )
+
+    approval_workflow_ui = {
+        "rows": [
+            {
+                "step_no": task.step_no,
+                "step_name": task.step_name,
+                "status": task.get_status_display() if hasattr(task, "get_status_display") else task.status,
+                "assigned_user": task.assigned_user,
+                "comment": task.comment,
+                "due_at": task.due_at,
+                "completed_at": task.completed_at,
+                "due_status": task.due_status_label,
+            }
+            for task in approval_tasks
+        ]
+    }
+
+     
     actual_spend_form = (
         PurchaseActualSpendForm(initial=ui_flags["actual_spend_initial"])
         if ui_flags["show_actual_spend_form"]
         else None
     )
-
+    detail_actions = {
+        "back_url": reverse("purchase:pr_list"),
+        "project_budget_url": (
+            reverse("projects:project_budget_ledger", args=[purchase_request.project.id])
+            if purchase_request.project
+            else ""
+        ),
+        "edit_url": reverse("purchase:pr_edit", args=[purchase_request.id]),
+        "submit_url": reverse("purchase:pr_submit", args=[purchase_request.id]),
+        "cancel_url": reverse("purchase:pr_cancel", args=[purchase_request.id]),
+        "can_edit": ui_flags["can_edit"],
+        "can_submit": ui_flags["can_submit"],
+        "can_cancel": ui_flags["can_cancel"],
+    }
     context = {
         "purchase_request": purchase_request,
         "lines": lines,
@@ -241,6 +393,13 @@ def pr_detail(request, pk):
         "actual_spend_form": actual_spend_form,
         "reserved_remaining": purchase_request.get_reserved_remaining_amount(),
         "current_task_assignment_label": workflow_ui["current_task_assignment_label"],
+        "request_header": request_header,
+        "detail_actions": detail_actions,
+        "current_task_ui": current_task_ui,
+        "budget_meaning": budget_meaning,
+        "budget_snapshot_ui": budget_snapshot_ui,
+        "attachments_ui": attachments_ui,
+        "approval_workflow_ui": approval_workflow_ui,
     }
     return render(request, "purchase/pr_detail.html", context)
 
@@ -544,101 +703,79 @@ def pr_cancel(request, pk):
 @login_required
 @require_POST
 def task_claim(request, pk, task_id):
-    purchase_request = get_object_or_404(
-        PurchaseRequest.get_visible_queryset(request.user),
-        pk=pk,
+    return handle_task_action(
+        request,
+        request_obj_queryset=PurchaseRequest.get_visible_queryset(request.user),
+        request_pk=pk,
+        task_id=task_id,
+        request_fk_name="purchase_request",
+        success_message="Task '{step_name}' claimed successfully.",
+        detail_route_name="purchase:pr_detail",
+        action=lambda task, user: task.claim(user),
     )
-    task = get_object_or_404(ApprovalTask, pk=task_id, purchase_request=purchase_request)
-
-    try:
-        enforce_approval_permission(user_can_claim_task(request.user, task))
-        task.claim(request.user)
-        messages.success(request, f"Task '{task.step_name}' claimed successfully.")
-    except ValidationError as exc:
-        for message in exc.messages:
-            messages.error(request, message)
-
-    return redirect("purchase:pr_detail", pk=purchase_request.pk)
 
 
 @login_required
 @require_POST
 def task_release(request, pk, task_id):
-    purchase_request = get_object_or_404(
-        PurchaseRequest.get_visible_queryset(request.user),
-        pk=pk,
+    return handle_task_action(
+        request,
+        request_obj_queryset=PurchaseRequest.get_visible_queryset(request.user),
+        request_pk=pk,
+        task_id=task_id,
+        request_fk_name="purchase_request",
+        success_message="Task '{step_name}' released back to pool.",
+        detail_route_name="purchase:pr_detail",
+        action=lambda task, user: task.release_to_pool(user),
     )
-    task = get_object_or_404(ApprovalTask, pk=task_id, purchase_request=purchase_request)
-
-    try:
-        enforce_approval_permission(user_can_release_task(request.user, task))
-        task.release_to_pool(request.user)
-        messages.success(request, f"Task '{task.step_name}' released back to pool.")
-    except ValidationError as exc:
-        for message in exc.messages:
-            messages.error(request, message)
-
-    return redirect("purchase:pr_detail", pk=purchase_request.pk)
 
 
 @login_required
 @require_POST
 def task_approve(request, pk, task_id):
-    purchase_request = get_object_or_404(
-        PurchaseRequest.get_visible_queryset(request.user),
-        pk=pk,
-    )
-    task = get_object_or_404(ApprovalTask, pk=task_id, purchase_request=purchase_request)
     comment = request.POST.get("comment", "").strip()
-
-    try:
-        enforce_approval_permission(user_can_approve_task(request.user, task))
-        task.approve(request.user, comment=comment)
-        messages.success(request, f"Task '{task.step_name}' approved successfully.")
-    except ValidationError as exc:
-        for message in exc.messages:
-            messages.error(request, message)
-
-    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+    return handle_task_action(
+        request,
+        request_obj_queryset=PurchaseRequest.get_visible_queryset(request.user),
+        request_pk=pk,
+        task_id=task_id,
+        request_fk_name="purchase_request",
+        success_message="Task '{step_name}' approved successfully.",
+        detail_route_name="purchase:pr_detail",
+        action=lambda task, user, comment: task.approve(user, comment=comment),
+        comment=comment,
+    )
 
 
 @login_required
 @require_POST
 def task_return(request, pk, task_id):
-    purchase_request = get_object_or_404(
-        PurchaseRequest.get_visible_queryset(request.user),
-        pk=pk,
-    )
-    task = get_object_or_404(ApprovalTask, pk=task_id, purchase_request=purchase_request)
     comment = request.POST.get("comment", "").strip()
-
-    try:
-        enforce_approval_permission(user_can_return_task(request.user, task))
-        task.return_to_requester(request.user, comment=comment)
-        messages.success(request, f"Task '{task.step_name}' returned to requester successfully.")
-    except ValidationError as exc:
-        for message in exc.messages:
-            messages.error(request, message)
-
-    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+    return handle_task_action(
+        request,
+        request_obj_queryset=PurchaseRequest.get_visible_queryset(request.user),
+        request_pk=pk,
+        task_id=task_id,
+        request_fk_name="purchase_request",
+        success_message="Task '{step_name}' returned successfully.",
+        detail_route_name="purchase:pr_detail",
+        action=lambda task, user, comment: task.return_to_requester(user, comment=comment),
+        comment=comment,
+    )
 
 
 @login_required
 @require_POST
 def task_reject(request, pk, task_id):
-    purchase_request = get_object_or_404(
-        PurchaseRequest.get_visible_queryset(request.user),
-        pk=pk,
-    )
-    task = get_object_or_404(ApprovalTask, pk=task_id, purchase_request=purchase_request)
     comment = request.POST.get("comment", "").strip()
-
-    try:
-        enforce_approval_permission(user_can_reject_task(request.user, task))
-        task.reject(request.user, comment=comment)
-        messages.success(request, f"Task '{task.step_name}' rejected successfully.")
-    except ValidationError as exc:
-        for message in exc.messages:
-            messages.error(request, message)
-
-    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+    return handle_task_action(
+        request,
+        request_obj_queryset=PurchaseRequest.get_visible_queryset(request.user),
+        request_pk=pk,
+        task_id=task_id,
+        request_fk_name="purchase_request",
+        success_message="Task '{step_name}' rejected successfully.",
+        detail_route_name="purchase:pr_detail",
+        action=lambda task, user, comment: task.reject(user, comment=comment),
+        comment=comment,
+    )

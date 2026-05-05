@@ -1,0 +1,15 @@
+{% if budget_meaning.rows %}
+<div class="card">
+    <h2>Budget Meaning</h2>
+    <table>
+        <tbody>
+            {% for row in budget_meaning.rows %}
+            <tr>
+                <th>{{ row.label }}</th>
+                <td>{{ row.meaning }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

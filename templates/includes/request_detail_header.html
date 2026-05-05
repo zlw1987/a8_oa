@@ -1,0 +1,48 @@
+<div class="card">
+    <h2>{{ request_header.request_label }} Summary</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Request No</div>
+        <div>{{ request_header.request_no }}</div>
+
+        <div class="summary-label">Title / Purpose</div>
+        <div>{{ request_header.request_title }}</div>
+
+        <div class="summary-label">Status</div>
+        <div class="status">{{ request_header.request_status }}</div>
+
+        <div class="summary-label">Requester</div>
+        <div>{{ request_header.requester }}</div>
+
+        <div class="summary-label">Department</div>
+        <div>{{ request_header.request_department }}</div>
+
+        <div class="summary-label">Project</div>
+        <div>{{ request_header.project|default:"-" }}</div>
+
+        <div class="summary-label">Matched Approval Rule</div>
+        <div>
+            {% if request_header.matched_rule %}
+            {{ request_header.matched_rule.rule_code }} - {{ request_header.matched_rule.rule_name }}
+            {% else %}
+            -
+            {% endif %}
+        </div>
+
+        <div class="summary-label">Current Step</div>
+        <div>{{ request_header.current_step|default:"-" }}</div>
+
+        <div class="summary-label">Current Approver</div>
+        <div>{{ request_header.current_approver|default:"-" }}</div>
+
+        <div class="summary-label">Approval Progress</div>
+        <div>{{ request_header.approval_progress|default:"-" }}</div>
+
+        {% if request_header.current_task_assignment_label %}
+        <div class="summary-label">Current Task Ownership</div>
+        <div>{{ request_header.current_task_assignment_label }}</div>
+        {% endif %}
+
+        <div class="summary-label">Amount</div>
+        <div>{{ request_header.request_currency }} {{ request_header.request_amount }}</div>
+    </div>
+</div>

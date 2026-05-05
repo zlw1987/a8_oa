@@ -1,0 +1,31 @@
+{% if budget_snapshot_ui %}
+<div class="card">
+    <h2>Project Budget Snapshot</h2>
+
+    {% if budget_snapshot_ui.rows %}
+    <div class="summary-grid">
+        {% for row in budget_snapshot_ui.rows %}
+        <div class="summary-label">{{ row.label }}</div>
+        <div>{{ row.value }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if budget_snapshot_ui.warning %}
+    <p style="color: red; margin-top: 16px; font-weight: bold;">
+        {{ budget_snapshot_ui.warning }}
+    </p>
+    {% endif %}
+
+    <div class="summary-cards" style="margin-top: 20px;">
+        {% for card in budget_snapshot_ui.cards %}
+        <div class="summary-card">
+            <div class="label">{{ card.label }}</div>
+            <div class="value">{{ card.value }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+
+</div>
+{% endif %}

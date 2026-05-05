@@ -2185,3 +2185,412 @@ class PurchaseSmokeTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Matched Approval Rule")
         self.assertContains(response, "Current Task Ownership")
+
+    def test_purchase_detail_shows_budget_meaning_section(self):
+        pr = PurchaseRequest.objects.create(
+            title="Budget Meaning Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Budget meaning purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Budget Meaning Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+        pr.estimated_total = pr.get_lines_total()
+        pr.save(update_fields=["estimated_total"])
+
+        self.client.login(username="req_purchase", password="testpass123")
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Project Budget Snapshot")
+        self.assertContains(response, "Budget Meaning")
+        self.assertContains(response, "Remaining After This Request")
+
+    def test_purchase_submit_notification_contains_matched_rule_and_open_request_text(self):
+        self.requester.email = "req_purchase@example.com"
+        self.requester.save(update_fields=["email"])
+
+        self.manager.email = "mgr_purchase@example.com"
+        self.manager.save(update_fields=["email"])
+
+        pr = PurchaseRequest.objects.create(
+            title="Notification Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Notification test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Notify Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        mail.outbox = []
+
+        with self.captureOnCommitCallbacks(execute=True):
+            pr.submit(acting_user=self.requester)
+
+        self.assertGreaterEqual(len(mail.outbox), 1)
+
+        joined_body = "\n".join(message.body for message in mail.outbox)
+        self.assertIn("Matched Approval Rule:", joined_body)
+        self.assertIn("Next step:", joined_body)
+
+    def test_task_activation_notification_contains_task_ownership_text(self):
+        self.requester.email = "req_purchase@example.com"
+        self.requester.save(update_fields=["email"])
+
+        self.manager.email = "mgr_purchase@example.com"
+        self.manager.save(update_fields=["email"])
+
+        pr = PurchaseRequest.objects.create(
+            title="Task Mail Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Task notification test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Task Mail Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        mail.outbox = []
+
+        with self.captureOnCommitCallbacks(execute=True):
+            pr.submit(acting_user=self.requester)
+
+        self.assertGreaterEqual(len(mail.outbox), 1)
+
+        joined = "\n".join(message.body for message in mail.outbox)
+        self.assertIn("Task Ownership:", joined)
+        self.assertIn("Matched Approval Rule:", joined)
+
+    def test_purchase_list_can_filter_by_status(self):
+        draft_pr = PurchaseRequest.objects.create(
+            title="Draft Purchase Filter",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Draft filter test",
+            status=RequestStatus.DRAFT,
+        )
+
+        submitted_pr = PurchaseRequest.objects.create(
+            title="Submitted Purchase Filter",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Submitted filter test",
+            status=RequestStatus.SUBMITTED,
+        )
+
+        self.client.login(username="req_purchase", password="testpass123")
+        response = self.client.get(reverse("purchase:pr_list"), {"status": RequestStatus.DRAFT})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, draft_pr.title)
+        self.assertNotContains(response, submitted_pr.title)
+
+    def test_purchase_list_can_filter_by_keyword(self):
+        match_pr = PurchaseRequest.objects.create(
+            title="Server Upgrade Request",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Need server upgrade",
+            status=RequestStatus.DRAFT,
+        )
+
+        other_pr = PurchaseRequest.objects.create(
+            title="Office Chairs",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Need chairs",
+            status=RequestStatus.DRAFT,
+        )
+
+        self.client.login(username="req_purchase", password="testpass123")
+        response = self.client.get(reverse("purchase:pr_list"), {"keyword": "server"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, match_pr.title)
+        self.assertNotContains(response, other_pr.title)
+
+    def test_purchase_list_pagination_preserves_filter_query(self):
+        for i in range(15):
+            PurchaseRequest.objects.create(
+                title=f"Draft Filter Page {i}",
+                requester=self.requester,
+                request_department=self.department,
+                project=self.project,
+                request_date=date.today(),
+                needed_by_date=date.today() + timedelta(days=7),
+                currency="USD",
+                justification="Pagination filter test",
+                status=RequestStatus.DRAFT,
+            )
+
+        self.client.login(username="req_purchase", password="testpass123")
+        response = self.client.get(reverse("purchase:pr_list"), {"status": RequestStatus.DRAFT})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "status=DRAFT")
+
+    def test_purchase_detail_uses_neutral_action_labels(self):
+        pr = PurchaseRequest.objects.create(
+            title="Neutral Action Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Neutral action label test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Neutral Action Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Back to List")
+        self.assertContains(response, "Edit Request")
+
+    def test_purchase_detail_still_shows_current_approval_action_section(self):
+        pr = PurchaseRequest.objects.create(
+            title="Shared Current Task Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Shared current task purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Shared Task Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Current Approval Action")
+        self.assertContains(response, "Current Task Ownership")
+
+    def test_purchase_detail_still_shows_budget_meaning_section(self):
+        pr = PurchaseRequest.objects.create(
+            title="Shared Budget Meaning Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Shared budget meaning purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Shared Budget Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Budget Meaning")
+        self.assertContains(response, "Remaining After This Request")
+
+    def test_purchase_detail_still_shows_project_budget_snapshot_section(self):
+        pr = PurchaseRequest.objects.create(
+            title="Shared Budget Snapshot Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Shared budget snapshot purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Shared Snapshot Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Project Budget Snapshot")
+        self.assertContains(response, "This Request Total")
+        self.assertContains(response, "Remaining After This Request")
+
+    def test_purchase_detail_uses_unified_bottom_section_titles(self):
+        pr = PurchaseRequest.objects.create(
+            title="Unified Section Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Unified section title test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Unified Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Actual Spending")
+        self.assertContains(response, "Approval Workflow")
+        self.assertContains(response, "Request History")
+
+    def test_purchase_detail_still_shows_attachments_section(self):
+        pr = PurchaseRequest.objects.create(
+            title="Shared Attachment Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Shared attachment purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Attachment Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attachments")
+        self.assertContains(response, "Upload Attachment")
+
+    def test_purchase_detail_still_shows_approval_workflow_section(self):
+        pr = PurchaseRequest.objects.create(
+            title="Shared Workflow Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Shared workflow purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Workflow Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Approval Workflow")
+
+    def test_purchase_detail_current_task_shows_due_status(self):
+        pr = PurchaseRequest.objects.create(
+            title="Due Status Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Due status purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Due Status Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Due At")
+        self.assertContains(response, "Due Status")

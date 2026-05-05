@@ -35,8 +35,10 @@
     <Compile Include="accounts\views.py" />
     <Compile Include="accounts\__init__.py" />
     <Compile Include="approvals\access.py" />
+    <Compile Include="approvals\action_handlers.py" />
     <Compile Include="approvals\admin.py" />
     <Compile Include="approvals\apps.py" />
+    <Compile Include="approvals\filters.py" />
     <Compile Include="approvals\migrations\0001_initial.py" />
     <Compile Include="approvals\migrations\0002_alter_approvalrule_specific_requester_and_more.py" />
     <Compile Include="approvals\migrations\0003_approvaltask.py" />
@@ -82,6 +84,7 @@
     <Compile Include="projects\migrations\0001_initial.py" />
     <Compile Include="projects\migrations\__init__.py" />
     <Compile Include="projects\models.py" />
+    <Compile Include="projects\presentation.py" />
     <Compile Include="projects\tests.py" />
     <Compile Include="projects\urls.py" />
     <Compile Include="projects\views.py" />
@@ -90,6 +93,7 @@
     <Compile Include="purchase\admin.py" />
     <Compile Include="purchase\apps.py" />
     <Compile Include="purchase\audit.py" />
+    <Compile Include="purchase\filters.py" />
     <Compile Include="purchase\forms.py" />
     <Compile Include="purchase\migrations\0001_initial.py" />
     <Compile Include="purchase\migrations\0002_purchaserequesthistory.py" />
@@ -114,6 +118,7 @@
     <Compile Include="travel\admin.py" />
     <Compile Include="travel\apps.py" />
     <Compile Include="travel\audit.py" />
+    <Compile Include="travel\filters.py" />
     <Compile Include="travel\forms.py" />
     <Compile Include="travel\migrations\__init__.py" />
     <Compile Include="travel\models.py" />
@@ -141,6 +146,15 @@
     <Content Include="purchase\templates\purchase\pr_detail.html" />
     <Content Include="purchase\templates\purchase\pr_edit.html" />
     <Content Include="purchase\templates\purchase\pr_list.html" />
+    <Content Include="templates\includes\request_budget_meaning.html" />
+    <Content Include="templates\includes\request_budget_snapshot.html" />
+    <Content Include="templates\includes\request_detail_actions.html" />
+    <Content Include="templates\includes\request_detail_approval_workflow.html" />
+    <Content Include="templates\includes\request_detail_attachments.html" />
+    <Content Include="templates\includes\request_detail_current_task.html" />
+    <Content Include="templates\includes\request_detail_header.html" />
+    <Content Include="templates\purchase\_purchase_request_header_extra.html" />
+    <Content Include="templates\travel\_travel_request_header_extra.html" />
     <Content Include="travel\templates\travel\tr_detail.html" />
     <Content Include="travel\templates\travel\tr_edit.html" />
     <Content Include="travel\templates\travel\tr_list.html" />
@@ -162,6 +176,7 @@
     <Folder Include="dashboard\templates\" />
     <Folder Include="dashboard\templates\dashboard" />
     <Folder Include="dashboard\templates\registration" />
+    <Folder Include="templates\" />
     <Folder Include="projects" />
     <Folder Include="projects\migrations" />
     <Folder Include="projects\templates\" />
@@ -171,6 +186,9 @@
     <Folder Include="purchase\templates\" />
     <Folder Include="purchase\templates\approvals" />
     <Folder Include="purchase\templates\purchase" />
+    <Folder Include="templates\includes\" />
+    <Folder Include="templates\travel\" />
+    <Folder Include="templates\purchase\" />
     <Folder Include="travel\" />
     <Folder Include="travel\migrations\" />
     <Folder Include="travel\templates\" />

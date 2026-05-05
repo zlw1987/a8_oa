@@ -10,6 +10,19 @@
 </div>
 
 <div class="card">
+    <h2>Filters</h2>
+    <form method="get">
+        <table>
+            {{ filter_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Apply Filters</button>
+            <a href="{% url 'travel:tr_list' %}">Clear</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
     <table>
         <thead>
             <tr>
@@ -19,6 +32,9 @@
                 <th>Requester</th>
                 <th>Department</th>
                 <th>Project</th>
+                <th>Current Step</th>
+                <th>Current Approver</th>
+                <th>Approval Progress</th>
                 <th>Origin</th>
                 <th>Destination</th>
                 <th>Start Date</th>
@@ -28,14 +44,17 @@
             </tr>
         </thead>
         <tbody>
-            {% for tr in travel_requests %}
+            {% for tr in page_obj.object_list %}
             <tr>
                 <td><a href="{% url 'travel:tr_detail' tr.id %}">{{ tr.travel_no }}</a></td>
                 <td>{{ tr.purpose }}</td>
-                <td>{{ tr.get_status_display }}</td>
+                <td><span class="badge {{ tr.status_badge_class }}">{{ tr.get_status_display }}</span></td>
                 <td>{{ tr.requester }}</td>
                 <td>{{ tr.request_department }}</td>
                 <td>{{ tr.project }}</td>
+                <td>{{ tr.current_step }}</td>
+                <td>{{ tr.current_approver }}</td>
+                <td>{{ tr.approval_progress }}</td>
                 <td>{{ tr.origin_city }}</td>
                 <td>{{ tr.destination_city }}</td>
                 <td>{{ tr.start_date }}</td>
@@ -51,10 +70,32 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="12">No travel requests found.</td>
+                <td colspan="15">No travel requests found.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+
+{% if page_obj.has_other_pages %}
+<div class="card">
+    <div class="pagination">
+        <span class="muted">
+            Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+        </span>
+
+        {% if page_obj.has_previous %}
+        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page=1">First</a>
+        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+
+        <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+        {% if page_obj.has_next %}
+        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.paginator.num_pages }}">Last</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 {% endblock %}

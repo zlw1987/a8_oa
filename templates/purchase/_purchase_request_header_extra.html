@@ -1,0 +1,26 @@
+<div class="summary-label">Fulfillment Status</div>
+<div>{{ purchase_request.get_fulfillment_status_display }}</div>
+
+<div class="summary-label">Actual Spent Total</div>
+<div>{{ purchase_request.currency }} {{ actual_spent_total }}</div>
+
+<div class="summary-label">Reserved Remaining</div>
+<div>{{ purchase_request.currency }} {{ reserved_remaining }}</div>
+
+<div class="summary-label">Request Date</div>
+<div>{{ purchase_request.request_date }}</div>
+
+<div class="summary-label">Needed By</div>
+<div>{{ purchase_request.needed_by_date }}</div>
+
+<div class="summary-label">Vendor Suggestion</div>
+<div>{{ purchase_request.vendor_suggestion|default:"-" }}</div>
+
+<div class="summary-label">Delivery Location</div>
+<div>{{ purchase_request.delivery_location|default:"-" }}</div>
+
+<div class="summary-label">Justification</div>
+<div>{{ purchase_request.justification|default:"-" }}</div>
+
+<div class="summary-label">Notes</div>
+<div>{{ purchase_request.notes|default:"-" }}</div>

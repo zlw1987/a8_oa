@@ -3,6 +3,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.db import models, transaction
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from datetime import timedelta
 from django.utils import timezone
 
 from common.choices import (
@@ -88,7 +89,7 @@ class ApprovalRuleStep(models.Model):
     is_required = models.BooleanField(default=True)
     allow_self_skip = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
-
+    sla_days = models.PositiveIntegerField(default=2)
     class Meta:
         db_table = "PS_A8_AP_STEP"
         verbose_name = "Approval Rule Step"
@@ -169,6 +170,8 @@ class ApprovalTask(models.Model):
     acted_at = models.DateTimeField(null=True, blank=True)
     comment = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+    due_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "PS_A8_AP_TASK"
@@ -179,6 +182,39 @@ class ApprovalTask(models.Model):
 
     def __str__(self):
         return f"{self.request_no or '-'} / Step {self.step_no} / {self.status}"
+
+    @property
+    def is_open_task(self):
+        return self.status in [
+            ApprovalTaskStatus.WAITING,
+            ApprovalTaskStatus.POOL,
+            ApprovalTaskStatus.PENDING,
+        ]
+
+
+    @property
+    def is_overdue(self):
+        return bool(
+            self.due_at
+            and self.is_open_task
+            and timezone.now() > self.due_at
+        )
+
+
+    @property
+    def due_status_label(self):
+        if not self.due_at:
+            return "-"
+
+        if self.completed_at:
+            return "Completed"
+
+        if self.is_overdue:
+            delta = timezone.now() - self.due_at
+            days = max(1, delta.days)
+            return f"Overdue by {days} day(s)"
+
+        return "On Time"
 
     def _add_history(
         self,
@@ -354,10 +390,14 @@ class ApprovalTask(models.Model):
         from_status = self.status
         from_assignee = self.assigned_user
 
+        due_at = timezone.now() + timedelta(days=self.step.sla_days or 0)
+
         if self.candidates.exists():
             self.assigned_user = None
             self.status = ApprovalTaskStatus.POOL
-            self.save(update_fields=["assigned_user", "status"])
+            self.due_at = due_at
+            self.completed_at = None
+            self.save(update_fields=["assigned_user", "status", "due_at", "completed_at"])
 
             self._add_history(
                 action_type=ApprovalTaskActionType.ACTIVATED,
@@ -378,7 +418,9 @@ class ApprovalTask(models.Model):
 
         self.assigned_user = assigned_user
         self.status = ApprovalTaskStatus.PENDING
-        self.save(update_fields=["assigned_user", "status"])
+        self.due_at = due_at
+        self.completed_at = None
+        self.save(update_fields=["assigned_user", "status", "due_at", "completed_at"])
 
         self._add_history(
             action_type=ApprovalTaskActionType.ACTIVATED,
@@ -412,8 +454,9 @@ class ApprovalTask(models.Model):
         self.status = ApprovalTaskStatus.APPROVED
         self.acted_by = user
         self.acted_at = timezone.now()
+        self.completed_at = self.acted_at
         self.comment = comment
-        self.save(update_fields=["status", "acted_by", "acted_at", "comment"])
+        self.save(update_fields=["status", "acted_by", "acted_at", "completed_at", "comment"])
 
         self._add_history(
             action_type=ApprovalTaskActionType.APPROVED,
@@ -463,8 +506,9 @@ class ApprovalTask(models.Model):
         self.status = ApprovalTaskStatus.REJECTED
         self.acted_by = user
         self.acted_at = timezone.now()
+        self.completed_at = self.acted_at
         self.comment = comment
-        self.save(update_fields=["status", "acted_by", "acted_at", "comment"])
+        self.save(update_fields=["status", "acted_by", "acted_at", "completed_at", "comment"])
 
         self._add_history(
             action_type=ApprovalTaskActionType.REJECTED,
@@ -504,8 +548,9 @@ class ApprovalTask(models.Model):
         self.status = ApprovalTaskStatus.RETURNED
         self.acted_by = user
         self.acted_at = timezone.now()
+        self.completed_at = self.acted_at
         self.comment = comment
-        self.save(update_fields=["status", "acted_by", "acted_at", "comment"])
+        self.save(update_fields=["status", "acted_by", "acted_at", "completed_at", "comment"])
 
         self._add_history(
             action_type=ApprovalTaskActionType.RETURNED,
@@ -543,7 +588,8 @@ class ApprovalTask(models.Model):
         from_assignee = self.assigned_user
 
         self.status = ApprovalTaskStatus.CANCELLED
-        self.save(update_fields=["status"])
+        self.completed_at = timezone.now()
+        self.save(update_fields=["status", "completed_at"])
 
         self._add_history(
             action_type=ApprovalTaskActionType.CANCELLED,

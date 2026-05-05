@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from decimal import Decimal
+from datetime import date, timedelta
 
 from django.db import models, transaction
 from django.db.models import Sum, Q
@@ -385,6 +386,8 @@ class PurchaseRequest(models.Model):
                     step_name=step.step_name,
                     status=task_status,
                     assigned_user=None,
+                    due_at=timezone.now() + timedelta(days=step.sla_days or 0),
+                    completed_at=None,
                 )
 
                 ApprovalTaskCandidate.objects.bulk_create(
@@ -423,6 +426,8 @@ class PurchaseRequest(models.Model):
                     step_name=step.step_name,
                     assigned_user=assigned_user,
                     status=task_status,
+                    due_at=timezone.now() + timedelta(days=step.sla_days or 0),
+                    completed_at=None,
                 )
 
                 task._add_history(

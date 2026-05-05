@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import tempfile
 
+from django.utils import timezone
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
 from django.core import mail
@@ -10,7 +11,9 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.core.exceptions import ValidationError
 from django.db.models import Sum
+from django.contrib.contenttypes.models import ContentType
 
+from approvals.models import ApprovalTask
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
 from common.choices import (
@@ -113,6 +116,20 @@ class TravelSmokeTest(TestCase):
             approver_type=ApproverType.DEPARTMENT_MANAGER,
             is_active=True,
         )
+
+    def _get_travel_task_and_viewer(self, travel_request):
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=travel_request.id,
+        ).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        if task.assigned_user:
+            return task, task.assigned_user
+
+        candidate = task.candidates.filter(is_active=True).select_related("user").first()
+        self.assertIsNotNone(candidate)
+        return task, candidate.user
 
     def test_travel_submit_creates_task(self):
         self.client.login(username="req_travel", password="testpass123")
@@ -2849,3 +2866,799 @@ class TravelSmokeTest(TestCase):
         self.assertContains(response, "Matched Approval Rule")
         self.assertContains(response, "Current Task Ownership")
         self.assertContains(response, "Current Approval Action")
+
+    def test_travel_detail_shows_project_budget_snapshot(self):
+        tr = TravelRequest.objects.create(
+            purpose="Budget Snapshot Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.login(username="req_travel", password="testpass123")
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Project Budget Snapshot")
+        self.assertContains(response, "Budget Meaning")
+        self.assertContains(response, "Reserved Remaining for This Request")
+
+    def test_travel_detail_shows_remaining_after_request(self):
+        tr = TravelRequest.objects.create(
+            purpose="Remaining Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.login(username="req_travel", password="testpass123")
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Remaining After This Request")
+
+    def test_travel_submit_notification_contains_matched_rule_and_open_request_text(self):
+        self.requester.email = "req_travel@example.com"
+        self.requester.save(update_fields=["email"])
+
+        self.manager.email = "mgr_travel@example.com"
+        self.manager.save(update_fields=["email"])
+
+        tr = TravelRequest.objects.create(
+            purpose="Notification Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+        tr.refresh_estimated_total(commit=True)
+
+        mail.outbox = []
+
+        with self.captureOnCommitCallbacks(execute=True):
+            tr.submit(acting_user=self.requester)
+
+        self.assertGreaterEqual(len(mail.outbox), 1)
+
+        joined_body = "\n".join(message.body for message in mail.outbox)
+        self.assertIn("Matched Approval Rule:", joined_body)
+        self.assertIn("Next step:", joined_body)
+
+    def test_travel_list_can_filter_by_status(self):
+        draft_tr = TravelRequest.objects.create(
+            purpose="Draft Travel Filter",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.DRAFT,
+        )
+
+        approved_tr = TravelRequest.objects.create(
+            purpose="Approved Travel Filter",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Portland",
+            currency="USD",
+            status=TravelRequestStatus.APPROVED,
+        )
+
+        self.client.login(username="req_travel", password="testpass123")
+        response = self.client.get(reverse("travel:tr_list"), {"status": TravelRequestStatus.DRAFT})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, draft_tr.purpose)
+        self.assertNotContains(response, approved_tr.purpose)
+
+    def test_travel_list_can_filter_by_keyword(self):
+        match_tr = TravelRequest.objects.create(
+            purpose="Seattle Customer Visit",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.DRAFT,
+        )
+
+        other_tr = TravelRequest.objects.create(
+            purpose="Internal Training",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=4),
+            end_date=date.today() + timedelta(days=6),
+            origin_city="San Jose",
+            destination_city="Austin",
+            currency="USD",
+            status=TravelRequestStatus.DRAFT,
+        )
+
+        self.client.login(username="req_travel", password="testpass123")
+        response = self.client.get(reverse("travel:tr_list"), {"keyword": "Seattle"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, match_tr.purpose)
+        self.assertNotContains(response, other_tr.purpose)
+
+    def test_travel_list_pagination_preserves_filter_query(self):
+        for i in range(15):
+            TravelRequest.objects.create(
+                purpose=f"Draft Travel Page {i}",
+                requester=self.requester,
+                request_department=self.department,
+                project=self.project,
+                request_date=date.today(),
+                start_date=date.today() + timedelta(days=3),
+                end_date=date.today() + timedelta(days=5),
+                origin_city="San Jose",
+                destination_city="Seattle",
+                currency="USD",
+                status=TravelRequestStatus.DRAFT,
+            )
+
+        self.client.login(username="req_travel", password="testpass123")
+        response = self.client.get(reverse("travel:tr_list"), {"status": TravelRequestStatus.DRAFT})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "status=DRAFT")
+
+    def test_travel_detail_uses_neutral_action_labels(self):
+        tr = TravelRequest.objects.create(
+            purpose="Neutral Action Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Back to List")
+        self.assertContains(response, "Edit Request")
+
+    def test_travel_detail_still_shows_current_approval_action_section(self):
+        tr = TravelRequest.objects.create(
+            purpose="Shared Current Task Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Current Approval Action")
+        self.assertContains(response, "Current Task Ownership")
+
+    def test_travel_detail_still_shows_budget_meaning_section(self):
+        tr = TravelRequest.objects.create(
+            purpose="Shared Budget Meaning Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Budget Meaning")
+        self.assertContains(response, "Reserved Remaining for This Request")
+
+    def test_travel_detail_still_shows_project_budget_snapshot_section(self):
+        tr = TravelRequest.objects.create(
+            purpose="Shared Budget Snapshot Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Project Budget Snapshot")
+        self.assertContains(response, "This Request Total")
+        self.assertContains(response, "Reserved Remaining")
+
+    def test_travel_detail_uses_unified_bottom_section_titles(self):
+        tr = TravelRequest.objects.create(
+            purpose="Unified Section Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Estimated Expenses")
+        self.assertContains(response, "Actual Expenses")
+        self.assertContains(response, "Request History")
+
+    def test_travel_detail_still_shows_attachments_section(self):
+        tr = TravelRequest.objects.create(
+            purpose="Shared Attachment Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attachments")
+        self.assertContains(response, "Upload Attachment")
+
+    def test_travel_detail_now_shows_approval_workflow_section(self):
+        tr = TravelRequest.objects.create(
+            purpose="Shared Workflow Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Approval Workflow")
+
+    def test_travel_task_return_uses_generic_request_object_lookup(self):
+        tr = TravelRequest.objects.create(
+            purpose="Generic Lookup Return Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+
+        self.assertIsNotNone(task)
+        self.assertEqual(task.assigned_user, self.manager)
+
+        self.client.force_login(self.manager)
+        response = self.client.post(
+            reverse("travel:task_return", args=[tr.id, task.id]),
+            {"comment": "Return for update"},
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        task.refresh_from_db()
+        tr.refresh_from_db()
+
+        self.assertEqual(task.status, ApprovalTaskStatus.RETURNED)
+        self.assertEqual(tr.status, TravelRequestStatus.RETURNED)
+
+    def test_travel_detail_current_task_shows_due_fields(self):
+        tr = TravelRequest.objects.create(
+            purpose="Due Field Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task, viewer = self._get_travel_task_and_viewer(tr)
+
+        self.client.force_login(viewer)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Current Approval Action")
+        self.assertContains(response, "Due At")
+        self.assertContains(response, "Due Status")
+        self.assertContains(response, "On Time")
+
+    def test_travel_detail_approval_workflow_shows_due_fields(self):
+        tr = TravelRequest.objects.create(
+            purpose="Workflow Due Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task, viewer = self._get_travel_task_and_viewer(tr)
+
+        self.client.force_login(viewer)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Approval Workflow")
+        self.assertContains(response, "Due At")
+        self.assertContains(response, "Due Status")
+
+    def test_travel_detail_current_task_shows_overdue_status(self):
+        tr = TravelRequest.objects.create(
+            purpose="Overdue Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task, viewer = self._get_travel_task_and_viewer(tr)
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.save(update_fields=["due_at"])
+
+        self.client.force_login(viewer)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Due Status")
+        self.assertContains(response, "Overdue by")
+
+    def test_travel_submit_creates_first_task_with_due_at(self):
+        tr = TravelRequest.objects.create(
+            purpose="Travel Task Due At Test",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+
+        self.assertIsNotNone(task)
+        self.assertIsNotNone(task.due_at)

@@ -5,11 +5,14 @@
 
     {% block content %}
     <div class="card">
+        <h2>Filters</h2>
         <form method="get">
+            <table>
+                {{ filter_form.as_table }}
+            </table>
             <div class="action-row">
-                <input type="text" name="q" value="{{ search_q }}" placeholder="Search PR No, title, step name">
-                <button type="submit">Search</button>
-                <a href="{% url 'approvals:my_tasks' %}">Reset</a>
+                <button type="submit">Apply Filters</button>
+                <a href="{% url 'approvals:my_tasks' %}">Clear</a>
             </div>
         </form>
     </div>
@@ -19,8 +22,14 @@
             <div class="summary-label">Assigned to Me</div>
             <div>{{ assigned_count }}</div>
 
+            <div class="summary-label">Assigned Overdue</div>
+            <div>{{ assigned_overdue_count }}</div>
+
             <div class="summary-label">Available Pool Tasks</div>
             <div>{{ pool_count }}</div>
+
+            <div class="summary-label">Pool Overdue</div>
+            <div>{{ pool_overdue_count }}</div>
         </div>
     </div>
 
@@ -30,19 +39,25 @@
             <thead>
                 <tr>
                     <th>Request Type</th>
-                    <th>PR No</th>
+                    <th>Request No</th>
                     <th>Title</th>
+                    <th>Requester</th>
+                    <th>Ownership</th>
                     <th>Step</th>
                     <th>Task Status</th>
-                    <th>PR Status</th>
+                    <th>Due At</th>
+                    <th>Due Status</th>
+                    <th>Request Status</th>
                     <th>Amount</th>
-                    <th>Comment</th>
-                    <th>Action</th>
+                    <th>Task Comment</th>
+                    <th>Approval Actions</th>
+                    <th>Task Actions</th>
+
                 </tr>
             </thead>
             <tbody>
                 {% for task in assigned_tasks %}
-                <tr>
+                <tr {% if task.is_overdue_flag %} style="background: #fff8f8;" {% endif %}>
                     <td>{{ task.request_type_label }}</td>
                     <td>
                         <a href="{{ task.request_detail_url }}">
@@ -50,14 +65,25 @@
                         </a>
                     </td>
                     <td>{{ task.request_title }}</td>
+                    <td>{{ task.request_requester_display }}</td>
+                    <td>{{ task.ownership_label }}</td>
                     <td>{{ task.step_name }}</td>
                     <td><span class="badge {{ task.task_status_badge_class }}">{{ task.get_status_display }}</span></td>
+                    <td>
+                        {% if task.due_at_display %}
+                        {{ task.due_at_display|date:"Y-m-d H:i" }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td><span class="badge {{ task.due_status_badge_class }}">{{ task.due_status_display }}</span></td>
                     <td><span class="badge {{ task.pr_status_badge_class }}">{{ task.request_status_display }}</span></td>
                     <td>{{ task.request_currency }}  {{ task.request_amount }}</td>
+                    <td>{{ task.current_comment_display }}</td>
                     <td>
                         <form method="post" action="{% url 'approvals:task_approve' task.id %}">
                             {% csrf_token %}
-                            <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                            <input type="text" name="comment" style="width: 180px;" placeholder="Approval Comment">
                             <div class="action-row">
                                 <button type="submit">Approve</button>
                             </div>
@@ -65,15 +91,15 @@
 
                         <form method="post" action="{% url 'approvals:task_return' task.id %}" style="margin-top: 8px;">
                             {% csrf_token %}
-                            <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                            <input type="text" name="comment" style="width: 180px;" placeholder="Return Comment">
                             <div class="action-row">
-                                <button type="submit">Return</button>
+                                <button type="submit">Return to Requester</button>
                             </div>
                         </form>
 
                         <form method="post" action="{% url 'approvals:task_reject' task.id %}" style="margin-top: 8px;">
                             {% csrf_token %}
-                            <input type="text" name="comment" style="width: 180px;" placeholder="Comment">
+                            <input type="text" name="comment" style="width: 180px;" placeholder="Reject Comment">
                             <div class="action-row">
                                 <button type="submit">Reject</button>
                             </div>
@@ -81,12 +107,12 @@
                     </td>
                     <td>
                         <div class="action-row">
-                            <a href="{{ task.request_detail_url }}">Open PR</a>
+                            <a href="{{ task.request_detail_url }}">Open Request</a>
 
                             {% if task.can_release %}
                             <form method="post" action="{% url 'approvals:task_release' task.id %}">
                                 {% csrf_token %}
-                                <button type="submit">Release</button>
+                                <button type="submit">Release to Pool</button>
                             </form>
                             {% endif %}
                         </div>
@@ -94,10 +120,10 @@
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="8">No assigned tasks.</td>
+                    <td colspan="13">No assigned tasks.</td>
                 </tr>
-                {% endfor %}
-            </tbody>
+                    {% endfor %}
+</tbody>
         </table>
     </div>
 
@@ -129,18 +155,22 @@
             <thead>
                 <tr>
                     <th>Request Type</th>
-                    <th>PR No</th>
+                    <th>Request No</th>
                     <th>Title</th>
+                    <th>Requester</th>
+                    <th>Ownership</th>
                     <th>Step</th>
                     <th>Task Status</th>
-                    <th>PR Status</th>
+                    <th>Due At</th>
+                    <th>Due Status</th>
+                    <th>Request Status</th>
                     <th>Amount</th>
-                    <th>Action</th>
+                    <th>Task Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for task in pool_tasks %}
-                <tr>
+                <tr{% if task.is_overdue_flag %} style="background: #fff8f8;" {% endif %}>
                     <td>{{ task.request_type_label }}</td>
                     <td>
                         <a href="{{ task.request_detail_url }}">
@@ -148,27 +178,37 @@
                         </a>
                     </td>
                     <td>{{ task.request_title }}</td>
+                    <td>{{ task.request_requester_display }}</td>
+                    <td>{{ task.ownership_label }}</td>
                     <td>{{ task.step_name }}</td>
                     <td><span class="badge {{ task.task_status_badge_class }}">{{ task.get_status_display }}</span></td>
+                    <td>
+                        {% if task.due_at_display %}
+                        {{ task.due_at_display|date:"Y-m-d H:i" }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td><span class="badge {{ task.due_status_badge_class }}">{{ task.due_status_display }}</span></td>
                     <td><span class="badge {{ task.pr_status_badge_class }}">{{ task.request_status_display }}</span></td>
                     <td>{{ task.request_currency }}  {{ task.request_amount }}</td>
                     <td>
                         <div class="action-row">
-                            <a href="{{ task.request_detail_url }}">Open PR</a>
+                            <a href="{{ task.request_detail_url }}">Open Request</a>
 
                             <form method="post" action="{% url 'approvals:task_claim' task.id %}">
                                 {% csrf_token %}
-                                <button type="submit">Claim</button>
+                                <button type="submit">Claim Task</button>
                             </form>
                         </div>
                     </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="7">No available pool tasks.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="12">No available pool tasks.</td>
+                    </tr>
+                    {% endfor %}
+</tbody>
         </table>
     </div>
 

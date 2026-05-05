@@ -1,0 +1,17 @@
+<div class="summary-label">Origin City</div>
+<div>{{ travel_request.origin_city }}</div>
+
+<div class="summary-label">Destination City</div>
+<div>{{ travel_request.destination_city }}</div>
+
+<div class="summary-label">Start Date</div>
+<div>{{ travel_request.start_date }}</div>
+
+<div class="summary-label">End Date</div>
+<div>{{ travel_request.end_date }}</div>
+
+<div class="summary-label">Actual Total</div>
+<div>{{ travel_request.currency }} {{ travel_request.actual_total }}</div>
+
+<div class="summary-label">Notes</div>
+<div>{{ travel_request.notes|default:"-" }}</div>

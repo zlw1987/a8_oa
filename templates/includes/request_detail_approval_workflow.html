@@ -1,0 +1,35 @@
+<div class="card">
+    <h2>Approval Workflow</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Step No</th>
+                <th>Step Name</th>
+                <th>Status</th>
+                <th>Due At</th>
+                <th>Completed At</th>
+                <th>Due Status</th>
+                <th>Assigned User</th>
+                <th>Comment</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in approval_workflow_ui.rows %}
+            <tr>
+                <td>{{ row.step_no }}</td>
+                <td>{{ row.step_name }}</td>
+                <td>{{ row.status }}</td>
+                <td>{{ row.due_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ row.completed_at|date:"Y-m-d H:i"|default:"-" }}</td>
+                <td>{{ row.due_status }}</td>
+                <td>{{ row.assigned_user|default:"-" }}</td>
+                <td>{{ row.comment|default:"-" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="8">No approval workflow records.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

@@ -1,0 +1,27 @@
+<div class="card">
+    <div class="action-row">
+        <a href="{{ detail_actions.back_url }}">Back to List</a>
+
+        {% if detail_actions.project_budget_url %}
+        <a href="{{ detail_actions.project_budget_url }}">Open Project Budget Ledger</a>
+        {% endif %}
+
+        {% if detail_actions.can_edit and detail_actions.edit_url %}
+        <a href="{{ detail_actions.edit_url }}">Edit Request</a>
+        {% endif %}
+
+        {% if detail_actions.can_submit and detail_actions.submit_url %}
+        <form method="post" action="{{ detail_actions.submit_url }}">
+            {% csrf_token %}
+            <button type="submit">Submit</button>
+        </form>
+        {% endif %}
+
+        {% if detail_actions.can_cancel and detail_actions.cancel_url %}
+        <form method="post" action="{{ detail_actions.cancel_url }}">
+            {% csrf_token %}
+            <button type="submit">Cancel</button>
+        </form>
+        {% endif %}
+    </div>
+</div>

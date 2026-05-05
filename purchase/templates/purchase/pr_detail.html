@@ -4,86 +4,18 @@
 {% block page_title %}Purchase Request Detail{% endblock %}
 
 {% block content %}
-{% if purchase_request.project %}
-<div class="card">
-    <h2>Project Budget</h2>
-    <div class="action-row">
-        <a href="{% url 'projects:project_budget_ledger' purchase_request.project.id %}">
-            Open Project Budget Ledger
-        </a>
-    </div>
-</div>
-{% endif %}
-<div class="card">
-    <p><a href="{% url 'purchase:pr_list' %}">← Back to Purchase Request List</a></p>
 
-    <div class="action-row">
-        {% if can_edit %}
-        <a href="{% url 'purchase:pr_edit' purchase_request.id %}">Edit</a>
-        {% endif %}
+{% include "includes/request_detail_actions.html" %}
 
-        {% if can_submit %}
-        <form method="post" action="{% url 'purchase:pr_submit' purchase_request.id %}">
-            {% csrf_token %}
-            <button type="submit">Submit</button>
-        </form>
-        {% endif %}
-
-        {% if can_cancel %}
-        <form method="post" action="{% url 'purchase:pr_cancel' purchase_request.id %}">
-            {% csrf_token %}
-            <button type="submit">Cancel</button>
-        </form>
-        {% endif %}
-    </div>
-</div>
+{% include "includes/request_detail_header.html" %}
 
 <div class="card">
-    <h2>Request Summary</h2>
+    <h2>Purchase Details</h2>
     <div class="summary-grid">
-        <div class="summary-label">PR No</div>
-        <div>{{ purchase_request.pr_no }}</div>
-
-        <div class="summary-label">Title</div>
-        <div>{{ purchase_request.title }}</div>
-
-        <div class="summary-label">Status</div>
-        <div class="status">{{ purchase_request.status }}</div>
-
-        <div class="summary-label">Requester</div>
-        <div>{{ purchase_request.requester }}</div>
-
-        <div class="summary-label">Department</div>
-        <div>{{ purchase_request.request_department }}</div>
-
-        <div class="summary-label">Project</div>
-        <div>{{ purchase_request.project }}</div>
-
-        <div class="summary-label">Matched Approval Rule</div>
-        <div>
-            {% if purchase_request.matched_rule %}
-            {{ purchase_request.matched_rule.rule_code }} - {{ purchase_request.matched_rule.rule_name }}
-            {% else %}
-            -
-            {% endif %}
-        </div>
-
-        <div class="summary-label">Current Step</div>
-        <div>{{ current_step }}</div>
-
-        <div class="summary-label">Current Approver</div>
-        <div>{{ current_approver }}</div>
-
-        <div class="summary-label">Approval Progress</div>
-        <div>{{ approval_progress }}</div>
-
-        <div class="summary-label">Estimated Total</div>
-        <div>{{ purchase_request.currency }} {{ purchase_request.estimated_total }}</div>
-
         <div class="summary-label">Fulfillment Status</div>
         <div>{{ purchase_request.get_fulfillment_status_display }}</div>
 
-        <div class="summary-label">Actual Spent Total</div>
+        <div class="summary-label">Actual Spending Total</div>
         <div>{{ purchase_request.currency }} {{ actual_spent_total }}</div>
 
         <div class="summary-label">Reserved Remaining</div>
@@ -92,249 +24,27 @@
         <div class="summary-label">Request Date</div>
         <div>{{ purchase_request.request_date }}</div>
 
-        <div class="summary-label">Needed By</div>
+        <div class="summary-label">Needed By Date</div>
         <div>{{ purchase_request.needed_by_date }}</div>
 
         <div class="summary-label">Vendor Suggestion</div>
-        <div>{{ purchase_request.vendor_suggestion }}</div>
+        <div>{{ purchase_request.vendor_suggestion|default:"-" }}</div>
 
         <div class="summary-label">Delivery Location</div>
-        <div>{{ purchase_request.delivery_location }}</div>
+        <div>{{ purchase_request.delivery_location|default:"-" }}</div>
 
         <div class="summary-label">Justification</div>
-        <div>{{ purchase_request.justification }}</div>
+        <div>{{ purchase_request.justification|default:"-" }}</div>
 
         <div class="summary-label">Notes</div>
-        <div>{{ purchase_request.notes }}</div>
+        <div>{{ purchase_request.notes|default:"-" }}</div>
     </div>
 </div>
 
-{% if budget_summary %}
-<div class="card">
-    <h2>Project Budget Snapshot</h2>
-    <div class="summary-grid">
-        <div class="summary-label">Project</div>
-        <div>{{ budget_summary.project_code }} - {{ budget_summary.project_name }}</div>
+{% include "includes/request_budget_snapshot.html" %}
+{% include "includes/request_budget_meaning.html" %}
+{% include "includes/request_detail_current_task.html" %}
 
-        <div class="summary-label">Project Budget</div>
-        <div>{{ purchase_request.currency }} {{ budget_summary.budget_amount }}</div>
-
-        <div class="summary-label">Reserved Amount</div>
-        <div>{{ purchase_request.currency }} {{ budget_summary.reserved_amount }}</div>
-
-        <div class="summary-label">Available Amount</div>
-        <div>{{ purchase_request.currency }} {{ budget_summary.available_amount }}</div>
-
-        <div class="summary-label">This Request Total</div>
-        <div>{{ purchase_request.currency }} {{ budget_summary.request_total }}</div>
-
-        <div class="summary-label">Remaining After This Request</div>
-        <div>{{ purchase_request.currency }} {{ budget_summary.remaining_after_request }}</div>
-    </div>
-
-    {% if budget_summary.over_available %}
-    <p style="color: red; margin-top: 12px; font-weight: bold;">
-        Warning: This request exceeds the currently available project budget.
-    </p>
-    {% endif %}
-</div>
-{% endif %}
-
-{% if current_task %}
-<div class="card">
-    <h2>Current Approval Action</h2>
-
-    <div class="summary-grid">
-        <div class="summary-label">Current Task</div>
-        <div>{{ current_task.step_name }}</div>
-
-        <div class="summary-label">Task Status</div>
-        <div>{{ current_task.status }}</div>
-
-        <div class="summary-label">Current Task Ownership</div>
-        <div>{{ current_task_assignment_label }}</div>
-    </div>
-
-    <div class="action-row">
-        {% if can_claim_current_task %}
-        <form method="post" action="{% url 'purchase:task_claim' purchase_request.id current_task.id %}">
-            {% csrf_token %}
-            <button type="submit">Claim Task</button>
-        </form>
-        {% endif %}
-
-        {% if can_release_current_task %}
-        <form method="post" action="{% url 'purchase:task_release' purchase_request.id current_task.id %}">
-            {% csrf_token %}
-            <button type="submit">Release Back to Pool</button>
-        </form>
-        {% endif %}
-    </div>
-
-    {% if can_approve_current_task or can_return_current_task or can_reject_current_task %}
-    <div style="margin-top: 16px;">
-        <h3>Approval Comment</h3>
-
-        {% if can_approve_current_task %}
-        <form method="post" action="{% url 'purchase:task_approve' purchase_request.id current_task.id %}" style="margin-bottom: 12px;">
-            {% csrf_token %}
-            <textarea name="comment"></textarea>
-            <div class="action-row">
-                <button type="submit">Approve</button>
-            </div>
-        </form>
-        {% endif %}
-
-        {% if can_return_current_task %}
-        <form method="post" action="{% url 'purchase:task_return' purchase_request.id current_task.id %}" style="margin-bottom: 12px;">
-            {% csrf_token %}
-            <textarea name="comment"></textarea>
-            <div class="action-row">
-                <button type="submit">Return to Requester</button>
-            </div>
-        </form>
-        {% endif %}
-
-        {% if can_reject_current_task %}
-        <form method="post" action="{% url 'purchase:task_reject' purchase_request.id current_task.id %}">
-            {% csrf_token %}
-            <textarea name="comment"></textarea>
-            <div class="action-row">
-                <button type="submit">Reject</button>
-            </div>
-        </form>
-        {% endif %}
-    </div>
-    {% endif %}
-</div>
-{% endif %}
-
-<div class="card">
-    <h2>Actual Spend</h2>
-
-    {% if can_record_actual_spend %}
-    <form method="post" action="{% url 'purchase:pr_record_actual_spend' purchase_request.id %}">
-        {% csrf_token %}
-        <table>
-            {{ actual_spend_form.as_table }}
-        </table>
-        <div class="action-row">
-            <button type="submit">Record Actual Spend</button>
-        </div>
-    </form>
-    {% endif %}
-
-    <table style="margin-top: 16px;">
-        <thead>
-            <tr>
-                <th>Spend Date</th>
-                <th>Amount</th>
-                <th>Vendor</th>
-                <th>Reference No</th>
-                <th>Created By</th>
-                <th>Created At</th>
-                <th>Notes</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for spend in actual_spend_entries %}
-            <tr>
-                <td>{{ spend.spend_date }}</td>
-                <td>{{ spend.currency }} {{ spend.amount }}</td>
-                <td>{{ spend.vendor_name }}</td>
-                <td>{{ spend.reference_no }}</td>
-                <td>{{ spend.created_by }}</td>
-                <td>{{ spend.created_at }}</td>
-                <td>{{ spend.notes }}</td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="7">No actual spend records.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-
-{% if can_close_purchase %}
-<div class="card">
-    <h2>Close Purchase</h2>
-    <p class="muted">
-        Use this action when the purchase execution is complete. Any remaining reserved budget will be released.
-    </p>
-
-    <form method="post" action="{% url 'purchase:pr_close' purchase_request.id %}">
-        {% csrf_token %}
-        <table>
-            <tr>
-                <th>Close Comment</th>
-                <td>
-                    <textarea name="comment"></textarea>
-                </td>
-            </tr>
-        </table>
-        <div class="action-row">
-            <button type="submit">Close Purchase</button>
-        </div>
-    </form>
-</div>
-{% endif %}
-
-<div class="card">
-    <h2>Attachments</h2>
-
-    {% if can_manage_attachments %}
-    <form method="post" action="{% url 'purchase:pr_upload_attachment' purchase_request.id %}" enctype="multipart/form-data">
-        {% csrf_token %}
-        <table>
-            {{ attachment_form.as_table }}
-        </table>
-        <div class="action-row">
-            <button type="submit">Upload Attachment</button>
-        </div>
-    </form>
-    {% endif %}
-
-    <table style="margin-top: 16px;">
-        <thead>
-            <tr>
-                <th>Type</th>
-                <th>Title</th>
-                <th>File</th>
-                <th>Uploaded By</th>
-                <th>Uploaded At</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for attachment in attachments %}
-            <tr>
-                <td>{{ attachment.get_document_type_display }}</td>
-                <td>{{ attachment.title }}</td>
-                <td>
-                    <a href="{{ attachment.file.url }}" target="_blank">{{ attachment.filename }}</a>
-                </td>
-                <td>{{ attachment.uploaded_by }}</td>
-                <td>{{ attachment.uploaded_at }}</td>
-                <td>
-                    {% if can_manage_attachments %}
-                    <form method="post" action="{% url 'purchase:pr_delete_attachment' purchase_request.id attachment.id %}">
-                        {% csrf_token %}
-                        <button type="submit">Delete</button>
-                    </form>
-                    {% else %}
-                    <span class="muted">Read Only</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="6">No attachments.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
 
 <div class="card">
     <h2>Line Items</h2>
@@ -373,37 +83,82 @@
 </div>
 
 <div class="card">
-    <h2>Approval Tasks</h2>
-    <table>
+    <h2>Actual Spending</h2>
+
+    {% if can_record_actual_spend %}
+    <form method="post" action="{% url 'purchase:pr_record_actual_spend' purchase_request.id %}">
+        {% csrf_token %}
+        <table>
+            {{ actual_spend_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Record Actual Spending</button>
+        </div>
+    </form>
+    {% endif %}
+
+    <table style="margin-top: 16px;">
         <thead>
             <tr>
-                <th>Step No</th>
-                <th>Step Name</th>
-                <th>Status</th>
-                <th>Assigned User</th>
-                <th>Comment</th>
+                <th>Spend Date</th>
+                <th>Amount</th>
+                <th>Vendor</th>
+                <th>Reference No</th>
+                <th>Created By</th>
+                <th>Created At</th>
+                <th>Notes</th>
             </tr>
         </thead>
         <tbody>
-            {% for task in approval_tasks %}
+            {% for spend in actual_spend_entries %}
             <tr>
-                <td>{{ task.step_no }}</td>
-                <td>{{ task.step_name }}</td>
-                <td>{{ task.status }}</td>
-                <td>{{ task.assigned_user }}</td>
-                <td>{{ task.comment }}</td>
+                <td>{{ spend.spend_date }}</td>
+                <td>{{ spend.currency }} {{ spend.amount }}</td>
+                <td>{{ spend.vendor_name }}</td>
+                <td>{{ spend.reference_no }}</td>
+                <td>{{ spend.created_by }}</td>
+                <td>{{ spend.created_at }}</td>
+                <td>{{ spend.notes }}</td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="5">No approval tasks.</td>
+                <td colspan="7">No actual spend records.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
+{% include "includes/request_detail_attachments.html" %}
+
+{% if can_close_purchase %}
 <div class="card">
-    <h2>Content Change Audit</h2>
+    <h2>Close Purchase Request</h2>
+    <p class="muted">
+        Use this action when the purchase execution is complete. Any remaining reserved budget will be released.
+    </p>
+
+    <form method="post" action="{% url 'purchase:pr_close' purchase_request.id %}">
+        {% csrf_token %}
+        <table>
+            <tr>
+                <th>Close Comment</th>
+                <td>
+                    <textarea name="comment"></textarea>
+                </td>
+            </tr>
+        </table>
+        <div class="action-row">
+            <button type="submit">Close Purchase Request</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+{% include "includes/request_detail_approval_workflow.html" %}
+
+<div class="card">
+    <h2>Content Audit</h2>
     <table>
         <thead>
             <tr>
@@ -439,7 +194,7 @@
 </div>
 
 <div class="card">
-    <h2>PR History</h2>
+    <h2>Request History</h2>
     <table>
         <thead>
             <tr>
@@ -447,7 +202,7 @@
                 <th>Action Type</th>
                 <th>From Status</th>
                 <th>To Status</th>
-                <th>Action By</th>
+                <th>Acting User</th>
                 <th>Comment</th>
             </tr>
         </thead>

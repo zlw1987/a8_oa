@@ -4,70 +4,14 @@
 {% block page_title %}Travel Request Detail{% endblock %}
 
 {% block content %}
-{% if travel_request.project %}
-<div class="card">
-    <h2>Project Budget</h2>
-    <div class="action-row">
-        <a href="{% url 'projects:project_budget_ledger' travel_request.project.id %}">
-            Open Project Budget Ledger
-        </a>
-    </div>
-</div>
-{% endif %}
-<div class="card">
-    <div class="action-row">
-        <a href="{% url 'travel:tr_list' %}">Back to Travel Request List</a>
 
-        {% if can_edit %}
-        <a href="{% url 'travel:tr_edit' travel_request.id %}">Edit Travel Request</a>
-        {% endif %}
+{% include "includes/request_detail_actions.html" %}
 
-        {% if can_submit %}
-        <form method="post" action="{% url 'travel:tr_submit' travel_request.id %}">
-            {% csrf_token %}
-            <button type="submit">Submit</button>
-        </form>
-        {% endif %}
-
-        {% if can_cancel %}
-        <form method="post" action="{% url 'travel:tr_cancel' travel_request.id %}">
-            {% csrf_token %}
-            <button type="submit">Cancel</button>
-        </form>
-        {% endif %}
-    </div>
-</div>
+{% include "includes/request_detail_header.html" %}
 
 <div class="card">
-    <h2>Travel Request Summary</h2>
+    <h2>Travel Details</h2>
     <div class="summary-grid">
-        <div class="summary-label">Travel No</div>
-        <div>{{ travel_request.travel_no }}</div>
-
-        <div class="summary-label">Purpose</div>
-        <div>{{ travel_request.purpose }}</div>
-
-        <div class="summary-label">Status</div>
-        <div>{{ travel_request.get_status_display }}</div>
-
-        <div class="summary-label">Requester</div>
-        <div>{{ travel_request.requester }}</div>
-
-        <div class="summary-label">Department</div>
-        <div>{{ travel_request.request_department }}</div>
-
-        <div class="summary-label">Project</div>
-        <div>{{ travel_request.project }}</div>
-
-        <div class="summary-label">Matched Approval Rule</div>
-        <div>
-            {% if travel_request.matched_rule %}
-            {{ travel_request.matched_rule.rule_code }} - {{ travel_request.matched_rule.rule_name }}
-            {% else %}
-            -
-            {% endif %}
-        </div>
-
         <div class="summary-label">Origin City</div>
         <div>{{ travel_request.origin_city }}</div>
 
@@ -80,150 +24,17 @@
         <div class="summary-label">End Date</div>
         <div>{{ travel_request.end_date }}</div>
 
-        <div class="summary-label">Estimated Total</div>
-        <div>{{ travel_request.currency }} {{ travel_request.estimated_total }}</div>
-        <div class="summary-label">Actual Total</div>
+        <div class="summary-label">Actual Expense Total</div>
         <div>{{ travel_request.currency }} {{ travel_request.actual_total }}</div>
 
         <div class="summary-label">Notes</div>
-        <div>{{ travel_request.notes }}</div>
-        <div class="summary-label">Current Step</div>
-        <div>{{ current_step }}</div>
-
-        <div class="summary-label">Current Approver</div>
-        <div>{{ current_approver }}</div>
-
-        <div class="summary-label">Approval Progress</div>
-        <div>{{ approval_progress }}</div>
-        <div class="summary-label">Current Task Ownership</div>
-        <div>{{ current_task_assignment_label }}</div>
+        <div>{{ travel_request.notes|default:"-" }}</div>
     </div>
 </div>
 
-{% if current_task %}
-<div class="card">
-    <h2>Current Approval Action</h2>
-
-    <div class="summary-grid">
-        <div class="summary-label">Current Task</div>
-        <div>{{ current_task.step_name }}</div>
-
-        <div class="summary-label">Task Status</div>
-        <div>{{ current_task.status }}</div>
-
-        <div class="summary-label">Current Task Ownership</div>
-        <div>{{ current_task_assignment_label }}</div>
-    </div>
-
-    <div class="action-row">
-        {% if can_claim_current_task %}
-        <form method="post" action="{% url 'travel:task_claim' travel_request.id current_task.id %}">
-            {% csrf_token %}
-            <button type="submit">Claim Task</button>
-        </form>
-        {% endif %}
-
-        {% if can_release_current_task %}
-        <form method="post" action="{% url 'travel:task_release' travel_request.id current_task.id %}">
-            {% csrf_token %}
-            <button type="submit">Release Back to Pool</button>
-        </form>
-        {% endif %}
-    </div>
-
-    {% if can_approve_current_task or can_return_current_task or can_reject_current_task %}
-    <div style="margin-top: 16px;">
-        <h3>Approval Comment</h3>
-
-        {% if can_approve_current_task %}
-        <form method="post" action="{% url 'travel:task_approve' travel_request.id current_task.id %}" style="margin-bottom: 12px;">
-            {% csrf_token %}
-            <textarea name="comment"></textarea>
-            <div class="action-row">
-                <button type="submit">Approve</button>
-            </div>
-        </form>
-        {% endif %}
-
-        {% if can_return_current_task %}
-        <form method="post" action="{% url 'travel:task_return' travel_request.id current_task.id %}" style="margin-bottom: 12px;">
-            {% csrf_token %}
-            <textarea name="comment"></textarea>
-            <div class="action-row">
-                <button type="submit">Return to Requester</button>
-            </div>
-        </form>
-        {% endif %}
-
-        {% if can_reject_current_task %}
-        <form method="post" action="{% url 'travel:task_reject' travel_request.id current_task.id %}">
-            {% csrf_token %}
-            <textarea name="comment"></textarea>
-            <div class="action-row">
-                <button type="submit">Reject</button>
-            </div>
-        </form>
-        {% endif %}
-    </div>
-    {% endif %}
-</div>
-{% endif %}
-
-<div class="card">
-    <h2>Attachments</h2>
-
-    {% if can_manage_attachments %}
-    <form method="post" action="{% url 'travel:tr_upload_attachment' travel_request.id %}" enctype="multipart/form-data">
-        {% csrf_token %}
-        <table>
-            {{ attachment_form.as_table }}
-        </table>
-        <div class="action-row">
-            <button type="submit">Upload Attachment</button>
-        </div>
-    </form>
-    {% endif %}
-
-    <table style="margin-top: 16px;">
-        <thead>
-            <tr>
-                <th>Type</th>
-                <th>Title</th>
-                <th>File</th>
-                <th>Uploaded By</th>
-                <th>Uploaded At</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for attachment in attachments %}
-            <tr>
-                <td>{{ attachment.get_document_type_display }}</td>
-                <td>{{ attachment.title }}</td>
-                <td>
-                    <a href="{{ attachment.file.url }}" target="_blank">{{ attachment.filename }}</a>
-                </td>
-                <td>{{ attachment.uploaded_by }}</td>
-                <td>{{ attachment.uploaded_at }}</td>
-                <td>
-                    {% if can_manage_attachments %}
-                    <form method="post" action="{% url 'travel:tr_delete_attachment' travel_request.id attachment.id %}">
-                        {% csrf_token %}
-                        <button type="submit">Delete</button>
-                    </form>
-                    {% else %}
-                    <span class="muted">Read Only</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="6">No attachments.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+{% include "includes/request_budget_snapshot.html" %}
+{% include "includes/request_budget_meaning.html" %}
+{% include "includes/request_detail_current_task.html" %}
 
 <div class="card">
     <h2>Itinerary</h2>
@@ -262,7 +73,7 @@
 </div>
 
 <div class="card">
-    <h2>Estimated Expense</h2>
+    <h2>Estimated Expenses</h2>
     <table>
         <thead>
             <tr>
@@ -306,7 +117,7 @@
 </div>
 
 <div class="card">
-    <h2>Actual Expense</h2>
+    <h2>Actual Expenses</h2>
 
     {% if can_record_actual_expense %}
     <form method="post" action="{% url 'travel:tr_record_actual_expense' travel_request.id %}">
@@ -315,7 +126,7 @@
             {{ actual_expense_form.as_table }}
         </table>
         <div class="action-row">
-            <button type="submit">Record Actual Expense</button>
+            <button type="submit">Record Actual Expenses</button>
         </div>
     </form>
     {% endif %}
@@ -367,6 +178,9 @@
     </table>
 </div>
 
+
+{% include "includes/request_detail_attachments.html" %}
+
 {% if can_close %}
 <div class="card">
     <h2>Close Travel Request</h2>
@@ -391,8 +205,10 @@
 </div>
 {% endif %}
 
+{% include "includes/request_detail_approval_workflow.html" %}
+
 <div class="card">
-    <h2>Content Change Audit</h2>
+    <h2>Content Audit</h2>
     <table>
         <thead>
             <tr>
@@ -430,12 +246,12 @@
 </div>
 
 <div class="card">
-    <h2>Travel History</h2>
+    <h2>Request History</h2>
     <table>
         <thead>
             <tr>
-                <th>Created At</th>
-                <th>Action</th>
+                <th>Action Time</th>
+                <th>Action Type</th>
                 <th>From Status</th>
                 <th>To Status</th>
                 <th>Acting User</th>

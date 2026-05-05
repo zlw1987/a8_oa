@@ -1,0 +1,80 @@
+{% if current_task_ui.task %}
+<div class="card">
+    <h2>Current Approval Action</h2>
+
+    <div class="summary-grid">
+        <div class="summary-label">Current Task</div>
+        <div>{{ current_task_ui.task.step_name }}</div>
+
+        <div class="summary-label">Task Status</div>
+        <div>{{ current_task_ui.task.get_status_display }}</div>
+
+        <div class="summary-label">Due At</div>
+        <div>{{ current_task_ui.due_at|date:"Y-m-d H:i"|default:"-" }}</div>
+
+        <div class="summary-label">Due Status</div>
+        <div>
+            {% if current_task_ui.is_overdue %}
+            <span class="badge badge-danger">{{ current_task_ui.due_status }}</span>
+            {% else %}
+            <span class="badge badge-neutral">{{ current_task_ui.due_status }}</span>
+            {% endif %}
+        </div>
+
+        <div class="summary-label">Current Task Ownership</div>
+        <div>{{ current_task_ui.assignment_label }}</div>
+    </div>
+
+    <div class="action-row">
+        {% if current_task_ui.can_claim and current_task_ui.claim_url %}
+        <form method="post" action="{{ current_task_ui.claim_url }}">
+            {% csrf_token %}
+            <button type="submit">Claim Task</button>
+        </form>
+        {% endif %}
+
+        {% if current_task_ui.can_release and current_task_ui.release_url %}
+        <form method="post" action="{{ current_task_ui.release_url }}">
+            {% csrf_token %}
+            <button type="submit">Release Back to Pool</button>
+        </form>
+        {% endif %}
+    </div>
+
+    {% if current_task_ui.can_approve or current_task_ui.can_return or current_task_ui.can_reject %}
+    <div style="margin-top: 16px;">
+        <h3>Approval Comment</h3>
+
+        {% if current_task_ui.can_approve and current_task_ui.approve_url %}
+        <form method="post" action="{{ current_task_ui.approve_url }}" style="margin-bottom: 12px;">
+            {% csrf_token %}
+            <textarea name="comment"></textarea>
+            <div class="action-row">
+                <button type="submit">Approve</button>
+            </div>
+        </form>
+        {% endif %}
+
+        {% if current_task_ui.can_return and current_task_ui.return_url %}
+        <form method="post" action="{{ current_task_ui.return_url }}" style="margin-bottom: 12px;">
+            {% csrf_token %}
+            <textarea name="comment"></textarea>
+            <div class="action-row">
+                <button type="submit">Return to Requester</button>
+            </div>
+        </form>
+        {% endif %}
+
+        {% if current_task_ui.can_reject and current_task_ui.reject_url %}
+        <form method="post" action="{{ current_task_ui.reject_url }}">
+            {% csrf_token %}
+            <textarea name="comment"></textarea>
+            <div class="action-row">
+                <button type="submit">Reject</button>
+            </div>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}

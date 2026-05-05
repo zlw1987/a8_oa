@@ -1,3 +1,6 @@
+from datetime import datetime
+from django.utils import timezone
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
@@ -9,7 +12,7 @@ from django.urls import reverse
 
 from common.choices import ApprovalTaskStatus, RequestStatus
 from .models import ApprovalTask
-
+from .filters import ApprovalTaskListFilterForm
 
 def _build_querystring(request_get, exclude_keys=None):
     params = request_get.copy()
@@ -76,19 +79,35 @@ def _decorate_task(task):
     task.request_status_display = request_obj.get_status_display() if request_obj else "-"
     task.request_amount = getattr(request_obj, "estimated_total", "")
     task.request_currency = getattr(request_obj, "currency", "")
+    task.current_comment_display = task.comment or "-"
+    requester = getattr(request_obj, "requester", None)
+    task.request_requester_display = str(requester) if requester else "-"
+    task.request_requester_id = str(getattr(request_obj, "requester_id", "") or "")
+
+    if str(task.status) == str(ApprovalTaskStatus.POOL):
+        task.ownership_label = "Pool task"
+    elif getattr(task, "assigned_user", None):
+        task.ownership_label = f"Assigned to {task.assigned_user}"
+    else:
+        task.ownership_label = "-"
 
     if task.request_content_type_id:
         app_label = task.request_content_type.app_label
         if app_label == "purchase":
             task.request_type_label = "Purchase"
+            task.request_type_value = "PURCHASE"
         elif app_label == "travel":
             task.request_type_label = "Travel"
+            task.request_type_value = "TRAVEL"
         else:
             task.request_type_label = app_label.title()
+            task.request_type_value = app_label.upper()
     elif task.purchase_request_id:
         task.request_type_label = "Purchase"
+        task.request_type_value = "PURCHASE"
     else:
         task.request_type_label = "-"
+        task.request_type_value = "-"
 
     task.pr_status_badge_class = (
         _get_request_status_badge_class(getattr(request_obj, "status", None))
@@ -96,10 +115,70 @@ def _decorate_task(task):
         "badge-neutral"
     )
 
+    task.due_at_display = task.due_at
+    task.completed_at_display = task.completed_at
+    task.due_status_display = task.due_status_label
+    task.is_overdue_flag = task.is_overdue
+    task.due_status_badge_class = "badge-danger" if task.is_overdue else "badge-neutral"
+
+def _build_requester_choices(tasks):
+    requester_map = {}
+
+    for task in tasks:
+        requester_id = getattr(task, "request_requester_id", "")
+        requester_display = getattr(task, "request_requester_display", "-")
+        if requester_id and requester_id not in requester_map:
+            requester_map[requester_id] = requester_display
+
+    return sorted(requester_map.items(), key=lambda item: item[1].lower())
+
+def _task_sort_key(task):
+    due_at = getattr(task, "due_at", None)
+    created_at = getattr(task, "created_at", None) or timezone.now()
+
+    overdue_rank = 0 if getattr(task, "is_overdue", False) else 1
+    missing_due_rank = 1 if due_at is None else 0
+    due_value = due_at or datetime.max.replace(tzinfo=timezone.get_current_timezone())
+
+    return (overdue_rank, missing_due_rank, due_value, created_at)
+
+def _task_matches_filters(task, cleaned_data):
+    keyword = (cleaned_data.get("q") or "").strip().lower()
+    request_type = cleaned_data.get("request_type") or ""
+    requester = cleaned_data.get("requester") or ""
+    due_state = cleaned_data.get("due_state") or ""
+
+    if keyword:
+        haystack = " ".join(
+            [
+                str(getattr(task, "request_no", "") or ""),
+                str(getattr(task, "request_title", "") or ""),
+                str(getattr(task, "step_name", "") or ""),
+                str(getattr(task, "request_requester_display", "") or ""),
+            ]
+        ).lower()
+        if keyword not in haystack:
+            return False
+
+    if request_type and getattr(task, "request_type_value", "") != request_type:
+        return False
+
+    if requester and getattr(task, "request_requester_id", "") != requester:
+        return False
+
+    if due_state == "overdue" and not getattr(task, "is_overdue", False):
+        return False
+
+    if due_state == "on_time":
+        if getattr(task, "due_at", None) is None or getattr(task, "is_overdue", False):
+            return False
+
+    if due_state == "no_due_date" and getattr(task, "due_at", None) is not None:
+        return False
+    return True
+
 @login_required
 def my_tasks(request):
-    search_q = request.GET.get("q", "").strip()
-
     assigned_qs = (
         ApprovalTask.objects.filter(
             status=ApprovalTaskStatus.PENDING,
@@ -136,27 +215,36 @@ def my_tasks(request):
     assigned_tasks = list(assigned_qs)
     pool_tasks = list(pool_qs)
 
-    if search_q:
-        search_q_lower = search_q.lower()
-
-        assigned_tasks = [
-            task for task in assigned_tasks
-            if search_q_lower in f"{task.request_no} {task.request_title} {task.step_name}".lower()
-        ]
-
-        pool_tasks = [
-            task for task in pool_tasks
-            if search_q_lower in f"{task.request_no} {task.request_title} {task.step_name}".lower()
-        ]
-
     for task in assigned_tasks:
         _decorate_task(task)
 
     for task in pool_tasks:
         _decorate_task(task)
 
+    all_tasks = assigned_tasks + pool_tasks
+    requester_choices = _build_requester_choices(all_tasks)
+
+    filter_form = ApprovalTaskListFilterForm(
+        request.GET or None,
+        requester_choices=requester_choices,
+    )
+
+    if filter_form.is_valid():
+        assigned_tasks = [
+            task for task in assigned_tasks
+            if _task_matches_filters(task, filter_form.cleaned_data)
+        ]
+        pool_tasks = [
+            task for task in pool_tasks
+            if _task_matches_filters(task, filter_form.cleaned_data)
+        ]
+
     assigned_count = len(assigned_tasks)
     pool_count = len(pool_tasks)
+    assigned_tasks = sorted(assigned_tasks, key=_task_sort_key)
+    pool_tasks = sorted(pool_tasks, key=_task_sort_key)
+    assigned_overdue_count = sum(1 for task in assigned_tasks if getattr(task, "is_overdue", False))
+    pool_overdue_count = sum(1 for task in pool_tasks if getattr(task, "is_overdue", False))
 
     assigned_paginator = Paginator(assigned_tasks, 8)
     pool_paginator = Paginator(pool_tasks, 8)
@@ -173,7 +261,9 @@ def my_tasks(request):
         "pool_page_obj": pool_page_obj,
         "assigned_pagination_querystring": _build_querystring(request.GET, ["assigned_page"]),
         "pool_pagination_querystring": _build_querystring(request.GET, ["pool_page"]),
-        "search_q": search_q,
+        "filter_form": filter_form,
+        "assigned_overdue_count": assigned_overdue_count,
+        "pool_overdue_count": pool_overdue_count,
     }
     return render(request, "approvals/my_tasks.html", context)
 
