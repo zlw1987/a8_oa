@@ -7,8 +7,48 @@ from .models import (
     ApprovalTask,
     ApprovalTaskCandidate,
     ApprovalTaskHistory,
+    ApprovalNotificationLog,
 )
 
+@admin.register(ApprovalNotificationLog)
+class ApprovalNotificationLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "task",
+        "notification_type",
+        "recipient_email",
+        "status",
+        "triggered_by_command",
+        "sent_at",
+    )
+    search_fields = (
+        "recipient_email",
+        "subject",
+        "error_message",
+        "task__step_name",
+    )
+    list_filter = (
+        "notification_type",
+        "status",
+        "triggered_by_command",
+        "sent_at",
+    )
+    readonly_fields = (
+        "task",
+        "notification_type",
+        "recipient_email",
+        "subject",
+        "body_preview",
+        "status",
+        "error_message",
+        "triggered_by_command",
+        "sent_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 @admin.action(description="Claim selected tasks to me")
 def claim_selected_tasks(modeladmin, request, queryset):

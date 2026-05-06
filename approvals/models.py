@@ -172,6 +172,10 @@ class ApprovalTask(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     due_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    last_reminder_sent_at = models.DateTimeField(null=True, blank=True)
+    last_escalation_sent_at = models.DateTimeField(null=True, blank=True)
+    reminder_count = models.PositiveIntegerField(default=0)
+    escalation_count = models.PositiveIntegerField(default=0)
 
     class Meta:
         db_table = "PS_A8_AP_TASK"
@@ -182,6 +186,7 @@ class ApprovalTask(models.Model):
 
     def __str__(self):
         return f"{self.request_no or '-'} / Step {self.step_no} / {self.status}"
+
 
     @property
     def is_open_task(self):
@@ -215,6 +220,40 @@ class ApprovalTask(models.Model):
             return f"Overdue by {days} day(s)"
 
         return "On Time"
+
+    def can_send_reminder(self, now=None, cooldown_hours=24):
+        now = now or timezone.now()
+
+        if self.status not in [ApprovalTaskStatus.PENDING, ApprovalTaskStatus.POOL]:
+            return False
+        if self.completed_at is not None:
+            return False
+        if not self.is_overdue:
+            return False
+        if self.last_reminder_sent_at is None:
+            return True
+
+        return now - self.last_reminder_sent_at >= timedelta(hours=cooldown_hours)
+
+
+    def can_send_escalation(self, now=None, cooldown_hours=48, min_overdue_days=2):
+        now = now or timezone.now()
+
+        if self.status not in [ApprovalTaskStatus.PENDING, ApprovalTaskStatus.POOL]:
+            return False
+        if self.completed_at is not None:
+            return False
+        if not self.due_at or now <= self.due_at:
+            return False
+
+        overdue_days = (now - self.due_at).days
+        if overdue_days < min_overdue_days:
+            return False
+
+        if self.last_escalation_sent_at is None:
+            return True
+
+        return now - self.last_escalation_sent_at >= timedelta(hours=cooldown_hours)
 
     def _add_history(
         self,
@@ -677,3 +716,41 @@ class ApprovalTaskHistory(models.Model):
 
     def __str__(self):
         return f"{self.task} / {self.action_type} / {self.action_at}"
+
+class ApprovalNotificationType(models.TextChoices):
+    REMINDER = "REMINDER", "Reminder"
+    ESCALATION = "ESCALATION", "Escalation"
+
+
+class ApprovalNotificationStatus(models.TextChoices):
+    SUCCESS = "SUCCESS", "Success"
+    FAILED = "FAILED", "Failed"
+    DRY_RUN = "DRY_RUN", "Dry Run"
+
+class ApprovalNotificationLog(models.Model):
+    task = models.ForeignKey(
+        "approvals.ApprovalTask",
+        on_delete=models.CASCADE,
+        related_name="notification_logs",
+    )
+    notification_type = models.CharField(
+        max_length=20,
+        choices=ApprovalNotificationType,
+    )
+    recipient_email = models.EmailField()
+    subject = models.CharField(max_length=200)
+    body_preview = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=ApprovalNotificationStatus,
+    )
+    error_message = models.TextField(blank=True, default="")
+    triggered_by_command = models.CharField(max_length=100, blank=True, default="")
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "PS_A8_APR_NOTIFY_LOG"
+        ordering = ["-sent_at", "-id"]
+
+    def __str__(self):
+        return f"{self.notification_type} / {self.recipient_email} / {self.sent_at}"

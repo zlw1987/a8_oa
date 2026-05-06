@@ -2594,3 +2594,29 @@ class PurchaseSmokeTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Due At")
         self.assertContains(response, "Due Status")
+
+    def test_purchase_detail_shows_notification_activity_section(self):
+        pr = PurchaseRequest.objects.create(
+            title="Notification Activity Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="notification activity purchase test",
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Notification Activity Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Notification Activity")

@@ -3662,3 +3662,46 @@ class TravelSmokeTest(TestCase):
 
         self.assertIsNotNone(task)
         self.assertIsNotNone(task.due_at)
+
+    def test_travel_detail_shows_notification_activity_section(self):
+        tr = TravelRequest.objects.create(
+            purpose="Notification Activity Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Notification Activity")

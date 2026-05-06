@@ -12,7 +12,9 @@ from django.urls import reverse
 
 from common.choices import ApprovalTaskStatus, RequestStatus
 from .models import ApprovalTask
-from .filters import ApprovalTaskListFilterForm
+from .filters import ApprovalTaskListFilterForm, ApprovalTaskHistoryFilterForm
+from travel.models import TravelRequest
+from django.contrib.contenttypes.models import ContentType
 
 def _build_querystring(request_get, exclude_keys=None):
     params = request_get.copy()
@@ -176,6 +178,76 @@ def _task_matches_filters(task, cleaned_data):
     if due_state == "no_due_date" and getattr(task, "due_at", None) is not None:
         return False
     return True
+
+@login_required
+def my_history(request):
+    history_qs = (
+        ApprovalTask.objects.filter(
+            acted_by=request.user,
+            acted_at__isnull=False,
+        )
+        .select_related(
+            "purchase_request",
+            "request_content_type",
+            "rule",
+            "step",
+            "assigned_user",
+            "acted_by",
+        )
+        .prefetch_related("candidates")
+        .order_by("-acted_at", "-id")
+    )
+
+    history_tasks = list(history_qs)
+    for task in history_tasks:
+        _decorate_task(task)
+
+    filter_form = ApprovalTaskHistoryFilterForm(request.GET or None)
+
+    if filter_form.is_valid():
+        q = (filter_form.cleaned_data.get("q") or "").strip().lower()
+        request_type = filter_form.cleaned_data.get("request_type") or ""
+        outcome_status = filter_form.cleaned_data.get("outcome_status") or ""
+
+        filtered = []
+        for task in history_tasks:
+            if q:
+                haystack = " ".join(
+                    [
+                        str(getattr(task, "request_no", "") or ""),
+                        str(getattr(task, "request_title", "") or ""),
+                        str(getattr(task, "step_name", "") or ""),
+                        str(getattr(task, "request_requester_display", "") or ""),
+                        str(getattr(task, "comment", "") or ""),
+                    ]
+                ).lower()
+                if q not in haystack:
+                    continue
+
+            if request_type and getattr(task, "request_type_value", "") != request_type:
+                continue
+
+            if outcome_status and task.status != outcome_status:
+                continue
+
+            filtered.append(task)
+
+        history_tasks = filtered
+
+    paginator = Paginator(history_tasks, 12)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    querydict = request.GET.copy()
+    querydict.pop("page", None)
+    pagination_querystring = querydict.urlencode()
+
+    context = {
+        "filter_form": filter_form,
+        "page_obj": page_obj,
+        "pagination_querystring": pagination_querystring,
+        "history_count": len(history_tasks),
+    }
+    return render(request, "approvals/my_history.html", context)
 
 @login_required
 def my_tasks(request):

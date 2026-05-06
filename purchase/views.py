@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 from django.urls import reverse
 
+from approvals.models import ApprovalNotificationLog
 from approvals.action_handlers import handle_task_action
 from .filters import PurchaseRequestListFilterForm
 from approvals.models import ApprovalTask
@@ -192,6 +193,10 @@ def pr_detail(request, pk):
     approval_tasks = purchase_request.approval_tasks.all().order_by("step_no")
     histories = purchase_request.history_entries.all()
 
+    notification_logs = ApprovalNotificationLog.objects.filter(
+        task__purchase_request=purchase_request,
+    ).select_related("task").order_by("-sent_at", "-id")[:30]
+
     workflow_ui = build_request_workflow_context(purchase_request, request.user)
 
     current_task = workflow_ui["current_task"]
@@ -213,6 +218,7 @@ def pr_detail(request, pk):
         "completed_at": current_task.completed_at if current_task else None,
         "due_status": current_task.due_status_label if current_task else "-",
         "is_overdue": current_task.is_overdue if current_task else False,
+        "notification_logs": notification_logs,
     }
 
     budget_summary = build_project_budget_summary(

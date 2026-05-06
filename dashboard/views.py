@@ -9,6 +9,7 @@ from common.choices import ApprovalTaskStatus, RequestStatus
 from purchase.models import PurchaseRequest
 from travel.models import TravelRequest, TravelRequestStatus
 from accounts.models import Department
+from approvals.dashboard import get_approval_summary_for_user
 
 def _can_create_project(user):
     if user.is_superuser:
@@ -196,5 +197,6 @@ def home(request):
         "assigned_tasks": assigned_tasks[:5],
         "pool_tasks": pool_tasks[:5],
         "can_create_project": _can_create_project(request.user),
+        "approval_summary": get_approval_summary_for_user(request.user),
     }
     return render(request, "dashboard/home.html", context)

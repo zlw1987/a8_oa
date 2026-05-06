@@ -38,7 +38,12 @@
     <Compile Include="approvals\action_handlers.py" />
     <Compile Include="approvals\admin.py" />
     <Compile Include="approvals\apps.py" />
+    <Compile Include="approvals\dashboard.py" />
     <Compile Include="approvals\filters.py" />
+    <Compile Include="approvals\management\commands\send_approval_escalations.py" />
+    <Compile Include="approvals\management\commands\send_approval_overdue_reminders.py" />
+    <Compile Include="approvals\management\commands\__init__.py" />
+    <Compile Include="approvals\management\__init__.py" />
     <Compile Include="approvals\migrations\0001_initial.py" />
     <Compile Include="approvals\migrations\0002_alter_approvalrule_specific_requester_and_more.py" />
     <Compile Include="approvals\migrations\0003_approvaltask.py" />
@@ -131,6 +136,7 @@
     <Compile Include="travel\__init__.py" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="approvals\templates\approvals\my_history.html" />
     <Content Include="approvals\templates\approvals\my_tasks.html" />
     <Content Include="dashboard\templates\dashboard\home.html" />
     <Content Include="dashboard\templates\registration\login.html" />
@@ -153,6 +159,7 @@
     <Content Include="templates\includes\request_detail_attachments.html" />
     <Content Include="templates\includes\request_detail_current_task.html" />
     <Content Include="templates\includes\request_detail_header.html" />
+    <Content Include="templates\includes\request_notification_activity.html" />
     <Content Include="templates\purchase\_purchase_request_header_extra.html" />
     <Content Include="templates\travel\_travel_request_header_extra.html" />
     <Content Include="travel\templates\travel\tr_detail.html" />
@@ -163,7 +170,9 @@
     <Folder Include="accounts" />
     <Folder Include="accounts\migrations" />
     <Folder Include="approvals" />
+    <Folder Include="approvals\management\commands\" />
     <Folder Include="approvals\migrations" />
+    <Folder Include="approvals\management\" />
     <Folder Include="approvals\templates\" />
     <Folder Include="approvals\templates\approvals" />
     <Folder Include="common" />

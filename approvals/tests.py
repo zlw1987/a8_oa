@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from io import StringIO
 
+from django.core.management import call_command
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -8,10 +10,8 @@ from django.core import mail
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
-from approvals.models import ApprovalTask
-from travel.models import TravelRequest
-
-
+from approvals.models import ApprovalTask,ApprovalNotificationLog, ApprovalNotificationType, ApprovalNotificationStatus
+from approvals.dashboard import get_approval_summary_for_user
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
 from common.choices import (
@@ -116,6 +116,7 @@ class ApprovalCrossRequestRegressionTest(TestCase):
             approver_type=ApproverType.DEPARTMENT_MANAGER,
             is_active=True,
         )
+
     def _viewer_for_task(self, task):
         if task.assigned_user:
             return task.assigned_user
@@ -292,6 +293,21 @@ class ApprovalPoolRegressionTest(TestCase):
             approver_type=ApproverType.DEPARTMENT_APPROVER,
             is_active=True,
         )
+
+    def _run_reminder_dry_run(self):
+        out = StringIO()
+        call_command("send_approval_overdue_reminders", "--dry-run", stdout=out)
+        return out.getvalue()
+
+    def _run_escalation_dry_run(self):
+        out = StringIO()
+        call_command("send_approval_escalations", "--dry-run", stdout=out)
+        return out.getvalue()
+
+    def _run_escalation_dry_run(self):
+        out = StringIO()
+        call_command("send_approval_escalations", "--dry-run", stdout=out)
+        return out.getvalue()
 
     def _viewer_for_task(self, task):
         if task.assigned_user:
@@ -768,3 +784,699 @@ class ApprovalPoolRegressionTest(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, pr.pr_no)
         self.assertContains(response, "On Time")
+
+    def test_my_history_page_loads(self):
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("approvals:my_history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "My Approval History")
+
+    def test_my_history_shows_acted_task(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        task.claim(viewer) if task.status == ApprovalTaskStatus.POOL else None
+        task.approve(viewer, comment="Approved in history test")
+
+        self.client.force_login(viewer)
+        response = self.client.get(reverse("approvals:my_history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, "Approved in history test")
+        self.assertContains(response, "Approved")
+
+    def test_my_history_shows_acted_travel_task(self):
+        tr = TravelRequest.objects.create(
+            purpose="History Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        task.claim(viewer) if task.status == ApprovalTaskStatus.POOL else None
+        task.return_to_requester(viewer, comment="Returned in history test")
+
+        self.client.force_login(viewer)
+        response = self.client.get(reverse("approvals:my_history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, tr.travel_no)
+        self.assertContains(response, "Returned in history test")
+        self.assertContains(response, "Returned")
+
+    def test_my_history_shows_approved_purchase_task(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+        task.approve(viewer, comment="Approved in history test")
+
+        self.client.force_login(viewer)
+        response = self.client.get(reverse("approvals:my_history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, "Approved in history test")
+        self.assertContains(response, "Approved")
+
+    def test_my_history_shows_returned_travel_task(self):
+        tr = TravelRequest.objects.create(
+            purpose="History Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+        task.return_to_requester(viewer, comment="Returned in history test")
+
+        self.client.force_login(viewer)
+        response = self.client.get(reverse("approvals:my_history"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, tr.travel_no)
+        self.assertContains(response, "Returned in history test")
+        self.assertContains(response, "Returned")
+
+    def test_my_history_can_filter_by_outcome_status_approved(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+        task.approve(viewer, comment="Approved only filter test")
+
+        self.client.force_login(viewer)
+        response = self.client.get(
+            reverse("approvals:my_history"),
+            {"outcome_status": "APPROVED"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, "Approved")
+
+    def test_my_history_can_filter_by_outcome_status_returned(self):
+        tr = TravelRequest.objects.create(
+            purpose="Returned Filter Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+        task.return_to_requester(viewer, comment="Returned only filter test")
+
+        self.client.force_login(viewer)
+        response = self.client.get(
+            reverse("approvals:my_history"),
+            {"outcome_status": "RETURNED"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, tr.travel_no)
+        self.assertContains(response, "Returned")
+
+    def test_overdue_reminder_command_picks_up_pending_task(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.save(update_fields=["due_at"])
+
+        out = StringIO()
+        call_command("send_approval_overdue_reminders", "--dry-run", stdout=out)
+        output = out.getvalue()
+
+        self.assertIn("Would send to", output)
+        self.assertIn(pr.pr_no, output)
+
+    def test_overdue_reminder_command_picks_up_pool_task(self):
+        tr = TravelRequest.objects.create(
+            purpose="Reminder Pool Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.save(update_fields=["due_at"])
+
+        out = StringIO()
+        call_command("send_approval_overdue_reminders", "--dry-run", stdout=out)
+        output = out.getvalue()
+
+        self.assertIn("Would send to", output)
+        self.assertIn(tr.travel_no, output)
+
+    def test_overdue_reminder_command_skips_completed_task(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+        task.approve(viewer, comment="done")
+
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.save(update_fields=["due_at"])
+
+        out = StringIO()
+        call_command("send_approval_overdue_reminders", "--dry-run", stdout=out)
+        output = out.getvalue()
+
+        self.assertNotIn(pr.pr_no, output)
+
+    def test_get_approval_summary_for_user_counts_assigned_and_pool_tasks(self):
+        pr = self._create_purchase_and_submit()
+        tr = self._create_travel_and_submit()
+
+        purchase_task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        travel_task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+
+        self.assertIsNotNone(purchase_task)
+        self.assertIsNotNone(travel_task)
+
+        summary_user = self._viewer_for_task(travel_task)
+        summary = get_approval_summary_for_user(summary_user)
+
+        self.assertIn("assigned_count", summary)
+        self.assertIn("pool_count", summary)
+        self.assertIn("total_overdue_count", summary)
+
+    def test_dashboard_shows_approval_summary_and_history_link(self):
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("dashboard:home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Approval Summary")
+        self.assertContains(response, "My Tasks")
+        self.assertContains(response, "My Approval History")
+
+    def test_escalation_command_skips_task_overdue_less_than_2_days(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=1)
+        task.save(update_fields=["due_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertNotIn(pr.pr_no, output)
+
+    def test_escalation_command_pending_task_includes_assigned_user_and_requester(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.PENDING)
+        self.assertIsNotNone(task.assigned_user)
+
+        task.due_at = timezone.now() - timedelta(days=3)
+        task.save(update_fields=["due_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertIn(pr.pr_no, output)
+        self.assertIn(self.requester.email, output)
+        self.assertIn(task.assigned_user.email, output)
+
+    def test_escalation_command_pool_task_includes_candidates_and_requester(self):
+        tr = self._create_travel_and_submit()
+
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+
+        candidate = task.candidates.filter(is_active=True).select_related("user").first()
+        self.assertIsNotNone(candidate)
+        self.assertIsNotNone(candidate.user.email)
+
+        task.due_at = timezone.now() - timedelta(days=3)
+        task.save(update_fields=["due_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertIn(tr.travel_no, output)
+        self.assertIn(self.requester.email, output)
+        self.assertIn(candidate.user.email, output)
+
+    def test_escalation_command_pool_task_includes_candidates_and_requester(self):
+        tr = TravelRequest.objects.create(
+            purpose="Escalation Pool Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=Decimal("500.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+        tr.submit(acting_user=self.requester)
+
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+
+        candidate = task.candidates.filter(is_active=True).select_related("user").first()
+        self.assertIsNotNone(candidate)
+        self.assertIsNotNone(candidate.user.email)
+
+        task.due_at = timezone.now() - timedelta(days=3)
+        task.save(update_fields=["due_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertIn(tr.travel_no, output)
+        self.assertIn(self.requester.email, output)
+        self.assertIn(candidate.user.email, output)
+
+    def test_escalation_command_skips_completed_task(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.approve(viewer, comment="completed")
+        task.due_at = timezone.now() - timedelta(days=3)
+        task.save(update_fields=["due_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertNotIn(pr.pr_no, output)
+
+    def test_reminder_command_skips_task_with_recent_reminder(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.last_reminder_sent_at = timezone.now()
+        task.save(update_fields=["due_at", "last_reminder_sent_at"])
+
+        output = self._run_reminder_dry_run()
+
+        self.assertNotIn(pr.pr_no, output)
+
+    def test_reminder_command_allows_task_after_reminder_cooldown(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.last_reminder_sent_at = timezone.now() - timedelta(hours=25)
+        task.save(update_fields=["due_at", "last_reminder_sent_at"])
+
+        output = self._run_reminder_dry_run()
+
+        self.assertIn(pr.pr_no, output)
+
+    def test_escalation_command_skips_task_overdue_less_than_2_days(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=1)
+        task.save(update_fields=["due_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertNotIn(pr.pr_no, output)
+
+    def test_escalation_command_pending_task_includes_assigned_user_and_requester(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.refresh_from_db()
+        self.assertEqual(task.status, ApprovalTaskStatus.PENDING)
+        self.assertIsNotNone(task.assigned_user)
+
+        task.due_at = timezone.now() - timedelta(days=3)
+        task.save(update_fields=["due_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertIn(pr.pr_no, output)
+        self.assertIn(self.requester.email, output)
+        self.assertIn(task.assigned_user.email, output)
+
+    def test_escalation_command_pool_task_includes_candidates_and_requester(self):
+        tr = self._create_travel_and_submit()
+        task = ApprovalTask.objects.filter(
+            request_content_type=ContentType.objects.get_for_model(TravelRequest),
+            request_object_id=tr.id,
+        ).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        self.assertEqual(task.status, ApprovalTaskStatus.POOL)
+
+        candidate = task.candidates.filter(is_active=True).select_related("user").first()
+        self.assertIsNotNone(candidate)
+        self.assertIsNotNone(candidate.user.email)
+
+        task.due_at = timezone.now() - timedelta(days=3)
+        task.save(update_fields=["due_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertIn(tr.travel_no, output)
+        self.assertIn(self.requester.email, output)
+        self.assertIn(candidate.user.email, output)
+
+    def test_escalation_command_skips_task_with_recent_escalation(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=3)
+        task.last_escalation_sent_at = timezone.now()
+        task.save(update_fields=["due_at", "last_escalation_sent_at"])
+
+        output = self._run_escalation_dry_run()
+
+        self.assertNotIn(pr.pr_no, output)
+
+    def test_reminder_command_dry_run_creates_notification_log(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.last_reminder_sent_at = None
+        task.save(update_fields=["due_at", "last_reminder_sent_at"])
+
+        call_command("send_approval_overdue_reminders", "--dry-run")
+
+        self.assertTrue(
+            ApprovalNotificationLog.objects.filter(
+                task=task,
+                notification_type=ApprovalNotificationType.REMINDER,
+                status=ApprovalNotificationStatus.DRY_RUN,
+            ).exists()
+        )
+
+    def test_escalation_command_dry_run_creates_notification_log(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=3)
+        task.last_escalation_sent_at = None
+        task.save(update_fields=["due_at", "last_escalation_sent_at"])
+
+        call_command("send_approval_escalations", "--dry-run")
+
+        self.assertTrue(
+            ApprovalNotificationLog.objects.filter(
+                task=task,
+                notification_type=ApprovalNotificationType.ESCALATION,
+                status=ApprovalNotificationStatus.DRY_RUN,
+            ).exists()
+        )
+
+    def test_reminder_command_respects_cooldown_and_does_not_create_new_log(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.last_reminder_sent_at = timezone.now()
+        task.save(update_fields=["due_at", "last_reminder_sent_at"])
+
+        before_count = ApprovalNotificationLog.objects.count()
+        call_command("send_approval_overdue_reminders", "--dry-run")
+        after_count = ApprovalNotificationLog.objects.count()
+
+        self.assertEqual(before_count, after_count)
+
+    def test_purchase_detail_shows_notification_log_entry_after_reminder_dry_run(self):
+        pr = self._create_purchase_and_submit()
+        task = ApprovalTask.objects.filter(purchase_request=pr).order_by("step_no", "id").first()
+        self.assertIsNotNone(task)
+
+        viewer = self._viewer_for_task(task)
+        if task.status == ApprovalTaskStatus.POOL:
+            task.claim(viewer)
+
+        task.due_at = timezone.now() - timedelta(days=2)
+        task.last_reminder_sent_at = None
+        task.save(update_fields=["due_at", "last_reminder_sent_at"])
+
+        call_command("send_approval_overdue_reminders", "--dry-run")
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Notification Activity")
+        self.assertContains(response, "Reminder")
+        self.assertContains(response, "Dry Run")

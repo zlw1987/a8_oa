@@ -1,0 +1,110 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}My Approval History{% endblock %}
+{% block page_title %}My Approval History{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Filters</h2>
+    <form method="get">
+        <table>
+            {{ filter_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Apply Filters</button>
+            <a href="{% url 'approvals:my_history' %}">Clear</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="summary-grid">
+        <div class="summary-label">Total History Records</div>
+        <div>{{ history_count }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>My Approval History</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Request Type</th>
+                <th>Request No</th>
+                <th>Title</th>
+                <th>Requester</th>
+                <th>Step</th>
+                <th>Outcome Status</th>
+                <th>Due At</th>
+                <th>Completed At</th>
+                <th>Acted At</th>
+                <th>Comment</th>
+                <th>Open Request</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in page_obj.object_list %}
+            <tr>
+                <td>{{ task.request_type_label }}</td>
+                <td>{{ task.request_no }}</td>
+                <td>{{ task.request_title }}</td>
+                <td>{{ task.request_requester_display }}</td>
+                <td>{{ task.step_name }}</td>
+                <td><span class="badge {{ task.task_status_badge_class }}">{{ task.get_status_display }}</span></td>
+                <td>
+                    {% if task.due_at %}
+                    {{ task.due_at|date:"Y-m-d H:i" }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if task.completed_at %}
+                    {{ task.completed_at|date:"Y-m-d H:i" }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if task.acted_at %}
+                    {{ task.acted_at|date:"Y-m-d H:i" }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>{{ task.comment|default:"-" }}</td>
+                <td>
+                    <a href="{{ task.request_detail_url }}">Open Request</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="11">No approval history records.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if page_obj.has_other_pages %}
+<div class="card">
+    <div class="pagination">
+        <span class="muted">
+            Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+        </span>
+
+        {% if page_obj.has_previous %}
+        <a href="?page=1{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Previous</a>
+        {% endif %}
+
+        <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Last</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -10,6 +10,7 @@ from django.db.models import Q
 from django.urls import reverse
 from django.contrib.contenttypes.models import ContentType
 
+from approvals.models import ApprovalNotificationLog
 from approvals.action_handlers import handle_task_action
 from approvals.models import ApprovalTask
 from .filters import TravelRequestListFilterForm
@@ -150,8 +151,13 @@ def tr_detail(request, pk):
         travel_request.project,
         travel_request.estimated_total,
     )
-
+    request_ct = ContentType.objects.get_for_model(TravelRequest)
     reserved_remaining = travel_request.get_reserved_remaining_amount()
+
+    notification_logs = ApprovalNotificationLog.objects.filter(
+        task__request_content_type=request_ct,
+        task__request_object_id=travel_request.id,
+    ).select_related("task").order_by("-sent_at", "-id")[:30]
 
     budget_snapshot_ui = None
     if budget_summary:
@@ -225,6 +231,7 @@ def tr_detail(request, pk):
         "completed_at": current_task.completed_at if current_task else None,
         "due_status": current_task.due_status_label if current_task else "-",
         "is_overdue": current_task.is_overdue if current_task else False,
+        "notification_logs": notification_logs,
     }
 
     ui_flags = build_travel_detail_ui_flags(

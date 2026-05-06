@@ -1,0 +1,33 @@
+<div class="card">
+    <h2>Notification Activity</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Sent At</th>
+                <th>Type</th>
+                <th>Recipient</th>
+                <th>Status</th>
+                <th>Triggered By</th>
+                <th>Subject</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in notification_logs %}
+            <tr>
+                <td>{{ log.sent_at|date:"Y-m-d H:i" }}</td>
+                <td>{{ log.get_notification_type_display }}</td>
+                <td>{{ log.recipient_email }}</td>
+                <td>{{ log.get_status_display }}</td>
+                <td>{{ log.triggered_by_command|default:"-" }}</td>
+                <td>{{ log.subject }}</td>
+                <td>{{ log.error_message|default:"-" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="7">No notification activity.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
