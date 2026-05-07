@@ -384,6 +384,7 @@ def tr_detail(request, pk):
         "budget_snapshot_ui": budget_snapshot_ui,
         "attachments_ui": attachments_ui,
         "approval_workflow_ui": approval_workflow_ui,
+        "notification_logs": notification_logs,
     }
     return render(request, "travel/tr_detail.html", context)
 

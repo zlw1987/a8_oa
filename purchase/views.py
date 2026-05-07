@@ -406,6 +406,7 @@ def pr_detail(request, pk):
         "budget_snapshot_ui": budget_snapshot_ui,
         "attachments_ui": attachments_ui,
         "approval_workflow_ui": approval_workflow_ui,
+        "notification_logs": notification_logs,
     }
     return render(request, "purchase/pr_detail.html", context)
 
