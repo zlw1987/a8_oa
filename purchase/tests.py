@@ -28,6 +28,8 @@ from purchase.models import (
     PurchaseFulfillmentStatus,
     PurchaseRequestAttachment, 
     PurchaseRequestContentAudit,
+    PurchaseActualReviewStatus,
+    PurchaseActualSpend,
 )
 from purchase.services import (
     create_purchase_request_from_forms,
@@ -2620,3 +2622,98 @@ class PurchaseSmokeTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Notification Activity")
+
+    def test_purchase_actual_spend_over_estimate_sets_pending_review(self):
+        pr = PurchaseRequest.objects.create(
+            title="Over Estimate Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="test",
+            estimated_total=Decimal("100.00"),
+            status=RequestStatus.APPROVED,
+        )
+
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Item A",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PURCHASE,
+            source_id=pr.id,
+            amount=Decimal("100.00"),
+            notes="reserve",
+            created_by=self.requester,
+        )
+
+        pr.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("130.00"),
+            acting_user=self.requester,
+            vendor_name="Vendor A",
+            reference_no="INV-001",
+        )
+
+        pr.refresh_from_db()
+        self.assertTrue(pr.is_over_estimate)
+        self.assertEqual(pr.actual_review_status, PurchaseActualReviewStatus.PENDING_REVIEW)
+
+    def test_purchase_actual_review_can_be_saved(self):
+        pr = PurchaseRequest.objects.create(
+            title="Review Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="test",
+            estimated_total=Decimal("100.00"),
+            status=RequestStatus.APPROVED,
+            is_over_estimate=True,
+            actual_review_status=PurchaseActualReviewStatus.PENDING_REVIEW,
+        )
+
+        pr.review_actual_variance(
+            review_status=PurchaseActualReviewStatus.APPROVED_TO_PROCEED,
+            comment="Approved by accounting.",
+            acting_user=self.requester,
+        )
+
+        pr.refresh_from_db()
+        self.assertEqual(pr.actual_review_status, PurchaseActualReviewStatus.APPROVED_TO_PROCEED)
+        self.assertEqual(pr.actual_review_comment, "Approved by accounting.")
+        self.assertEqual(pr.actual_reviewed_by, self.requester)
+        self.assertIsNotNone(pr.actual_reviewed_at)
+
+    def test_purchase_detail_shows_accounting_actual_review_section(self):
+        pr = PurchaseRequest.objects.create(
+            title="Review Card Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="test",
+            estimated_total=Decimal("100.00"),
+            status=RequestStatus.APPROVED,
+            is_over_estimate=True,
+            actual_review_status=PurchaseActualReviewStatus.PENDING_REVIEW,
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Accounting Actual Review")
+        self.assertContains(response, "Pending Review")

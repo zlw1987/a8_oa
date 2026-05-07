@@ -128,7 +128,81 @@
         </tbody>
     </table>
 </div>
+{% if purchase_request.is_over_estimate or purchase_request.actual_review_status != "NOT_REQUIRED" %}
+<div class="card">
+    <h2>Accounting Actual Review</h2>
 
+    {% if purchase_request.is_over_estimate and purchase_request.actual_review_status == "PENDING_REVIEW" %}
+    <p style="color: #8a1f1f; font-weight: bold;">
+        Warning: Actual spending exceeds the approved estimate. Accounting review is required before proceeding.
+    </p>
+    {% endif %}
+
+    <div class="summary-grid">
+        <div class="summary-label">Over Estimate</div>
+        <div>{% if purchase_request.is_over_estimate %}Yes{% else %}No{% endif %}</div>
+
+        <div class="summary-label">Review Status</div>
+        <div>{{ purchase_request.get_actual_review_status_display }}</div>
+
+        <div class="summary-label">Reviewed By</div>
+        <div>{{ purchase_request.actual_reviewed_by|default:"-" }}</div>
+
+        <div class="summary-label">Reviewed At</div>
+        <div>{{ purchase_request.actual_reviewed_at|default:"-" }}</div>
+
+        <div class="summary-label">Review Comment</div>
+        <div>{{ purchase_request.actual_review_comment|default:"-" }}</div>
+    </div>
+
+    {% if can_review_actual and actual_review_form %}
+    <form method="post" action="{% url 'purchase:pr_review_actual' purchase_request.id %}" style="margin-top: 16px;">
+        {% csrf_token %}
+        <table>
+            {{ actual_review_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Save Actual Review</button>
+        </div>
+    </form>
+
+    <form method="post" action="{% url 'purchase:pr_upload_actual_review_attachment' purchase_request.id %}" enctype="multipart/form-data" style="margin-top: 16px;">
+        {% csrf_token %}
+        <table>
+            {{ actual_review_attachment_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Upload Approval Document</button>
+        </div>
+    </form>
+    {% endif %}
+
+    <table style="margin-top: 16px;">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>File</th>
+                <th>Uploaded By</th>
+                <th>Uploaded At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for attachment in review_attachments %}
+            <tr>
+                <td>{{ attachment.title }}</td>
+                <td><a href="{{ attachment.file.url }}" target="_blank">{{ attachment.filename }}</a></td>
+                <td>{{ attachment.uploaded_by }}</td>
+                <td>{{ attachment.uploaded_at }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="4">No accounting approval documents.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
 {% include "includes/request_detail_attachments.html" %}
 
 {% if can_close_purchase %}

@@ -31,7 +31,8 @@ from travel.models import (
     TravelEstimatedExpenseLine,
     TravelRequestStatus,
     TravelRequestAttachment, 
-    TravelRequestContentAudit
+    TravelRequestContentAudit,
+    TravelActualReviewStatus,
 )
 from travel.services import (
     create_travel_request_from_forms,
@@ -116,6 +117,65 @@ class TravelSmokeTest(TestCase):
             approver_type=ApproverType.DEPARTMENT_MANAGER,
             is_active=True,
         )
+
+    def _create_approved_travel_for_actual_review(
+        self,
+        *,
+        estimated_total=Decimal("100.00"),
+        actual_total=Decimal("0.00"),
+        is_over_estimate=False,
+        actual_review_status=TravelActualReviewStatus.NOT_REQUIRED,
+    ):
+        tr = TravelRequest.objects.create(
+            purpose="Travel Actual Review Test",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.APPROVED,
+        )
+
+        TravelItinerary.objects.create(
+            travel_request=tr,
+            line_no=1,
+            trip_date=tr.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=tr,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=tr.start_date,
+            estimated_amount=estimated_total,
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=tr.start_date,
+            checkout_date=tr.end_date,
+        )
+
+        tr.refresh_estimated_total(commit=True)
+
+        tr.actual_total = actual_total
+        tr.is_over_estimate = is_over_estimate
+        tr.actual_review_status = actual_review_status
+        tr.save(
+            update_fields=[
+                "estimated_total",
+                "status",
+                "actual_total",
+                "is_over_estimate",
+                "actual_review_status",
+            ]
+        )
+        return tr
 
     def _get_travel_task_and_viewer(self, travel_request):
         task = ApprovalTask.objects.filter(
@@ -3705,3 +3765,80 @@ class TravelSmokeTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Notification Activity")
+
+    def test_travel_actual_over_estimate_sets_pending_review(self):
+        tr = self._create_approved_travel_for_actual_review(
+            estimated_total=Decimal("100.00"),
+            actual_total=Decimal("130.00"),
+        )
+
+        tr.refresh_actual_review_state(commit=True)
+
+        tr.refresh_from_db()
+        self.assertTrue(tr.is_over_estimate)
+        self.assertEqual(
+            tr.actual_review_status,
+            TravelActualReviewStatus.PENDING_REVIEW,
+        )
+
+
+    def test_travel_actual_review_can_be_saved(self):
+        tr = self._create_approved_travel_for_actual_review(
+            estimated_total=Decimal("100.00"),
+            actual_total=Decimal("130.00"),
+            is_over_estimate=True,
+            actual_review_status=TravelActualReviewStatus.PENDING_REVIEW,
+        )
+
+        tr.review_actual_variance(
+            review_status=TravelActualReviewStatus.APPROVED_TO_PROCEED,
+            comment="Approved by accounting.",
+            acting_user=self.requester,
+        )
+
+        tr.refresh_from_db()
+        self.assertEqual(
+            tr.actual_review_status,
+            TravelActualReviewStatus.APPROVED_TO_PROCEED,
+        )
+        self.assertEqual(tr.actual_review_comment, "Approved by accounting.")
+        self.assertEqual(tr.actual_reviewed_by, self.requester)
+        self.assertIsNotNone(tr.actual_reviewed_at)
+
+    def test_travel_actual_review_can_be_saved(self):
+        tr = self._create_approved_travel_for_actual_review(
+            estimated_total=Decimal("100.00"),
+            actual_total=Decimal("130.00"),
+            is_over_estimate=True,
+            actual_review_status=TravelActualReviewStatus.PENDING_REVIEW,
+        )
+
+        tr.review_actual_variance(
+            review_status=TravelActualReviewStatus.APPROVED_TO_PROCEED,
+            comment="Approved by accounting.",
+            acting_user=self.requester,
+        )
+
+        tr.refresh_from_db()
+        self.assertEqual(
+            tr.actual_review_status,
+            TravelActualReviewStatus.APPROVED_TO_PROCEED,
+        )
+        self.assertEqual(tr.actual_review_comment, "Approved by accounting.")
+        self.assertEqual(tr.actual_reviewed_by, self.requester)
+        self.assertIsNotNone(tr.actual_reviewed_at)
+
+    def test_travel_detail_shows_over_estimate_flag_in_review_section(self):
+        tr = self._create_approved_travel_for_actual_review(
+            estimated_total=Decimal("100.00"),
+            actual_total=Decimal("130.00"),
+            is_over_estimate=True,
+            actual_review_status=TravelActualReviewStatus.PENDING_REVIEW,
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Over Estimate")
+        self.assertContains(response, "Yes")

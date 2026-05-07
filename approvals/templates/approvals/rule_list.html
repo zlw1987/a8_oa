@@ -1,0 +1,111 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Approval Rules{% endblock %}
+{% block page_title %}Approval Rules{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Filters</h2>
+    <form method="get">
+        <table>
+            <tr>
+                <th><label for="id_q">Keyword</label></th>
+                <td>
+                    <input type="text" name="q" id="id_q" value="{{ keyword }}">
+                </td>
+            </tr>
+            <tr>
+                <th><label for="id_request_type">Request Type</label></th>
+                <td>
+                    <select name="request_type" id="id_request_type">
+                        <option value="">All</option>
+                        <option value="PURCHASE" {% if request_type == "PURCHASE" %}selected{% endif %}>Purchase</option>
+                        <option value="TRAVEL" {% if request_type == "TRAVEL" %}selected{% endif %}>Travel</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="id_is_active">Active</label></th>
+                <td>
+                    <select name="is_active" id="id_is_active">
+                        <option value="">All</option>
+                        <option value="true" {% if is_active == "true" %}selected{% endif %}>Active</option>
+                        <option value="false" {% if is_active == "false" %}selected{% endif %}>Inactive</option>
+                    </select>
+                </td>
+            </tr>
+        </table>
+        <div class="action-row">
+            <button type="submit">Apply Filters</button>
+            <a href="{% url 'approvals:rule_list' %}">Clear</a>
+            <a href="{% url 'approvals:rule_create' %}">Create Rule</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Approval Rule List</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Rule Code</th>
+                <th>Rule Name</th>
+                <th>Request Type</th>
+                <th>Department</th>
+                <th>Amount Range</th>
+                <th>Priority</th>
+                <th>Active</th>
+                <th>Step Count</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rule in page_obj.object_list %}
+            <tr>
+                <td>{{ rule.rule_code }}</td>
+                <td>{{ rule.rule_name }}</td>
+                <td>{{ rule.get_request_type_display }}</td>
+                <td>{{ rule.department|default:"All" }}</td>
+                <td>
+                    {% if rule.amount_from or rule.amount_to %}
+                    {{ rule.amount_from|default:"-" }} ~ {{ rule.amount_to|default:"-" }}
+                    {% else %}
+                    All
+                    {% endif %}
+                </td>
+                <td>{{ rule.priority }}</td>
+                <td>{% if rule.is_active %}Yes{% else %}No{% endif %}</td>
+                <td>{{ rule.step_count }}</td>
+                <td><a href="{% url 'approvals:rule_edit' rule.id %}">Open</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="9">No approval rules found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if page_obj.has_other_pages %}
+<div class="card">
+    <div class="pagination">
+        <span class="muted">
+            Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+        </span>
+
+        {% if page_obj.has_previous %}
+        <a href="?page=1{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Previous</a>
+        {% endif %}
+
+        <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Last</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

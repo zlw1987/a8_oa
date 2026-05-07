@@ -20,4 +20,6 @@ urlpatterns = [
     path("<int:pk>/tasks/<int:task_id>/approve/", views.task_approve, name="task_approve"),
     path("<int:pk>/tasks/<int:task_id>/return/", views.task_return, name="task_return"),
     path("<int:pk>/tasks/<int:task_id>/reject/", views.task_reject, name="task_reject"),
+    path("<int:pk>/actual-review/", views.tr_review_actual, name="tr_review_actual"),
+    path("<int:pk>/actual-review/upload/", views.tr_upload_actual_review_attachment, name="tr_upload_actual_review_attachment"),
     ]

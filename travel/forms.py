@@ -4,7 +4,6 @@ from django.db.models import Q
 
 from projects.access import get_usable_projects_queryset_for_user, user_can_use_project_for_request
 from projects.models import Project
-
 from .models import (
     TravelRequest,
     TravelItinerary,
@@ -13,6 +12,7 @@ from .models import (
     get_location_mode_for_expense_type,
     TravelRequestAttachment,
     TravelActualExpenseLine,
+    TravelActualReviewStatus,
 )
 from common.choices import CurrencyCode
 
@@ -542,3 +542,24 @@ class TravelActualExpenseForm(forms.ModelForm):
             cleaned_data["currency"] = self.travel_request.currency
 
         return cleaned_data
+
+class TravelActualReviewForm(forms.Form):
+    review_status = forms.ChoiceField(
+        choices=[
+            (TravelActualReviewStatus.APPROVED_TO_PROCEED, "Approved to Proceed"),
+            (TravelActualReviewStatus.REJECTED, "Rejected"),
+        ]
+    )
+    review_comment = forms.CharField(
+        required=False,
+        widget=forms.Textarea,
+        label="Review Comment",
+    )
+
+class TravelActualReviewAttachmentForm(forms.ModelForm):
+    class Meta:
+        model = TravelRequestAttachment
+        fields = [
+            "title",
+            "file",
+        ]

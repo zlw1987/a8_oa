@@ -22,10 +22,14 @@ from .forms import (
     PurchaseRequestLineEditFormSet,
     PurchaseRequestAttachmentForm,
     PurchaseActualSpendForm,
+    PurchaseActualReviewForm,
+    PurchaseActualReviewAttachmentForm,
 )
 from .models import (
     PurchaseRequest,
     PurchaseRequestAttachment,
+    PurchaseActualReviewStatus,
+    PurchaseRequestAttachmentType,
 )
 from purchase.access import (
     user_can_view_purchase,
@@ -188,6 +192,12 @@ def pr_detail(request, pk):
 
     lines = purchase_request.lines.all().order_by("line_no")
     attachments = purchase_request.attachments.all()
+    review_attachments = attachments.filter(
+        document_type=PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
+    )
+    attachments = attachments.exclude(
+        document_type=PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
+    )
     actual_spend_entries = purchase_request.actual_spend_entries.all()
     content_audits = purchase_request.content_audits.all()
     approval_tasks = purchase_request.approval_tasks.all().order_by("step_no")
@@ -323,6 +333,30 @@ def pr_detail(request, pk):
         "upload_url": reverse("purchase:pr_upload_attachment", args=[purchase_request.id]),
     }
 
+    can_review_actual = user_can_close_purchase(request.user, purchase_request)
+
+    actual_review_form = (
+        PurchaseActualReviewForm(
+            initial={
+                "review_status": purchase_request.actual_review_status
+                if purchase_request.actual_review_status in {
+                    PurchaseActualReviewStatus.APPROVED_TO_PROCEED,
+                    PurchaseActualReviewStatus.REJECTED,
+                }
+                else PurchaseActualReviewStatus.APPROVED_TO_PROCEED,
+                "review_comment": purchase_request.actual_review_comment,
+            }
+        )
+        if can_review_actual and purchase_request.is_over_estimate
+        else None
+    )
+
+    actual_review_attachment_form = (
+        PurchaseActualReviewAttachmentForm()
+        if can_review_actual and purchase_request.is_over_estimate
+        else None
+    )
+
     for attachment in attachments:
         attachment.delete_url = reverse(
             "purchase:pr_delete_attachment",
@@ -407,6 +441,10 @@ def pr_detail(request, pk):
         "attachments_ui": attachments_ui,
         "approval_workflow_ui": approval_workflow_ui,
         "notification_logs": notification_logs,
+        "review_attachments": review_attachments,
+        "can_review_actual": can_review_actual,
+        "actual_review_form": actual_review_form,
+        "actual_review_attachment_form": actual_review_attachment_form,
     }
     return render(request, "purchase/pr_detail.html", context)
 
@@ -652,6 +690,12 @@ def pr_record_actual_spend(request, pk):
                 request,
                 f"Actual spend recorded successfully for {purchase_request.pr_no}."
             )
+            purchase_request.refresh_from_db()
+            if purchase_request.is_over_estimate:
+                messages.warning(
+                    request,
+                    f"{purchase_request.pr_no} actual spending now exceeds the approved estimate and requires accounting review."
+                )
         except ValidationError as exc:
             for message in exc.messages:
                 messages.error(request, message)
@@ -786,3 +830,63 @@ def task_reject(request, pk, task_id):
         action=lambda task, user, comment: task.reject(user, comment=comment),
         comment=comment,
     )
+
+@login_required
+@require_POST
+def pr_review_actual(request, pk):
+    purchase_request = get_object_or_404(
+        PurchaseRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+
+    enforce_purchase_permission(
+        user_can_close_purchase(request.user, purchase_request)
+    )
+
+    form = PurchaseActualReviewForm(request.POST)
+    if form.is_valid():
+        try:
+            purchase_request.review_actual_variance(
+                review_status=form.cleaned_data["review_status"],
+                comment=form.cleaned_data.get("review_comment", ""),
+                acting_user=request.user,
+            )
+            messages.success(request, f"Actual review updated for {purchase_request.pr_no}.")
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+
+    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+
+@login_required
+@require_POST
+def pr_upload_actual_review_attachment(request, pk):
+    purchase_request = get_object_or_404(
+        PurchaseRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+
+    enforce_purchase_permission(
+        user_can_close_purchase(request.user, purchase_request)
+    )
+
+    form = PurchaseActualReviewAttachmentForm(request.POST, request.FILES)
+    if form.is_valid():
+        attachment = form.save(commit=False)
+        attachment.purchase_request = purchase_request
+        attachment.document_type = PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
+        attachment.uploaded_by = request.user
+        attachment.save()
+        messages.success(request, "Accounting approval document uploaded successfully.")
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+
+    return redirect("purchase:pr_detail", pk=purchase_request.pk)

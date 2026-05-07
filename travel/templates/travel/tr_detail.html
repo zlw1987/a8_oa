@@ -178,7 +178,81 @@
     </table>
 </div>
 
+{% if travel_request.is_over_estimate or travel_request.actual_review_status != "NOT_REQUIRED" %}
+<div class="card">
+    <h2>Accounting Actual Review</h2>
 
+    {% if travel_request.is_over_estimate and travel_request.actual_review_status == "PENDING_REVIEW" %}
+    <p style="color: #8a1f1f; font-weight: bold;">
+        Warning: Actual expenses exceed the approved estimate. Accounting review is required before proceeding.
+    </p>
+    {% endif %}
+
+    <div class="summary-grid">
+        <div class="summary-label">Over Estimate</div>
+        <div>{% if travel_request.is_over_estimate %}Yes{% else %}No{% endif %}</div>
+
+        <div class="summary-label">Review Status</div>
+        <div>{{ travel_request.get_actual_review_status_display }}</div>
+
+        <div class="summary-label">Reviewed By</div>
+        <div>{{ travel_request.actual_reviewed_by|default:"-" }}</div>
+
+        <div class="summary-label">Reviewed At</div>
+        <div>{{ travel_request.actual_reviewed_at|default:"-" }}</div>
+
+        <div class="summary-label">Review Comment</div>
+        <div>{{ travel_request.actual_review_comment|default:"-" }}</div>
+    </div>
+
+    {% if can_review_actual and actual_review_form %}
+    <form method="post" action="{% url 'travel:tr_review_actual' travel_request.id %}" style="margin-top: 16px;">
+        {% csrf_token %}
+        <table>
+            {{ actual_review_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Save Actual Review</button>
+        </div>
+    </form>
+
+    <form method="post" action="{% url 'travel:tr_upload_actual_review_attachment' travel_request.id %}" enctype="multipart/form-data" style="margin-top: 16px;">
+        {% csrf_token %}
+        <table>
+            {{ actual_review_attachment_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Upload Approval Document</button>
+        </div>
+    </form>
+    {% endif %}
+
+    <table style="margin-top: 16px;">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>File</th>
+                <th>Uploaded By</th>
+                <th>Uploaded At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for attachment in review_attachments %}
+            <tr>
+                <td>{{ attachment.title }}</td>
+                <td><a href="{{ attachment.file.url }}" target="_blank">{{ attachment.filename }}</a></td>
+                <td>{{ attachment.uploaded_by }}</td>
+                <td>{{ attachment.uploaded_at }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="4">No accounting approval documents.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
 {% include "includes/request_detail_attachments.html" %}
 
 {% if can_close %}

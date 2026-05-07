@@ -45,3 +45,46 @@ class ApprovalTaskListFilterForm(forms.Form):
         ]
 
         self.fields["requester"].choices = [("", "All")] + list(requester_choices or [])
+
+class AccountingReviewQueueFilterForm(forms.Form):
+    q = forms.CharField(required=False, label="Keyword")
+    request_type = forms.ChoiceField(required=False, label="Request Type")
+    review_status = forms.ChoiceField(required=False, label="Review Status")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields["request_type"].choices = [
+            ("", "All"),
+            ("PURCHASE", "Purchase"),
+            ("TRAVEL", "Travel"),
+        ]
+
+        self.fields["review_status"].choices = [
+            ("", "All"),
+            ("PENDING_REVIEW", "Pending Review"),
+            ("APPROVED_TO_PROCEED", "Approved to Proceed"),
+            ("REJECTED", "Rejected"),
+        ]
+
+class VarianceExceptionReportFilterForm(forms.Form):
+    q = forms.CharField(required=False, label="Keyword")
+    request_type = forms.ChoiceField(required=False, label="Request Type")
+    review_status = forms.ChoiceField(required=False, label="Review Status")
+    requester = forms.CharField(required=False, label="Requester")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields["request_type"].choices = [
+            ("", "All"),
+            ("PURCHASE", "Purchase"),
+            ("TRAVEL", "Travel"),
+        ]
+
+        self.fields["review_status"].choices = [
+            ("", "All"),
+            ("PENDING_REVIEW", "Pending Review"),
+            ("APPROVED_TO_PROCEED", "Approved to Proceed"),
+            ("REJECTED", "Rejected"),
+        ]

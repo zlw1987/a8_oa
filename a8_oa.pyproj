@@ -24,6 +24,7 @@
   <ItemGroup>
     <Compile Include="accounts\admin.py" />
     <Compile Include="accounts\apps.py" />
+    <Compile Include="accounts\forms.py" />
     <Compile Include="accounts\migrations\0001_initial.py" />
     <Compile Include="accounts\migrations\0002_department_and_more.py" />
     <Compile Include="accounts\migrations\0003_alter_department_options_department_manager_and_more.py" />
@@ -40,6 +41,7 @@
     <Compile Include="approvals\apps.py" />
     <Compile Include="approvals\dashboard.py" />
     <Compile Include="approvals\filters.py" />
+    <Compile Include="approvals\forms.py" />
     <Compile Include="approvals\management\commands\send_approval_escalations.py" />
     <Compile Include="approvals\management\commands\send_approval_overdue_reminders.py" />
     <Compile Include="approvals\management\commands\__init__.py" />
@@ -136,8 +138,12 @@
     <Compile Include="travel\__init__.py" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="approvals\templates\approvals\accounting_review_queue.html" />
     <Content Include="approvals\templates\approvals\my_history.html" />
     <Content Include="approvals\templates\approvals\my_tasks.html" />
+    <Content Include="approvals\templates\approvals\rule_edit.html" />
+    <Content Include="approvals\templates\approvals\rule_list.html" />
+    <Content Include="approvals\templates\approvals\variance_exception_report.html" />
     <Content Include="dashboard\templates\dashboard\home.html" />
     <Content Include="dashboard\templates\registration\login.html" />
     <Content Include="projects\templates\projects\project_budget_adjustment.html" />

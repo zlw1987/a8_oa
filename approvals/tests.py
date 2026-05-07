@@ -21,12 +21,244 @@ from common.choices import (
     DepartmentType,
     RequestStatus,
 )
-from projects.models import Project
-from purchase.models import PurchaseRequest, PurchaseRequestLine
-from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpenseLine, TravelRequestStatus
+from projects.models import Project,ProjectBudgetEntry,BudgetEntryType
+from purchase.models import PurchaseRequest, PurchaseRequestLine,PurchaseActualReviewStatus,PurchaseActualSpend
+from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpenseLine, TravelRequestStatus,TravelActualReviewStatus
 
 
 User = get_user_model()
+
+class ApprovalRuleAdminViewTest(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.staff_user = User.objects.create_user(
+            username="rule_admin",
+            email="rule_admin@example.com",
+            password="testpass123",
+            is_staff=True,
+        )
+        self.normal_user = User.objects.create_user(
+            username="normal_user",
+            email="normal_user@example.com",
+            password="testpass123",
+            is_staff=False,
+        )
+        self.department = Department.objects.create(
+            dept_code="MIS",
+            dept_name="Management Information Systems",
+        )
+
+    def _valid_rule_post_data(self):
+        return {
+            "rule_code": "PR-001",
+            "rule_name": "Purchase Rule 001",
+            "request_type": RequestType.PURCHASE,
+            "department": str(self.department.id),
+            "amount_from": "0.00",
+            "amount_to": "10000.00",
+            "requester_level": "",
+            "specific_requester": "",
+            "priority": "1",
+            "is_active": "on",
+
+            "steps-TOTAL_FORMS": "1",
+            "steps-INITIAL_FORMS": "0",
+            "steps-MIN_NUM_FORMS": "0",
+            "steps-MAX_NUM_FORMS": "1000",
+
+            "steps-0-step_no": "1",
+            "steps-0-step_name": "Department Manager Approval",
+            "steps-0-approver_type": ApproverType.DEPARTMENT_MANAGER,
+            "steps-0-approver_user": "",
+            "steps-0-approver_department": "",
+            "steps-0-approver_level": "",
+            "steps-0-is_required": "on",
+            "steps-0-allow_self_skip": "",
+            "steps-0-sla_days": "2",
+            "steps-0-is_active": "on",
+            "steps-0-DELETE": "",
+        }
+
+    def test_rule_list_page_loads_for_staff(self):
+        self.client.force_login(self.staff_user)
+        response = self.client.get(reverse("approvals:rule_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Approval Rules")
+
+    def test_rule_create_page_loads_for_staff(self):
+        self.client.force_login(self.staff_user)
+        response = self.client.get(reverse("approvals:rule_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Create Approval Rule")
+
+    def test_non_staff_cannot_open_rule_pages(self):
+        self.client.force_login(self.normal_user)
+
+        response = self.client.get(reverse("approvals:rule_list"))
+        self.assertEqual(response.status_code, 403)
+
+        response = self.client.get(reverse("approvals:rule_create"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_rule_create_saves_valid_rule_and_step(self):
+        self.client.force_login(self.staff_user)
+        response = self.client.post(
+            reverse("approvals:rule_create"),
+            data=self._valid_rule_post_data(),
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ApprovalRule.objects.count(), 1)
+        self.assertEqual(ApprovalRuleStep.objects.count(), 1)
+
+        rule = ApprovalRule.objects.first()
+        self.assertEqual(rule.rule_code, "PR-001")
+        self.assertEqual(rule.request_type, RequestType.PURCHASE)
+
+        step = ApprovalRuleStep.objects.first()
+        self.assertEqual(step.step_no, 1)
+        self.assertEqual(step.step_name, "Department Manager Approval")
+
+    def test_rule_form_blocks_invalid_amount_range(self):
+        self.client.force_login(self.staff_user)
+        payload = self._valid_rule_post_data()
+        payload["amount_from"] = "2000.00"
+        payload["amount_to"] = "1000.00"
+
+        response = self.client.post(reverse("approvals:rule_create"), data=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Amount From cannot be greater than Amount To.")
+        self.assertEqual(ApprovalRule.objects.count(), 0)
+
+    def test_rule_formset_blocks_duplicate_step_no(self):
+        self.client.force_login(self.staff_user)
+        payload = self._valid_rule_post_data()
+        payload["steps-TOTAL_FORMS"] = "2"
+
+        payload["steps-1-step_no"] = "1"
+        payload["steps-1-step_name"] = "Finance Approval"
+        payload["steps-1-approver_type"] = ApproverType.FINANCE
+        payload["steps-1-approver_user"] = ""
+        payload["steps-1-approver_department"] = ""
+        payload["steps-1-approver_level"] = ""
+        payload["steps-1-is_required"] = "on"
+        payload["steps-1-allow_self_skip"] = ""
+        payload["steps-1-sla_days"] = "2"
+        payload["steps-1-is_active"] = "on"
+        payload["steps-1-DELETE"] = ""
+
+        response = self.client.post(reverse("approvals:rule_create"), data=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Duplicate Step No found: 1")
+        self.assertEqual(ApprovalRule.objects.count(), 0)
+
+    def test_rule_formset_blocks_non_continuous_active_step_numbers(self):
+        self.client.force_login(self.staff_user)
+        payload = self._valid_rule_post_data()
+        payload["steps-TOTAL_FORMS"] = "2"
+
+        payload["steps-1-step_no"] = "3"
+        payload["steps-1-step_name"] = "Finance Approval"
+        payload["steps-1-approver_type"] = ApproverType.FINANCE
+        payload["steps-1-approver_user"] = ""
+        payload["steps-1-approver_department"] = ""
+        payload["steps-1-approver_level"] = ""
+        payload["steps-1-is_required"] = "on"
+        payload["steps-1-allow_self_skip"] = ""
+        payload["steps-1-sla_days"] = "2"
+        payload["steps-1-is_active"] = "on"
+        payload["steps-1-DELETE"] = ""
+
+        response = self.client.post(reverse("approvals:rule_create"), data=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Active Step No values must be continuous starting from 1.")
+        self.assertEqual(ApprovalRule.objects.count(), 0)
+
+    def test_specific_user_step_requires_approver_user(self):
+        self.client.force_login(self.staff_user)
+        payload = self._valid_rule_post_data()
+        payload["steps-0-approver_type"] = ApproverType.SPECIFIC_USER
+        payload["steps-0-approver_user"] = ""
+
+        response = self.client.post(reverse("approvals:rule_create"), data=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Specific User approver type requires Approver User.")
+        self.assertEqual(ApprovalRule.objects.count(), 0)
+
+    def test_rule_edit_updates_existing_rule(self):
+        rule = ApprovalRule.objects.create(
+            rule_code="TR-001",
+            rule_name="Travel Rule 001",
+            request_type=RequestType.TRAVEL,
+            department=self.department,
+            priority=1,
+            is_active=True,
+        )
+        ApprovalRuleStep.objects.create(
+            rule=rule,
+            step_no=1,
+            step_name="Department Manager Approval",
+            approver_type=ApproverType.DEPARTMENT_MANAGER,
+            sla_days=2,
+            is_required=True,
+            is_active=True,
+        )
+
+        self.client.force_login(self.staff_user)
+        payload = {
+            "rule_code": "TR-001",
+            "rule_name": "Travel Rule Updated",
+            "request_type": RequestType.TRAVEL,
+            "department": str(self.department.id),
+            "amount_from": "0.00",
+            "amount_to": "5000.00",
+            "requester_level": "",
+            "specific_requester": "",
+            "priority": "2",
+            "is_active": "on",
+
+            "steps-TOTAL_FORMS": "1",
+            "steps-INITIAL_FORMS": "1",
+            "steps-MIN_NUM_FORMS": "0",
+            "steps-MAX_NUM_FORMS": "1000",
+
+            "steps-0-id": str(rule.steps.first().id),
+            "steps-0-step_no": "1",
+            "steps-0-step_name": "Finance Approval",
+            "steps-0-approver_type": ApproverType.FINANCE,
+            "steps-0-approver_user": "",
+            "steps-0-approver_department": "",
+            "steps-0-approver_level": "",
+            "steps-0-is_required": "on",
+            "steps-0-allow_self_skip": "",
+            "steps-0-sla_days": "3",
+            "steps-0-is_active": "on",
+            "steps-0-DELETE": "",
+        }
+
+        response = self.client.post(
+            reverse("approvals:rule_edit", args=[rule.id]),
+            data=payload,
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        rule.refresh_from_db()
+        step = rule.steps.first()
+
+        self.assertEqual(rule.rule_name, "Travel Rule Updated")
+        self.assertEqual(rule.priority, 2)
+        self.assertEqual(step.step_name, "Finance Approval")
+        self.assertEqual(step.approver_type, ApproverType.FINANCE)
+        self.assertEqual(step.sla_days, 3)
 
 
 class ApprovalPagesSmokeTest(TestCase):
@@ -1480,3 +1712,166 @@ class ApprovalPoolRegressionTest(TestCase):
         self.assertContains(response, "Notification Activity")
         self.assertContains(response, "Reminder")
         self.assertContains(response, "Dry Run")
+
+    def test_accounting_review_queue_page_loads(self):
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("approvals:accounting_review_queue"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Accounting Review Queue")
+
+    def test_accounting_review_queue_page_loads(self):
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("approvals:accounting_review_queue"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Accounting Review Queue")
+
+    def test_accounting_review_queue_shows_purchase_pending_review_item(self):
+        pr = PurchaseRequest.objects.create(
+            title="Purchase Review Queue",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="test",
+            estimated_total=Decimal("100.00"),
+            status=RequestStatus.APPROVED,
+            is_over_estimate=True,
+            actual_review_status=PurchaseActualReviewStatus.PENDING_REVIEW,
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("approvals:accounting_review_queue"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, "Pending Review")
+
+    def test_accounting_review_queue_shows_travel_pending_review_item(self):
+        tr = TravelRequest.objects.create(
+            purpose="Travel Review Queue",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.APPROVED,
+            estimated_total=Decimal("100.00"),
+            actual_total=Decimal("130.00"),
+            is_over_estimate=True,
+            actual_review_status=TravelActualReviewStatus.PENDING_REVIEW,
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("approvals:accounting_review_queue"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, tr.travel_no)
+        self.assertContains(response, "Pending Review")
+
+    def test_variance_exception_report_page_loads(self):
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("approvals:variance_exception_report"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Variance / Exception Report")
+
+    def test_variance_exception_report_shows_purchase_item(self):
+        pr = PurchaseRequest.objects.create(
+            title="Purchase Variance Report",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="test",
+            estimated_total=Decimal("100.00"),
+            status=RequestStatus.APPROVED,
+            is_over_estimate=True,
+            actual_review_status=PurchaseActualReviewStatus.PENDING_REVIEW,
+        )
+
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PURCHASE,
+            source_id=pr.id,
+            amount=Decimal("100.00"),
+            notes="reserve",
+            created_by=self.requester,
+        )
+
+        PurchaseActualSpend.objects.create(
+            purchase_request=pr,
+            spend_date=date.today(),
+            amount=Decimal("130.00"),
+            currency="USD",
+            created_by=self.requester,
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("approvals:variance_exception_report"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, "Pending Review")
+
+    def test_variance_exception_report_shows_travel_item(self):
+        tr = TravelRequest.objects.create(
+            purpose="Travel Variance Report",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.APPROVED,
+            estimated_total=Decimal("100.00"),
+            actual_total=Decimal("130.00"),
+            is_over_estimate=True,
+            actual_review_status=TravelActualReviewStatus.PENDING_REVIEW,
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("approvals:variance_exception_report"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, tr.travel_no)
+        self.assertContains(response, "Pending Review")
+
+    def test_variance_exception_report_can_filter_by_review_status(self):
+        pr = PurchaseRequest.objects.create(
+            title="Approved Variance Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="test",
+            estimated_total=Decimal("100.00"),
+            status=RequestStatus.APPROVED,
+            is_over_estimate=True,
+            actual_review_status=PurchaseActualReviewStatus.APPROVED_TO_PROCEED,
+        )
+
+        self.client.force_login(self.requester)
+        response = self.client.get(
+            reverse("approvals:variance_exception_report"),
+            {"review_status": "APPROVED_TO_PROCEED"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, pr.pr_no)
+        self.assertContains(response, "Approved to Proceed")

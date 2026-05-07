@@ -1,0 +1,108 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Variance / Exception Report{% endblock %}
+{% block page_title %}Variance / Exception Report{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Filters</h2>
+    <form method="get">
+        <table>
+            {{ filter_form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">Apply Filters</button>
+            <a href="{% url 'approvals:variance_exception_report' %}">Clear</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="summary-grid">
+        <div class="summary-label">Total Exception Items</div>
+        <div>{{ total_count }}</div>
+
+        <div class="summary-label">Pending Review</div>
+        <div>{{ pending_count }}</div>
+
+        <div class="summary-label">Approved to Proceed</div>
+        <div>{{ approved_count }}</div>
+
+        <div class="summary-label">Rejected</div>
+        <div>{{ rejected_count }}</div>
+
+        <div class="summary-label">Total Variance Amount</div>
+        <div>{{ total_variance }}</div>
+    </div>
+
+    <div class="action-row" style="margin-top: 16px;">
+        <a href="{% url 'approvals:accounting_review_queue' %}">Open Accounting Review Queue</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Variance / Exception Items</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Request Type</th>
+                <th>Request No</th>
+                <th>Title</th>
+                <th>Requester</th>
+                <th>Project</th>
+                <th>Estimate Total</th>
+                <th>Actual Total</th>
+                <th>Variance</th>
+                <th>Review Status</th>
+                <th>Reviewed By</th>
+                <th>Reviewed At</th>
+                <th>Open</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in page_obj.object_list %}
+            <tr>
+                <td>{{ row.request_type_label }}</td>
+                <td>{{ row.request_no }}</td>
+                <td>{{ row.title }}</td>
+                <td>{{ row.requester }}</td>
+                <td>{{ row.project }}</td>
+                <td>{{ row.estimated_total }}</td>
+                <td>{{ row.actual_total }}</td>
+                <td>{{ row.variance_amount }}</td>
+                <td>{{ row.review_status_label }}</td>
+                <td>{{ row.reviewed_by|default:"-" }}</td>
+                <td>{{ row.reviewed_at|default:"-" }}</td>
+                <td><a href="{{ row.detail_url }}">Open Request</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="12">No variance / exception items.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if page_obj.has_other_pages %}
+<div class="card">
+    <div class="pagination">
+        <span class="muted">
+            Showing {{ page_obj.start_index }} - {{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+        </span>
+
+        {% if page_obj.has_previous %}
+        <a href="?page=1{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Previous</a>
+        {% endif %}
+
+        <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% if pagination_querystring %}&{{ pagination_querystring }}{% endif %}">Last</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

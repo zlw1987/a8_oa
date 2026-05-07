@@ -10,8 +10,9 @@ from .models import (
     PurchaseRequestLine,
     PurchaseRequestAttachment,
     PurchaseActualSpend,
+    PurchaseActualReviewStatus, 
+    PurchaseRequestAttachment,
 )
-
 class PurchaseRequestForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         self.user = user
@@ -263,3 +264,24 @@ class PurchaseActualSpendForm(forms.ModelForm):
         widgets = {
             "spend_date": forms.DateInput(attrs={"type": "date"}),
         }
+
+class PurchaseActualReviewForm(forms.Form):
+    review_status = forms.ChoiceField(
+        choices=[
+            (PurchaseActualReviewStatus.APPROVED_TO_PROCEED, "Approved to Proceed"),
+            (PurchaseActualReviewStatus.REJECTED, "Rejected"),
+        ]
+    )
+    review_comment = forms.CharField(
+        required=False,
+        widget=forms.Textarea,
+        label="Review Comment",
+    )
+
+class PurchaseActualReviewAttachmentForm(forms.ModelForm):
+    class Meta:
+        model = PurchaseRequestAttachment
+        fields = [
+            "title",
+            "file",
+        ]

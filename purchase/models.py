@@ -48,6 +48,18 @@ class PurchaseFulfillmentStatus(models.TextChoices):
     PARTIAL = "PARTIAL", "Partially Spent"
     COMPLETED = "COMPLETED", "Completed"
 
+class PurchaseActualReviewStatus(models.TextChoices):
+    NOT_REQUIRED = "NOT_REQUIRED", "Not Required"
+    PENDING_REVIEW = "PENDING_REVIEW", "Pending Review"
+    APPROVED_TO_PROCEED = "APPROVED_TO_PROCEED", "Approved to Proceed"
+    REJECTED = "REJECTED", "Rejected"
+
+class PurchaseActualReviewStatus(models.TextChoices):
+    NOT_REQUIRED = "NOT_REQUIRED", "Not Required"
+    PENDING_REVIEW = "PENDING_REVIEW", "Pending Review"
+    APPROVED_TO_PROCEED = "APPROVED_TO_PROCEED", "Approved to Proceed"
+    REJECTED = "REJECTED", "Rejected"
+
 class PurchaseRequest(models.Model):
 
     pr_no = models.CharField(max_length=30, unique=True)
@@ -98,6 +110,22 @@ class PurchaseRequest(models.Model):
     vendor_suggestion = models.CharField(max_length=100, blank=True, default="")
     delivery_location = models.CharField(max_length=200, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    is_over_estimate = models.BooleanField(default=False)
+    actual_review_status = models.CharField(
+        max_length=30,
+        choices=PurchaseActualReviewStatus,
+        default=PurchaseActualReviewStatus.NOT_REQUIRED,
+    )
+    actual_review_comment = models.TextField(blank=True, default="")
+    actual_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="purchase_actual_reviews",
+    )
+    actual_reviewed_at = models.DateTimeField(null=True, blank=True)
+
 
     class Meta:
         db_table = "PS_A8_PR_HDR"
@@ -696,6 +724,57 @@ class PurchaseRequest(models.Model):
 
         return reserve_total - release_total
 
+    def refresh_actual_review_state(self, commit=True):
+        over_estimate = self.get_actual_spent_total() > self.estimated_total
+        self.is_over_estimate = over_estimate
+
+        if over_estimate:
+            self.actual_review_status = PurchaseActualReviewStatus.PENDING_REVIEW
+            self.actual_review_comment = ""
+            self.actual_reviewed_by = None
+            self.actual_reviewed_at = None
+        else:
+            self.actual_review_status = PurchaseActualReviewStatus.NOT_REQUIRED
+            self.actual_review_comment = ""
+            self.actual_reviewed_by = None
+            self.actual_reviewed_at = None
+
+        if commit:
+            self.save(
+                update_fields=[
+                    "is_over_estimate",
+                    "actual_review_status",
+                    "actual_review_comment",
+                    "actual_reviewed_by",
+                    "actual_reviewed_at",
+                ]
+            )
+
+    @transaction.atomic
+    def review_actual_variance(self, *, review_status, comment="", acting_user=None):
+        if not self.is_over_estimate:
+            raise ValidationError("Actual review is not required for this request.")
+
+        allowed = {
+            PurchaseActualReviewStatus.APPROVED_TO_PROCEED,
+            PurchaseActualReviewStatus.REJECTED,
+        }
+        if review_status not in allowed:
+            raise ValidationError("Invalid actual review status.")
+
+        self.actual_review_status = review_status
+        self.actual_review_comment = comment or ""
+        self.actual_reviewed_by = acting_user
+        self.actual_reviewed_at = timezone.now()
+        self.save(
+            update_fields=[
+                "actual_review_status",
+                "actual_review_comment",
+                "actual_reviewed_by",
+                "actual_reviewed_at",
+            ]
+        )
+
     @transaction.atomic
     def record_actual_spend(
         self,
@@ -757,7 +836,17 @@ class PurchaseRequest(models.Model):
             )
 
         self.fulfillment_status = PurchaseFulfillmentStatus.PARTIAL
-        self.save(update_fields=["fulfillment_status"])
+        self.refresh_actual_review_state(commit=False)
+        self.save(
+            update_fields=[
+                "fulfillment_status",
+                "is_over_estimate",
+                "actual_review_status",
+                "actual_review_comment",
+                "actual_reviewed_by",
+                "actual_reviewed_at",
+            ]
+        )
 
         self._add_history(
             action_type=PurchaseRequestActionType.SPEND_RECORDED,
@@ -817,6 +906,7 @@ class PurchaseRequestAttachmentType(models.TextChoices):
     QUOTE = "QUOTE", "Vendor Quote"
     SUPPORT = "SUPPORT", "Supporting Document"
     OTHER = "OTHER", "Other"
+    ACCOUNTING_APPROVAL = "ACCOUNTING_APPROVAL", "Accounting Approval Document"
 
 
 class PurchaseRequestAttachment(models.Model):

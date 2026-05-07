@@ -1,0 +1,170 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}
+    {% if page_mode == "create" %}Create Approval Rule{% else %}Edit Approval Rule{% endif %}
+{% endblock %}
+
+{% block page_title %}
+    {% if page_mode == "create" %}Create Approval Rule{% else %}Edit Approval Rule{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'approvals:rule_list' %}">Back to Rule List</a>
+    </div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+
+    <div class="card">
+        <h2>Rule Header</h2>
+        <table>
+            {{ form.as_table }}
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Approval Steps</h2>
+
+        {{ formset.management_form }}
+
+        {% if formset.non_form_errors %}
+        <div class="message error">
+            {% for error in formset.non_form_errors %}
+            <div>{{ error }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Step No</th>
+                    <th>Step Name</th>
+                    <th>Approver Type</th>
+                    <th>Approver User</th>
+                    <th>Approver Department</th>
+                    <th>Approver Level</th>
+                    <th>Required</th>
+                    <th>Allow Self Skip</th>
+                    <th>SLA Days</th>
+                    <th>Active</th>
+                    <th>Delete</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for step_form in formset %}
+                <tr>
+                    {% for hidden in step_form.hidden_fields %}
+                    {{ hidden }}
+                    {% endfor %}
+
+                    <td>
+                        {{ step_form.step_no }}
+                        {% for error in step_form.step_no.errors %}
+                        <div class="message error">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ step_form.step_name }}
+                        {% for error in step_form.step_name.errors %}
+                        <div class="message error">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ step_form.approver_type }}
+                        {% for error in step_form.approver_type.errors %}
+                        <div class="message error">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ step_form.approver_user }}
+                        {% for error in step_form.approver_user.errors %}
+                        <div class="message error">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ step_form.approver_department }}
+                        {% for error in step_form.approver_department.errors %}
+                        <div class="message error">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ step_form.approver_level }}
+                        {% for error in step_form.approver_level.errors %}
+                        <div class="message error">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>{{ step_form.is_required }}</td>
+                    <td>{{ step_form.allow_self_skip }}</td>
+                    <td>
+                        {{ step_form.sla_days }}
+                        {% for error in step_form.sla_days.errors %}
+                        <div class="message error">{{ error }}</div>
+                        {% endfor %}
+                    </td>
+                    <td>{{ step_form.is_active }}</td>
+                    <td>{{ step_form.DELETE }}</td>
+                </tr>
+                {% if step_form.non_field_errors %}
+                <tr>
+                    <td colspan="11">
+                        <div class="message error">
+                            {% for error in step_form.non_field_errors %}
+                            <div>{{ error }}</div>
+                            {% endfor %}
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if rule and step_preview_rows %}
+    <div class="card">
+        <h2>Current Step Preview</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Step No</th>
+                    <th>Step Name</th>
+                    <th>Approver Type</th>
+                    <th>Approver User</th>
+                    <th>Approver Department</th>
+                    <th>SLA Days</th>
+                    <th>Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in step_preview_rows %}
+                <tr>
+                    <td>{{ row.step_no }}</td>
+                    <td>{{ row.step_name }}</td>
+                    <td>{{ row.approver_type }}</td>
+                    <td>{{ row.approver_user__username|default:"-" }}</td>
+                    <td>{{ row.approver_department__dept_name|default:"-" }}</td>
+                    <td>{{ row.sla_days }}</td>
+                    <td>{% if row.is_active %}Yes{% else %}No{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7">No steps configured.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="action-row">
+            <button type="submit">Save Rule</button>
+            <a href="{% url 'approvals:rule_list' %}">Cancel</a>
+        </div>
+    </div>
+</form>
+{% endblock %}

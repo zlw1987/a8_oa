@@ -23,12 +23,16 @@ from .forms import (
     TravelEstimatedExpenseEditFormSet,
     TravelRequestAttachmentForm,
     TravelActualExpenseForm,
+    TravelActualReviewForm, 
+    TravelActualReviewAttachmentForm,
 )
 from .models import (
     TravelRequest,
     TravelRequestAttachment,
     TravelRequestContentAuditActionType,
     TravelRequestStatus,
+    TravelAttachmentType, 
+    TravelActualReviewStatus,
 )
 from travel.access import (
     user_can_view_travel,
@@ -290,6 +294,36 @@ def tr_detail(request, pk):
     expense_lines = travel_request.estimated_expense_lines.all().order_by("line_no")
     actual_expense_lines = travel_request.actual_expense_lines.all().order_by("line_no")
     attachments = travel_request.attachments.all()
+    review_attachments = attachments.filter(
+        document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
+    )
+    attachments = attachments.exclude(
+        document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
+    )
+
+    can_review_actual = user_can_close_travel(request.user, travel_request)
+
+    actual_review_form = (
+        TravelActualReviewForm(
+            initial={
+                "review_status": travel_request.actual_review_status
+                if travel_request.actual_review_status in {
+                    TravelActualReviewStatus.APPROVED_TO_PROCEED,
+                    TravelActualReviewStatus.REJECTED,
+                }
+                else TravelActualReviewStatus.APPROVED_TO_PROCEED,
+                "review_comment": travel_request.actual_review_comment,
+            }
+        )
+        if can_review_actual and travel_request.is_over_estimate
+        else None
+    )
+
+    actual_review_attachment_form = (
+        TravelActualReviewAttachmentForm()
+        if can_review_actual and travel_request.is_over_estimate
+        else None
+    )
     content_audits = travel_request.content_audits.all()
     histories = travel_request.history_entries.all()
 
@@ -385,6 +419,10 @@ def tr_detail(request, pk):
         "attachments_ui": attachments_ui,
         "approval_workflow_ui": approval_workflow_ui,
         "notification_logs": notification_logs,
+        "review_attachments": review_attachments,
+        "can_review_actual": can_review_actual,
+        "actual_review_form": actual_review_form,
+        "actual_review_attachment_form": actual_review_attachment_form,
     }
     return render(request, "travel/tr_detail.html", context)
 
@@ -723,6 +761,12 @@ def tr_record_actual_expense(request, pk):
                 notes=form.cleaned_data.get("notes", ""),
             )
             messages.success(request, f"Actual expense recorded successfully for {travel_request.travel_no}.")
+            travel_request.refresh_from_db()
+            if travel_request.is_over_estimate:
+                messages.warning(
+                    request,
+                    f"{travel_request.travel_no} actual expenses now exceed the approved estimate and require accounting review."
+                )
         except ValidationError as exc:
             for message in exc.messages:
                 messages.error(request, message)
@@ -757,5 +801,61 @@ def tr_close(request, pk):
     except ValidationError as exc:
         for message in exc.messages:
             messages.error(request, message)
+
+    return redirect("travel:tr_detail", pk=travel_request.pk)
+
+@login_required
+@require_POST
+def tr_review_actual(request, pk):
+    travel_request = get_object_or_404(
+        TravelRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+
+    enforce_travel_permission(user_can_close_travel(request.user, travel_request))
+
+    form = TravelActualReviewForm(request.POST)
+    if form.is_valid():
+        try:
+            travel_request.review_actual_variance(
+                review_status=form.cleaned_data["review_status"],
+                comment=form.cleaned_data.get("review_comment", ""),
+                acting_user=request.user,
+            )
+            messages.success(request, f"Actual review updated for {travel_request.travel_no}.")
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+
+    return redirect("travel:tr_detail", pk=travel_request.pk)
+
+@login_required
+@require_POST
+def tr_upload_actual_review_attachment(request, pk):
+    travel_request = get_object_or_404(
+        TravelRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+
+    enforce_travel_permission(user_can_close_travel(request.user, travel_request))
+
+    form = TravelActualReviewAttachmentForm(request.POST, request.FILES)
+    if form.is_valid():
+        attachment = form.save(commit=False)
+        attachment.travel_request = travel_request
+        attachment.document_type = TravelAttachmentType.ACCOUNTING_APPROVAL
+        attachment.uploaded_by = request.user
+        attachment.save()
+        messages.success(request, "Accounting approval document uploaded successfully.")
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
 
     return redirect("travel:tr_detail", pk=travel_request.pk)

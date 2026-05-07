@@ -1,19 +1,30 @@
 from datetime import datetime
 from django.utils import timezone
 
+from decimal import Decimal
+
+from purchase.models import PurchaseRequest, PurchaseActualReviewStatus
+from purchase.access import user_can_close_purchase
+from travel.access import user_can_close_travel
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ValidationError,PermissionDenied
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 from django.urls import reverse
+from django.db import transaction
+
+from .forms import ApprovalRuleForm, ApprovalRuleStepFormSet
+from .models import ApprovalRule
+
 
 from common.choices import ApprovalTaskStatus, RequestStatus
 from .models import ApprovalTask
-from .filters import ApprovalTaskListFilterForm, ApprovalTaskHistoryFilterForm
-from travel.models import TravelRequest
+from .filters import ApprovalTaskListFilterForm, ApprovalTaskHistoryFilterForm,AccountingReviewQueueFilterForm,VarianceExceptionReportFilterForm
+from travel.models import TravelRequest, TravelActualReviewStatus
 from django.contrib.contenttypes.models import ContentType
 
 def _build_querystring(request_get, exclude_keys=None):
@@ -35,6 +46,12 @@ def _get_request_detail_url(task):
         return reverse("travel:tr_detail", args=[request_obj.pk])
 
     return reverse("purchase:pr_detail", args=[request_obj.pk])
+
+def _enforce_rule_admin_permission(user):
+    if not user.is_authenticated:
+        raise PermissionDenied
+    if not user.is_staff:
+        raise PermissionDenied
 
 def _get_task_status_badge_class(status):
     mapping = {
@@ -180,6 +197,123 @@ def _task_matches_filters(task, cleaned_data):
     return True
 
 @login_required
+def rule_create(request):
+    _enforce_rule_admin_permission(request.user)
+
+    if request.method == "POST":
+        form = ApprovalRuleForm(request.POST)
+        formset = ApprovalRuleStepFormSet(request.POST, prefix="steps")
+
+        if form.is_valid() and formset.is_valid():
+            with transaction.atomic():
+                rule = form.save()
+                formset.instance = rule
+                formset.save()
+
+            messages.success(request, f"Approval rule '{rule.rule_code}' created successfully.")
+            return redirect("approvals:rule_edit", pk=rule.pk)
+    else:
+        form = ApprovalRuleForm()
+        formset = ApprovalRuleStepFormSet(prefix="steps")
+
+    context = {
+        "page_mode": "create",
+        "form": form,
+        "formset": formset,
+        "rule": None,
+    }
+    return render(request, "approvals/rule_edit.html", context)
+
+@login_required
+def rule_edit(request, pk):
+    _enforce_rule_admin_permission(request.user)
+
+    rule = get_object_or_404(
+        ApprovalRule.objects.select_related("department", "specific_requester"),
+        pk=pk,
+    )
+
+    if request.method == "POST":
+        form = ApprovalRuleForm(request.POST, instance=rule)
+        formset = ApprovalRuleStepFormSet(request.POST, instance=rule, prefix="steps")
+
+        if form.is_valid() and formset.is_valid():
+            with transaction.atomic():
+                rule = form.save()
+                formset.save()
+
+            messages.success(request, f"Approval rule '{rule.rule_code}' updated successfully.")
+            return redirect("approvals:rule_edit", pk=rule.pk)
+    else:
+        form = ApprovalRuleForm(instance=rule)
+        formset = ApprovalRuleStepFormSet(instance=rule, prefix="steps")
+
+    step_preview_rows = list(
+        rule.steps.order_by("step_no").values(
+            "step_no",
+            "step_name",
+            "approver_type",
+            "approver_user__username",
+            "approver_department__dept_name",
+            "sla_days",
+            "is_active",
+        )
+    )
+
+    context = {
+        "page_mode": "edit",
+        "form": form,
+        "formset": formset,
+        "rule": rule,
+        "step_preview_rows": step_preview_rows,
+    }
+    return render(request, "approvals/rule_edit.html", context)
+
+@login_required
+def rule_list(request):
+    _enforce_rule_admin_permission(request.user)
+
+    queryset = (
+        ApprovalRule.objects.select_related("department", "specific_requester")
+        .annotate(step_count=Count("steps"))
+        .order_by("request_type", "priority", "rule_code")
+    )
+
+    keyword = (request.GET.get("q") or "").strip()
+    request_type = (request.GET.get("request_type") or "").strip()
+    is_active = (request.GET.get("is_active") or "").strip()
+
+    if keyword:
+        queryset = queryset.filter(
+            Q(rule_code__icontains=keyword)
+            | Q(rule_name__icontains=keyword)
+        )
+
+    if request_type:
+        queryset = queryset.filter(request_type=request_type)
+
+    if is_active == "true":
+        queryset = queryset.filter(is_active=True)
+    elif is_active == "false":
+        queryset = queryset.filter(is_active=False)
+
+    paginator = Paginator(queryset, 15)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    querydict = request.GET.copy()
+    querydict.pop("page", None)
+    pagination_querystring = querydict.urlencode()
+
+    context = {
+        "page_obj": page_obj,
+        "keyword": keyword,
+        "request_type": request_type,
+        "is_active": is_active,
+        "pagination_querystring": pagination_querystring,
+    }
+    return render(request, "approvals/rule_list.html", context)
+
+@login_required
 def my_history(request):
     history_qs = (
         ApprovalTask.objects.filter(
@@ -248,6 +382,139 @@ def my_history(request):
         "history_count": len(history_tasks),
     }
     return render(request, "approvals/my_history.html", context)
+
+def _build_purchase_accounting_review_row(pr):
+    actual_total = pr.get_actual_spent_total()
+    variance_amount = actual_total - pr.estimated_total
+
+    return {
+        "request_type": "PURCHASE",
+        "request_type_label": "Purchase",
+        "request_no": pr.pr_no,
+        "title": pr.title,
+        "requester": str(pr.requester),
+        "project": str(pr.project) if pr.project else "-",
+        "estimated_total": pr.estimated_total,
+        "actual_total": actual_total,
+        "variance_amount": variance_amount,
+        "review_status": pr.actual_review_status,
+        "review_status_label": pr.get_actual_review_status_display(),
+        "reviewed_by": pr.actual_reviewed_by,
+        "reviewed_at": pr.actual_reviewed_at,
+        "detail_url": reverse("purchase:pr_detail", args=[pr.id]),
+    }
+
+
+def _build_travel_accounting_review_row(tr):
+    variance_amount = tr.actual_total - tr.estimated_total
+
+    return {
+        "request_type": "TRAVEL",
+        "request_type_label": "Travel",
+        "request_no": tr.travel_no,
+        "title": tr.purpose,
+        "requester": str(tr.requester),
+        "project": str(tr.project) if tr.project else "-",
+        "estimated_total": tr.estimated_total,
+        "actual_total": tr.actual_total,
+        "variance_amount": variance_amount,
+        "review_status": tr.actual_review_status,
+        "review_status_label": tr.get_actual_review_status_display(),
+        "reviewed_by": tr.actual_reviewed_by,
+        "reviewed_at": tr.actual_reviewed_at,
+        "detail_url": reverse("travel:tr_detail", args=[tr.id]),
+    }
+
+
+def _matches_accounting_review_filters(row, cleaned_data):
+    q = (cleaned_data.get("q") or "").strip().lower()
+    request_type = cleaned_data.get("request_type") or ""
+    review_status = cleaned_data.get("review_status") or ""
+
+    if q:
+        haystack = " ".join(
+            [
+                str(row.get("request_no") or ""),
+                str(row.get("title") or ""),
+                str(row.get("requester") or ""),
+                str(row.get("project") or ""),
+            ]
+        ).lower()
+        if q not in haystack:
+            return False
+
+    if request_type and row.get("request_type") != request_type:
+        return False
+
+    if review_status and row.get("review_status") != review_status:
+        return False
+
+    return True
+
+@login_required
+def accounting_review_queue(request):
+    purchase_requests = (
+        PurchaseRequest.get_visible_queryset(request.user)
+        .select_related("requester", "project", "actual_reviewed_by")
+        .filter(is_over_estimate=True)
+        .order_by("-id")
+    )
+
+    purchase_requests = [
+        pr for pr in purchase_requests
+        if user_can_close_purchase(request.user, pr)
+    ]
+
+    travel_requests = (
+        TravelRequest.get_visible_queryset(request.user)
+        .select_related("requester", "project", "actual_reviewed_by")
+        .filter(is_over_estimate=True)
+        .order_by("-id")
+    )
+
+    travel_requests = [
+        tr for tr in travel_requests
+        if user_can_close_travel(request.user, tr)
+    ]
+
+    rows = [
+        *[_build_purchase_accounting_review_row(pr) for pr in purchase_requests],
+        *[_build_travel_accounting_review_row(tr) for tr in travel_requests],
+    ]
+
+    filter_form = AccountingReviewQueueFilterForm(request.GET or None)
+
+    if filter_form.is_valid():
+        rows = [
+            row for row in rows
+            if _matches_accounting_review_filters(row, filter_form.cleaned_data)
+        ]
+
+    rows.sort(
+        key=lambda row: (
+            0 if row["review_status"] == "PENDING_REVIEW" else 1,
+            -(row["variance_amount"] or Decimal("0.00")),
+            row["request_no"],
+        )
+    )
+
+    paginator = Paginator(rows, 20)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    querydict = request.GET.copy()
+    querydict.pop("page", None)
+    pagination_querystring = querydict.urlencode()
+
+    context = {
+        "filter_form": filter_form,
+        "page_obj": page_obj,
+        "total_count": len(rows),
+        "pending_count": sum(1 for row in rows if row["review_status"] == "PENDING_REVIEW"),
+        "approved_count": sum(1 for row in rows if row["review_status"] == "APPROVED_TO_PROCEED"),
+        "rejected_count": sum(1 for row in rows if row["review_status"] == "REJECTED"),
+        "pagination_querystring": pagination_querystring,
+    }
+    return render(request, "approvals/accounting_review_queue.html", context)
 
 @login_required
 def my_tasks(request):
@@ -415,3 +682,100 @@ def task_reject(request, task_id):
             messages.error(request, message)
 
     return redirect("approvals:my_tasks")
+
+def _matches_variance_report_filters(row, cleaned_data):
+    q = (cleaned_data.get("q") or "").strip().lower()
+    request_type = cleaned_data.get("request_type") or ""
+    review_status = cleaned_data.get("review_status") or ""
+    requester = (cleaned_data.get("requester") or "").strip().lower()
+
+    if q:
+        haystack = " ".join(
+            [
+                str(row.get("request_no") or ""),
+                str(row.get("title") or ""),
+                str(row.get("requester") or ""),
+                str(row.get("project") or ""),
+            ]
+        ).lower()
+        if q not in haystack:
+            return False
+
+    if request_type and row.get("request_type") != request_type:
+        return False
+
+    if review_status and row.get("review_status") != review_status:
+        return False
+
+    if requester and requester not in str(row.get("requester") or "").lower():
+        return False
+
+    return True
+
+@login_required
+def variance_exception_report(request):
+    purchase_requests = (
+        PurchaseRequest.get_visible_queryset(request.user)
+        .select_related("requester", "project", "actual_reviewed_by")
+        .filter(is_over_estimate=True)
+        .order_by("-id")
+    )
+
+    purchase_requests = [
+        pr for pr in purchase_requests
+        if user_can_close_purchase(request.user, pr)
+    ]
+
+    travel_requests = (
+        TravelRequest.get_visible_queryset(request.user)
+        .select_related("requester", "project", "actual_reviewed_by")
+        .filter(is_over_estimate=True)
+        .order_by("-id")
+    )
+
+    travel_requests = [
+        tr for tr in travel_requests
+        if user_can_close_travel(request.user, tr)
+    ]
+
+    rows = [
+        *[_build_purchase_accounting_review_row(pr) for pr in purchase_requests],
+        *[_build_travel_accounting_review_row(tr) for tr in travel_requests],
+    ]
+
+    filter_form = VarianceExceptionReportFilterForm(request.GET or None)
+
+    if filter_form.is_valid():
+        rows = [
+            row for row in rows
+            if _matches_variance_report_filters(row, filter_form.cleaned_data)
+        ]
+
+    rows.sort(
+        key=lambda row: (
+            0 if row["review_status"] == "PENDING_REVIEW" else 1,
+            -(row["variance_amount"] or Decimal("0.00")),
+            row["request_no"],
+        )
+    )
+
+    total_variance = sum((row["variance_amount"] for row in rows), Decimal("0.00"))
+
+    paginator = Paginator(rows, 20)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    querydict = request.GET.copy()
+    querydict.pop("page", None)
+    pagination_querystring = querydict.urlencode()
+
+    context = {
+        "filter_form": filter_form,
+        "page_obj": page_obj,
+        "total_count": len(rows),
+        "pending_count": sum(1 for row in rows if row["review_status"] == "PENDING_REVIEW"),
+        "approved_count": sum(1 for row in rows if row["review_status"] == "APPROVED_TO_PROCEED"),
+        "rejected_count": sum(1 for row in rows if row["review_status"] == "REJECTED"),
+        "total_variance": total_variance,
+        "pagination_querystring": pagination_querystring,
+    }
+    return render(request, "approvals/variance_exception_report.html", context)

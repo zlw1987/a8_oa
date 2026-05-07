@@ -40,6 +40,11 @@ class TravelRequestStatus(models.TextChoices):
     CLOSED = "CLOSED", "Closed"
     CANCELLED = "CANCELLED", "Cancelled"
 
+class TravelActualReviewStatus(models.TextChoices):
+    NOT_REQUIRED = "NOT_REQUIRED", "Not Required"
+    PENDING_REVIEW = "PENDING_REVIEW", "Pending Review"
+    APPROVED_TO_PROCEED = "APPROVED_TO_PROCEED", "Approved to Proceed"
+    REJECTED = "REJECTED", "Rejected"
 
 class TravelTransportType(models.TextChoices):
     AIR = "AIR", "Air"
@@ -170,6 +175,21 @@ class TravelRequest(models.Model):
         default=CurrencyCode.USD,
     )
     notes = models.TextField(blank=True, default="")
+    is_over_estimate = models.BooleanField(default=False)
+    actual_review_status = models.CharField(
+        max_length=30,
+        choices=TravelActualReviewStatus,
+        default=TravelActualReviewStatus.NOT_REQUIRED,
+    )
+    actual_review_comment = models.TextField(blank=True, default="")
+    actual_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="travel_actual_reviews",
+    )
+    actual_reviewed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "PS_A8_TR_HDR"
@@ -212,6 +232,57 @@ class TravelRequest(models.Model):
     def can_user_manage_attachments(self, user):
         from .access import user_can_manage_travel_attachment
         return user_can_manage_travel_attachment(user, self)
+
+    def refresh_actual_review_state(self, commit=True):
+        over_estimate = self.actual_total > self.estimated_total
+        self.is_over_estimate = over_estimate
+
+        if over_estimate:
+            self.actual_review_status = TravelActualReviewStatus.PENDING_REVIEW
+            self.actual_review_comment = ""
+            self.actual_reviewed_by = None
+            self.actual_reviewed_at = None
+        else:
+            self.actual_review_status = TravelActualReviewStatus.NOT_REQUIRED
+            self.actual_review_comment = ""
+            self.actual_reviewed_by = None
+            self.actual_reviewed_at = None
+
+        if commit:
+            self.save(
+                update_fields=[
+                    "is_over_estimate",
+                    "actual_review_status",
+                    "actual_review_comment",
+                    "actual_reviewed_by",
+                    "actual_reviewed_at",
+                ]
+            )
+
+    @transaction.atomic
+    def review_actual_variance(self, *, review_status, comment="", acting_user=None):
+        if not self.is_over_estimate:
+            raise ValidationError("Actual review is not required for this request.")
+
+        allowed = {
+            TravelActualReviewStatus.APPROVED_TO_PROCEED,
+            TravelActualReviewStatus.REJECTED,
+        }
+        if review_status not in allowed:
+            raise ValidationError("Invalid actual review status.")
+
+        self.actual_review_status = review_status
+        self.actual_review_comment = comment or ""
+        self.actual_reviewed_by = acting_user
+        self.actual_reviewed_at = timezone.now()
+        self.save(
+            update_fields=[
+                "actual_review_status",
+                "actual_review_comment",
+                "actual_reviewed_by",
+                "actual_reviewed_at",
+            ]
+        )
 
     def resolve_fixed_step_assignee(self, step):
         # 1. If the rule step directly specifies a user, use that first.
@@ -472,16 +543,32 @@ class TravelRequest(models.Model):
                 created_by=acting_user,
             )
 
-        self.refresh_actual_total(commit=True)
-
         from_status = self.status
 
         self.refresh_actual_total(commit=False)
 
-        if self.status == TravelRequestStatus.APPROVED:
+        if self.status in [TravelRequestStatus.APPROVED, TravelRequestStatus.IN_TRIP]:
             self.status = TravelRequestStatus.EXPENSE_PENDING
 
-        self.save(update_fields=["actual_total", "status"])
+        self.refresh_actual_review_state(commit=False)
+
+        self.save(
+            update_fields=[
+                "actual_total",
+                "status",
+                "is_over_estimate",
+                "actual_review_status",
+                "actual_review_comment",
+                "actual_reviewed_by",
+                "actual_reviewed_at",
+            ]
+        )
+
+        from_status = self.status
+
+        if self.status in [TravelRequestStatus.APPROVED, TravelRequestStatus.IN_TRIP]:
+            self.status = TravelRequestStatus.EXPENSE_PENDING
+            self.save(update_fields=["status"])
 
         self._add_history(
             action_type=TravelRequestHistoryActionType.ACTUAL_EXPENSE_RECORDED,
@@ -490,22 +577,8 @@ class TravelRequest(models.Model):
             acting_user=acting_user,
             comment=(
                 f"Actual expense recorded: {currency} {actual_amount}. "
-                f"Expense type: {expense_type}."
-            ),
-        )
-
-        if self.status in [TravelRequestStatus.APPROVED, TravelRequestStatus.IN_TRIP]:
-            self.status = TravelRequestStatus.EXPENSE_PENDING
-            self.save(update_fields=["status"])
-
-        self._add_history(
-            action_type=TravelRequestHistoryActionType.ACTUAL_EXPENSE_RECORDED,
-            from_status=self.status,
-            to_status=self.status,
-            acting_user=acting_user,
-            comment=(
-                f"Actual expense recorded: {self.currency} {actual_amount}. "
-                f"Estimated link: {estimated_expense_line.line_no if estimated_expense_line else '-'}. "
+                f"Expense type: {expense_type}. "
+                f"Estimated link: {estimated_expense_line.line_no if estimated_expense_line else '-'}."
             ),
         )
 
@@ -889,6 +962,7 @@ class TravelAttachmentType(models.TextChoices):
     INVITATION = "INVITATION", "Invitation"
     VISA = "VISA", "Visa Support"
     OTHER = "OTHER", "Other"
+    ACCOUNTING_APPROVAL = "ACCOUNTING_APPROVAL", "Accounting Approval Document"
 
 def travel_attachment_upload_to(instance, filename):
     travel_no = instance.travel_request.travel_no or f"travel_{instance.travel_request_id}"

@@ -13,4 +13,9 @@ urlpatterns = [
     path("tasks/<int:task_id>/return/", views.task_return, name="task_return"),
     path("tasks/<int:task_id>/reject/", views.task_reject, name="task_reject"),
     path("my-history/", views.my_history, name="my_history"),
+    path("accounting-review/", views.accounting_review_queue, name="accounting_review_queue"),
+    path("variance-report/", views.variance_exception_report, name="variance_exception_report"),
+    path("rules/", views.rule_list, name="rule_list"),
+    path("rules/create/", views.rule_create, name="rule_create"),
+    path("rules/<int:pk>/edit/", views.rule_edit, name="rule_edit"),
 ]
