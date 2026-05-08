@@ -30,3 +30,12 @@ python manage.py makemigrations --check --dry-run
 python manage.py test --keepdb -v 1
 ```
 
+## Stabilization Gate
+
+Before V0.5 feature development, V0.4 should pass business UAT:
+
+- [V0.4 Business UAT Checklist](../uat/v0.4-business-uat.md)
+- [V0.4 Demo Script](../uat/v0.4-demo-script.md)
+- [V0.4 UAT Result Matrix](../uat/v0.4-result-matrix.md)
+- [V0.4 Current Behavior And Limitations](../uat/v0.4-current-behavior-and-limitations.md)
+
