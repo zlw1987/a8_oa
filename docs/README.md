@@ -6,6 +6,8 @@ This folder contains project documentation for A8 OA.
 
 - [Version Index](versions/README.md)
 - [Current Version](versions/current.md)
+- [用户使用手册 中文](user-guide-zh.md)
+- [User Guide English](user-guide-en.md)
 - [V0.4 Business UAT Checklist](uat/v0.4-business-uat.md)
 - [V0.4 Demo Script](uat/v0.4-demo-script.md)
 - [V0.4 UAT Result Matrix](uat/v0.4-result-matrix.md)
