@@ -380,6 +380,115 @@ class PurchaseSmokeTest(TestCase):
         self.assertEqual(release_entries.first().amount, Decimal("400.00"))
         self.assertEqual(pr.get_reserved_remaining_amount(), Decimal("0.00"))
 
+    def test_purchase_amendment_reserves_delta_only_after_approval(self):
+        parent = PurchaseRequest.objects.create(
+            title="Original Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Original purchase for amendment test",
+        )
+        PurchaseRequestLine.objects.create(
+            request=parent,
+            line_no=1,
+            item_name="Original Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1000.00"),
+        )
+        parent.submit(acting_user=self.requester)
+        parent.get_current_task().approve(self.manager, comment="Approve original")
+        parent.refresh_from_db()
+
+        amendment = PurchaseRequest.objects.create(
+            title=f"Supplemental for {parent.pr_no}",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            parent_request=parent,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Additional budget needed",
+            supplemental_reason="Actual spending exceeded the approved amount.",
+        )
+        PurchaseRequestLine.objects.create(
+            request=amendment,
+            line_no=1,
+            item_name="Additional Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("300.00"),
+        )
+
+        self.assertTrue(amendment.is_amendment)
+        self.assertEqual(amendment.get_original_approved_amount(), Decimal("1000.00"))
+        self.assertEqual(amendment.get_revised_amount(), Decimal("1300.00"))
+
+        amendment.submit(acting_user=self.requester)
+        amendment.refresh_from_db()
+
+        self.assertEqual(amendment.status, RequestStatus.SUBMITTED)
+        self.assertFalse(
+            ProjectBudgetEntry.objects.filter(
+                source_type=RequestType.PURCHASE,
+                source_id=amendment.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).exists()
+        )
+
+        amendment.get_current_task().approve(self.manager, comment="Approve amendment")
+        amendment.refresh_from_db()
+
+        self.assertEqual(amendment.status, RequestStatus.APPROVED)
+        reserve_entry = ProjectBudgetEntry.objects.get(
+            source_type=RequestType.PURCHASE,
+            source_id=amendment.id,
+            entry_type=BudgetEntryType.RESERVE,
+        )
+        self.assertEqual(reserve_entry.amount, Decimal("300.00"))
+
+    def test_purchase_close_blocks_open_amendment(self):
+        parent = PurchaseRequest.objects.create(
+            title="Purchase With Open Amendment",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Close gate regression",
+            status=RequestStatus.APPROVED,
+            estimated_total=Decimal("1000.00"),
+        )
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PURCHASE,
+            source_id=parent.id,
+            amount=Decimal("1000.00"),
+            created_by=self.requester,
+        )
+        PurchaseRequest.objects.create(
+            title=f"Supplemental for {parent.pr_no}",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            parent_request=parent,
+            request_date=date.today(),
+            needed_by_date=date.today() + timedelta(days=7),
+            currency="USD",
+            justification="Open amendment",
+            status=RequestStatus.DRAFT,
+        )
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            "Cannot close request while amendment requests are still open.",
+        ):
+            parent.close_purchase(acting_user=self.requester)
+
     def test_purchase_actual_spend_creates_consume_and_partial_release(self):
         pr = PurchaseRequest.objects.create(
             title="Budget Consume Purchase",

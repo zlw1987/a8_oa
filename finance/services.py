@@ -400,6 +400,17 @@ def unresolved_review_items_for_request(request_obj):
 def validate_request_can_close(request_obj):
     if unresolved_review_items_for_request(request_obj).exists():
         raise ValidationError("Cannot close request while accounting review items are unresolved.")
+    supplemental_requests = getattr(request_obj, "supplemental_requests", None)
+    if supplemental_requests is not None:
+        open_statuses = [
+            "DRAFT",
+            "SUBMITTED",
+            "PENDING",
+            "PENDING_APPROVAL",
+            "RETURNED",
+        ]
+        if supplemental_requests.filter(status__in=open_statuses).exists():
+            raise ValidationError("Cannot close request while amendment requests are still open.")
     if hasattr(request_obj, "approval_tasks"):
         if request_obj.approval_tasks.filter(status__in=["WAITING", "POOL", "PENDING"]).exists():
             raise ValidationError("Cannot close request while approval tasks are still open.")

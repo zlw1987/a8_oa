@@ -328,6 +328,7 @@ def tr_detail(request, pk):
     )
     content_audits = travel_request.content_audits.all()
     histories = travel_request.history_entries.all()
+    supplemental_requests = travel_request.supplemental_requests.all().order_by("-request_date", "-id")
 
     attachment_form = (
         TravelRequestAttachmentForm()
@@ -425,6 +426,7 @@ def tr_detail(request, pk):
         "can_review_actual": can_review_actual,
         "actual_review_form": actual_review_form,
         "actual_review_attachment_form": actual_review_attachment_form,
+        "supplemental_requests": supplemental_requests,
     }
     return render(request, "travel/tr_detail.html", context)
 

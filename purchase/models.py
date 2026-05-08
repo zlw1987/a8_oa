@@ -411,6 +411,25 @@ class PurchaseRequest(models.Model):
 
         return errors
 
+    @property
+    def is_amendment(self):
+        return self.parent_request_id is not None
+
+    def get_amendment_delta_amount(self):
+        if not self.is_amendment:
+            return Decimal("0.00")
+        return self.get_lines_total()
+
+    def get_original_approved_amount(self):
+        if not self.parent_request_id:
+            return self.estimated_total
+        return self.parent_request.estimated_total
+
+    def get_revised_amount(self):
+        if not self.parent_request_id:
+            return self.estimated_total
+        return self.parent_request.estimated_total + self.get_amendment_delta_amount()
+
     @transaction.atomic
     def submit(self, acting_user=None):
         errors = self.validate_for_submit()
@@ -426,15 +445,16 @@ class PurchaseRequest(models.Model):
         self.matched_rule = matched_rule
         self.save(update_fields=["estimated_total", "status", "matched_rule"])
 
-        ProjectBudgetEntry.objects.create(
-            project=self.project,
-            entry_type=BudgetEntryType.RESERVE,
-            source_type=RequestType.PURCHASE,
-            source_id=self.id,
-            amount=lines_total,
-            notes=f"Budget reserved by submitting {self.pr_no}",
-            created_by=acting_user,
-        )
+        if not self.is_amendment:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RESERVE,
+                source_type=RequestType.PURCHASE,
+                source_id=self.id,
+                amount=lines_total,
+                notes=f"Budget reserved by submitting {self.pr_no}",
+                created_by=acting_user,
+            )
 
         self.create_approval_tasks()
 
@@ -458,8 +478,33 @@ class PurchaseRequest(models.Model):
     @transaction.atomic
     def mark_as_approved(self, acting_user=None, comment=""):
         from_status = self.status
+        if self.is_amendment:
+            amendment_delta = self.get_amendment_delta_amount()
+            available_budget = self.get_project_available_budget()
+            if amendment_delta > available_budget:
+                raise ValidationError(
+                    f"Insufficient project budget for amendment. Available budget is "
+                    f"{available_budget}, but this amendment needs {amendment_delta}."
+                )
+
         self.status = RequestStatus.APPROVED
         self.save(update_fields=["status"])
+
+        if self.is_amendment:
+            amendment_delta = self.get_amendment_delta_amount()
+            if amendment_delta > 0:
+                ProjectBudgetEntry.objects.create(
+                    project=self.project,
+                    entry_type=BudgetEntryType.RESERVE,
+                    source_type=RequestType.PURCHASE,
+                    source_id=self.id,
+                    amount=amendment_delta,
+                    notes=(
+                        f"Additional budget reserved by approved amendment {self.pr_no} "
+                        f"for {self.parent_request.pr_no}"
+                    ),
+                    created_by=acting_user,
+                )
 
         self._add_history(
             action_type=PurchaseRequestHistoryActionType.APPROVED,
@@ -478,15 +523,17 @@ class PurchaseRequest(models.Model):
         self.status = RequestStatus.RETURNED
         self.save(update_fields=["status"])
 
-        ProjectBudgetEntry.objects.create(
-            project=self.project,
-            entry_type=BudgetEntryType.RELEASE,
-            source_type=RequestType.PURCHASE,
-            source_id=self.id,
-            amount=self.estimated_total,
-            notes=f"Budget released by returning {self.pr_no}",
-            created_by=acting_user,
-        )
+        reserved_remaining = self.get_reserved_remaining_amount()
+        if reserved_remaining > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.PURCHASE,
+                source_id=self.id,
+                amount=reserved_remaining,
+                notes=f"Budget released by returning {self.pr_no}",
+                created_by=acting_user,
+            )
 
         for task in self.approval_tasks.exclude(id=exclude_task_id).filter(
             status__in=[
@@ -514,15 +561,17 @@ class PurchaseRequest(models.Model):
         self.status = RequestStatus.REJECTED
         self.save(update_fields=["status"])
 
-        ProjectBudgetEntry.objects.create(
-            project=self.project,
-            entry_type=BudgetEntryType.RELEASE,
-            source_type=RequestType.PURCHASE,
-            source_id=self.id,
-            amount=self.estimated_total,
-            notes=f"Budget released by rejecting {self.pr_no}",
-            created_by=acting_user,
-        )
+        reserved_remaining = self.get_reserved_remaining_amount()
+        if reserved_remaining > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.PURCHASE,
+                source_id=self.id,
+                amount=reserved_remaining,
+                notes=f"Budget released by rejecting {self.pr_no}",
+                created_by=acting_user,
+            )
 
         for task in self.approval_tasks.exclude(id=exclude_task_id).filter(
             status__in=[
@@ -567,15 +616,17 @@ class PurchaseRequest(models.Model):
         self.status = RequestStatus.CANCELLED
         self.save(update_fields=["status"])
 
-        ProjectBudgetEntry.objects.create(
-            project=self.project,
-            entry_type=BudgetEntryType.RELEASE,
-            source_type=RequestType.PURCHASE,
-            source_id=self.id,
-            amount=self.estimated_total,
-            notes=f"Budget released by cancelling {self.pr_no}",
-            created_by=acting_user,
-        )
+        reserved_remaining = self.get_reserved_remaining_amount()
+        if reserved_remaining > 0:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RELEASE,
+                source_type=RequestType.PURCHASE,
+                source_id=self.id,
+                amount=reserved_remaining,
+                notes=f"Budget released by cancelling {self.pr_no}",
+                created_by=acting_user,
+            )
 
         for task in self.approval_tasks.filter(
             status__in=[

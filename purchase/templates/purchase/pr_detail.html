@@ -9,6 +9,59 @@
 
 {% include "includes/request_detail_header.html" %}
 
+{% if purchase_request.parent_request or supplemental_requests %}
+<div class="card">
+    <h2>Amendment / Revision</h2>
+    <div class="summary-grid">
+        {% if purchase_request.parent_request %}
+        <div class="summary-label">Original Request</div>
+        <div>
+            <a href="{% url 'purchase:pr_detail' purchase_request.parent_request.id %}">
+                {{ purchase_request.parent_request.pr_no }}
+            </a>
+        </div>
+
+        <div class="summary-label">Original Approved Amount</div>
+        <div>{{ purchase_request.currency }} {{ purchase_request.get_original_approved_amount }}</div>
+
+        <div class="summary-label">Amendment Delta</div>
+        <div>{{ purchase_request.currency }} {{ purchase_request.get_amendment_delta_amount }}</div>
+
+        <div class="summary-label">Revised Amount</div>
+        <div>{{ purchase_request.currency }} {{ purchase_request.get_revised_amount }}</div>
+
+        <div class="summary-label">Reason</div>
+        <div>{{ purchase_request.supplemental_reason|default:"-" }}</div>
+        {% endif %}
+    </div>
+
+    {% if supplemental_requests %}
+    <table style="margin-top: 16px;">
+        <thead>
+            <tr>
+                <th>Amendment</th>
+                <th>Status</th>
+                <th>Delta Amount</th>
+                <th>Revised Amount</th>
+                <th>Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for amendment in supplemental_requests %}
+            <tr>
+                <td><a href="{% url 'purchase:pr_detail' amendment.id %}">{{ amendment.pr_no }}</a></td>
+                <td>{{ amendment.get_status_display }}</td>
+                <td>{{ amendment.currency }} {{ amendment.get_amendment_delta_amount }}</td>
+                <td>{{ amendment.currency }} {{ amendment.get_revised_amount }}</td>
+                <td>{{ amendment.supplemental_reason|default:"-" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
     <h2>Purchase Details</h2>
     <div class="summary-grid">

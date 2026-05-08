@@ -39,3 +39,11 @@ Before V0.5 feature development, V0.4 should pass business UAT:
 - [V0.4 UAT Result Matrix](../uat/v0.4-result-matrix.md)
 - [V0.4 Current Behavior And Limitations](../uat/v0.4-current-behavior-and-limitations.md)
 
+## V0.5 Progress
+
+V0.5 has started with the amendment/revision flow:
+
+- PR/TR amendments use linked supplemental requests.
+- Amendment budget reserve happens after amendment approval, not on submit.
+- Detail pages show original amount, amendment delta, and revised amount.
+- Original request closeout blocks while linked amendments are open.

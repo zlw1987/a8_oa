@@ -819,6 +819,25 @@ class TravelRequest(models.Model):
         ).count()
         return f"{approved_count} / {total_count}"
 
+    @property
+    def is_amendment(self):
+        return self.parent_request_id is not None
+
+    def get_amendment_delta_amount(self):
+        if not self.is_amendment:
+            return Decimal("0.00")
+        return self.refresh_estimated_total(commit=False)
+
+    def get_original_approved_amount(self):
+        if not self.parent_request_id:
+            return self.estimated_total
+        return self.parent_request.estimated_total
+
+    def get_revised_amount(self):
+        if not self.parent_request_id:
+            return self.estimated_total
+        return self.parent_request.estimated_total + self.get_amendment_delta_amount()
+
     @transaction.atomic
     def submit(self, acting_user):
 
@@ -849,15 +868,16 @@ class TravelRequest(models.Model):
                 f"but this travel request needs {self.estimated_total}."
             )
 
-        ProjectBudgetEntry.objects.create(
-            project=self.project,
-            entry_type=BudgetEntryType.RESERVE,
-            source_type=RequestType.TRAVEL,
-            source_id=self.id,
-            amount=self.estimated_total,
-            notes=f"Budget reserved by submitting {self.travel_no}",
-            created_by=acting_user,
-        )
+        if not self.is_amendment:
+            ProjectBudgetEntry.objects.create(
+                project=self.project,
+                entry_type=BudgetEntryType.RESERVE,
+                source_type=RequestType.TRAVEL,
+                source_id=self.id,
+                amount=self.estimated_total,
+                notes=f"Budget reserved by submitting {self.travel_no}",
+                created_by=acting_user,
+            )
 
         from approvals.services import (
             create_approval_tasks_for_request,
@@ -899,8 +919,33 @@ class TravelRequest(models.Model):
     @transaction.atomic
     def mark_as_approved(self, acting_user=None, comment="", exclude_task_id=None):
         from_status = self.status
+        if self.is_amendment:
+            amendment_delta = self.get_amendment_delta_amount()
+            available_budget = self.get_project_available_budget()
+            if amendment_delta > available_budget:
+                raise ValidationError(
+                    f"Insufficient project budget for amendment. Available budget is "
+                    f"{available_budget}, but this amendment needs {amendment_delta}."
+                )
+
         self.status = TravelRequestStatus.APPROVED
         self.save(update_fields=["status"])
+
+        if self.is_amendment:
+            amendment_delta = self.get_amendment_delta_amount()
+            if amendment_delta > 0:
+                ProjectBudgetEntry.objects.create(
+                    project=self.project,
+                    entry_type=BudgetEntryType.RESERVE,
+                    source_type=RequestType.TRAVEL,
+                    source_id=self.id,
+                    amount=amendment_delta,
+                    notes=(
+                        f"Additional budget reserved by approved amendment {self.travel_no} "
+                        f"for {self.parent_request.travel_no}"
+                    ),
+                    created_by=acting_user,
+                )
 
         self._add_history(
             action_type=TravelRequestHistoryActionType.APPROVED,

@@ -9,6 +9,59 @@
 
 {% include "includes/request_detail_header.html" %}
 
+{% if travel_request.parent_request or supplemental_requests %}
+<div class="card">
+    <h2>Amendment / Revision</h2>
+    <div class="summary-grid">
+        {% if travel_request.parent_request %}
+        <div class="summary-label">Original Request</div>
+        <div>
+            <a href="{% url 'travel:tr_detail' travel_request.parent_request.id %}">
+                {{ travel_request.parent_request.travel_no }}
+            </a>
+        </div>
+
+        <div class="summary-label">Original Approved Amount</div>
+        <div>{{ travel_request.currency }} {{ travel_request.get_original_approved_amount }}</div>
+
+        <div class="summary-label">Amendment Delta</div>
+        <div>{{ travel_request.currency }} {{ travel_request.get_amendment_delta_amount }}</div>
+
+        <div class="summary-label">Revised Amount</div>
+        <div>{{ travel_request.currency }} {{ travel_request.get_revised_amount }}</div>
+
+        <div class="summary-label">Reason</div>
+        <div>{{ travel_request.supplemental_reason|default:"-" }}</div>
+        {% endif %}
+    </div>
+
+    {% if supplemental_requests %}
+    <table style="margin-top: 16px;">
+        <thead>
+            <tr>
+                <th>Amendment</th>
+                <th>Status</th>
+                <th>Delta Amount</th>
+                <th>Revised Amount</th>
+                <th>Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for amendment in supplemental_requests %}
+            <tr>
+                <td><a href="{% url 'travel:tr_detail' amendment.id %}">{{ amendment.travel_no }}</a></td>
+                <td>{{ amendment.get_status_display }}</td>
+                <td>{{ amendment.currency }} {{ amendment.get_amendment_delta_amount }}</td>
+                <td>{{ amendment.currency }} {{ amendment.get_revised_amount }}</td>
+                <td>{{ amendment.supplemental_reason|default:"-" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="card">
     <h2>Travel Details</h2>
     <div class="summary-grid">

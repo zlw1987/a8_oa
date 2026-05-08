@@ -203,6 +203,7 @@ def pr_detail(request, pk):
     content_audits = purchase_request.content_audits.all()
     approval_tasks = purchase_request.approval_tasks.all().order_by("step_no")
     histories = purchase_request.history_entries.all()
+    supplemental_requests = purchase_request.supplemental_requests.all().order_by("-request_date", "-id")
 
     notification_logs = ApprovalNotificationLog.objects.filter(
         task__purchase_request=purchase_request,
@@ -446,6 +447,7 @@ def pr_detail(request, pk):
         "can_review_actual": can_review_actual,
         "actual_review_form": actual_review_form,
         "actual_review_attachment_form": actual_review_attachment_form,
+        "supplemental_requests": supplemental_requests,
     }
     return render(request, "purchase/pr_detail.html", context)
 

@@ -336,6 +336,146 @@ class TravelSmokeTest(TestCase):
         response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
         self.assertEqual(response.status_code, 200)
 
+    def test_travel_amendment_reserves_delta_only_after_approval(self):
+        parent = TravelRequest.objects.create(
+            purpose="Original Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+        TravelItinerary.objects.create(
+            travel_request=parent,
+            line_no=1,
+            trip_date=parent.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=parent,
+            line_no=1,
+            expense_type="HOTEL",
+            expense_date=parent.start_date,
+            estimated_amount=Decimal("1000.00"),
+            currency="USD",
+            expense_location="Seattle",
+            checkin_date=parent.start_date,
+            checkout_date=parent.end_date,
+        )
+        parent.submit(acting_user=self.requester)
+        parent.get_current_task().approve(self.manager, comment="Approve original")
+        parent.refresh_from_db()
+
+        amendment = TravelRequest.objects.create(
+            purpose=f"Supplemental for {parent.travel_no}",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            parent_request=parent,
+            request_date=date.today(),
+            start_date=parent.start_date,
+            end_date=parent.end_date,
+            origin_city=parent.origin_city,
+            destination_city=parent.destination_city,
+            currency="USD",
+            supplemental_reason="Actual travel expense exceeded the approved amount.",
+        )
+        TravelItinerary.objects.create(
+            travel_request=amendment,
+            line_no=1,
+            trip_date=amendment.start_date,
+            from_city="San Jose",
+            to_city="Seattle",
+            transport_type="AIR",
+        )
+        TravelEstimatedExpenseLine.objects.create(
+            travel_request=amendment,
+            line_no=1,
+            expense_type="MISC",
+            expense_date=amendment.end_date,
+            estimated_amount=Decimal("300.00"),
+            currency="USD",
+            expense_location="Seattle",
+            notes=f"Supplemental overage for {parent.travel_no}",
+        )
+
+        self.assertTrue(amendment.is_amendment)
+        self.assertEqual(amendment.get_original_approved_amount(), Decimal("1000.00"))
+        self.assertEqual(amendment.get_revised_amount(), Decimal("1300.00"))
+
+        amendment.submit(acting_user=self.requester)
+        amendment.refresh_from_db()
+
+        self.assertEqual(amendment.status, TravelRequestStatus.PENDING_APPROVAL)
+        self.assertFalse(
+            ProjectBudgetEntry.objects.filter(
+                source_type=RequestType.TRAVEL,
+                source_id=amendment.id,
+                entry_type=BudgetEntryType.RESERVE,
+            ).exists()
+        )
+
+        amendment.get_current_task().approve(self.manager, comment="Approve amendment")
+        amendment.refresh_from_db()
+
+        self.assertEqual(amendment.status, TravelRequestStatus.APPROVED)
+        reserve_entry = ProjectBudgetEntry.objects.get(
+            source_type=RequestType.TRAVEL,
+            source_id=amendment.id,
+            entry_type=BudgetEntryType.RESERVE,
+        )
+        self.assertEqual(reserve_entry.amount, Decimal("300.00"))
+
+    def test_travel_close_blocks_open_amendment(self):
+        parent = TravelRequest.objects.create(
+            purpose="Travel With Open Amendment",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.APPROVED,
+            estimated_total=Decimal("1000.00"),
+        )
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.TRAVEL,
+            source_id=parent.id,
+            amount=Decimal("1000.00"),
+            created_by=self.requester,
+        )
+        TravelRequest.objects.create(
+            purpose=f"Supplemental for {parent.travel_no}",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            parent_request=parent,
+            request_date=date.today(),
+            start_date=parent.start_date,
+            end_date=parent.end_date,
+            origin_city=parent.origin_city,
+            destination_city=parent.destination_city,
+            currency="USD",
+            status=TravelRequestStatus.DRAFT,
+        )
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            "Cannot close request while amendment requests are still open.",
+        ):
+            parent.close_request(acting_user=self.requester)
+
     def test_travel_submit_sends_requester_and_approver_notifications(self):
         self.client.login(username="req_travel", password="testpass123")
 
