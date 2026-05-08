@@ -134,6 +134,64 @@ class ApprovalRuleAdminViewTest(TestCase):
         self.assertContains(response, "Amount From cannot be greater than Amount To.")
         self.assertEqual(ApprovalRule.objects.count(), 0)
 
+    def test_general_fallback_rule_cannot_have_specific_filters(self):
+        self.client.force_login(self.staff_user)
+        payload = self._valid_rule_post_data()
+        payload["is_general_fallback"] = "on"
+
+        response = self.client.post(reverse("approvals:rule_create"), data=payload)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "General fallback rule cannot be limited to a department.")
+        self.assertEqual(ApprovalRule.objects.count(), 0)
+
+    def test_purchase_rule_matching_uses_general_fallback_after_regular_rules_miss(self):
+        project = Project.objects.create(
+            project_code="PJT-FALLBACK",
+            project_name="Fallback Project",
+            owning_department=self.department,
+            budget_amount=Decimal("10000.00"),
+            start_date=date.today(),
+            end_date=date.today() + timedelta(days=30),
+            is_active=True,
+        )
+        purchase_request = PurchaseRequest.objects.create(
+            title="Fallback Match Purchase",
+            requester=self.normal_user,
+            request_department=self.department,
+            project=project,
+            request_date=date.today(),
+            currency="USD",
+            justification="Fallback rule test",
+        )
+        PurchaseRequestLine.objects.create(
+            request=purchase_request,
+            line_no=1,
+            item_name="Fallback Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("250.00"),
+        )
+        ApprovalRule.objects.create(
+            rule_code="PR-SMALL",
+            rule_name="Small Purchase Rule",
+            request_type=RequestType.PURCHASE,
+            department=self.department,
+            amount_from=Decimal("0.00"),
+            amount_to=Decimal("100.00"),
+            priority=1,
+            is_active=True,
+        )
+        fallback_rule = ApprovalRule.objects.create(
+            rule_code="PR-GENERAL",
+            rule_name="General Purchase Fallback",
+            request_type=RequestType.PURCHASE,
+            is_general_fallback=True,
+            priority=999,
+            is_active=True,
+        )
+
+        self.assertEqual(purchase_request.resolve_approval_rule(), fallback_rule)
+
     def test_rule_formset_blocks_duplicate_step_no(self):
         self.client.force_login(self.staff_user)
         payload = self._valid_rule_post_data()
@@ -268,11 +326,25 @@ class ApprovalPagesSmokeTest(TestCase):
             password="testpass123",
             email="approver@example.com",
         )
+        self.staff_user = User.objects.create_user(
+            username="approval_rule_admin",
+            password="testpass123",
+            email="rule_admin@example.com",
+            is_staff=True,
+        )
 
     def test_my_tasks_page_loads(self):
         self.client.login(username="approver_test", password="testpass123")
         response = self.client.get(reverse("approvals:my_tasks"))
         self.assertEqual(response.status_code, 200)
+
+    def test_staff_nav_shows_approval_rules_entry(self):
+        self.client.force_login(self.staff_user)
+        response = self.client.get(reverse("approvals:rule_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Approval Rules")
+        self.assertContains(response, reverse("approvals:rule_list"))
 
 
 class ApprovalCrossRequestRegressionTest(TestCase):

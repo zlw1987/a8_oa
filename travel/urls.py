@@ -14,6 +14,7 @@ urlpatterns = [
     path("<int:pk>/attachments/upload/", views.tr_upload_attachment, name="tr_upload_attachment"),
     path("<int:pk>/attachments/<int:attachment_id>/delete/", views.tr_delete_attachment, name="tr_delete_attachment"),
     path("<int:pk>/actual-expense/record/", views.tr_record_actual_expense, name="tr_record_actual_expense"),
+    path("<int:pk>/supplemental/create/", views.tr_create_supplemental, name="tr_create_supplemental"),
     path("<int:pk>/", views.tr_detail, name="tr_detail"),
     path("<int:pk>/tasks/<int:task_id>/claim/", views.task_claim, name="task_claim"),
     path("<int:pk>/tasks/<int:task_id>/release/", views.task_release, name="task_release"),

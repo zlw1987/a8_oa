@@ -16,6 +16,8 @@ class ProjectAdmin(admin.ModelAdmin):
         "project_name",
         "project_manager",
         "owning_department",
+        "project_type",
+        "budget_approval_status",
         "budget_amount",
         "currency",
         "is_active",
@@ -30,6 +32,8 @@ class ProjectAdmin(admin.ModelAdmin):
     )
     list_filter = (
         "is_active",
+        "project_type",
+        "budget_approval_status",
         "currency",
         "owning_department",
     )

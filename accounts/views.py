@@ -5,7 +5,7 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
-from .forms import DepartmentForm
+from .forms import DepartmentForm, UserDepartmentForm
 from .models import Department, UserDepartment
 
 
@@ -103,6 +103,7 @@ def department_detail(request, pk):
         "department": department,
         "user_links": user_links,
         "child_departments": child_departments,
+        "user_link_create_url": reverse("accounts:department_user_link_create", args=[department.id]),
     }
     return render(request, "accounts/department_detail.html", context)
 
@@ -127,6 +128,56 @@ def department_create(request):
         "submit_label": "Create Department",
     }
     return render(request, "accounts/department_form.html", context)
+
+
+@login_required
+def department_user_link_create(request, pk):
+    _enforce_department_admin(request.user)
+
+    department = get_object_or_404(Department, pk=pk)
+
+    if request.method == "POST":
+        form = UserDepartmentForm(request.POST, department=department)
+        if form.is_valid():
+            link = form.save()
+            messages.success(request, f"{link.user} linked to {department.dept_code}.")
+            return redirect("accounts:department_detail", pk=department.id)
+    else:
+        form = UserDepartmentForm(department=department, initial={"is_active": True})
+
+    context = {
+        "department": department,
+        "form": form,
+        "form_title": "Add Department User",
+        "submit_label": "Add User",
+    }
+    return render(request, "accounts/user_department_form.html", context)
+
+
+@login_required
+def department_user_link_edit(request, pk, link_id):
+    _enforce_department_admin(request.user)
+
+    department = get_object_or_404(Department, pk=pk)
+    link = get_object_or_404(UserDepartment.objects.select_related("user"), pk=link_id, department=department)
+
+    if request.method == "POST":
+        form = UserDepartmentForm(request.POST, instance=link, department=department)
+        if form.is_valid():
+            link = form.save()
+            messages.success(request, f"{link.user} department access updated.")
+            return redirect("accounts:department_detail", pk=department.id)
+    else:
+        form = UserDepartmentForm(instance=link, department=department)
+
+    context = {
+        "department": department,
+        "link": link,
+        "form": form,
+        "form_title": "Edit Department User",
+        "submit_label": "Save User Link",
+    }
+    return render(request, "accounts/user_department_form.html", context)
 
 
 @login_required

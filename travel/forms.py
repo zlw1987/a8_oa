@@ -228,6 +228,7 @@ class TravelEstimatedExpenseLineForm(forms.ModelForm):
             "checkin_date",
             "checkout_date",
             "itinerary_line_no",
+            "is_per_diem",
             "exception_reason",
             "notes",
         ]
@@ -258,6 +259,7 @@ class TravelEstimatedExpenseLineForm(forms.ModelForm):
             "checkin_date",
             "checkout_date",
             "itinerary_line_no",
+            "is_per_diem",
             "exception_reason",
             "notes",
         ]:
@@ -286,6 +288,7 @@ class TravelEstimatedExpenseLineForm(forms.ModelForm):
                 self.cleaned_data.get("checkin_date"),
                 self.cleaned_data.get("checkout_date"),
                 self.cleaned_data.get("itinerary_line_no"),
+                self.cleaned_data.get("is_per_diem"),
                 self.cleaned_data.get("exception_reason"),
                 self.cleaned_data.get("notes"),
             ]
@@ -321,6 +324,8 @@ class BaseTravelEstimatedExpenseFormSet(BaseInlineFormSet):
 
             if form.cleaned_data.get("estimated_amount") in [None, ""]:
                 form.add_error("estimated_amount", "Estimated Amount is required.")
+            if form.cleaned_data.get("is_per_diem") and not form.cleaned_data.get("estimated_amount"):
+                form.add_error("estimated_amount", "Per diem line must have an estimated amount.")
 
             expense_type = form.cleaned_data.get("expense_type")
             derived_mode = get_location_mode_for_expense_type(expense_type)
@@ -443,6 +448,7 @@ TravelEstimatedExpenseCreateFormSet = inlineformset_factory(
         "checkin_date",
         "checkout_date",
         "itinerary_line_no",
+        "is_per_diem",
         "exception_reason",
         "notes",
     ],
@@ -469,6 +475,7 @@ TravelEstimatedExpenseEditFormSet = inlineformset_factory(
         "checkin_date",
         "checkout_date",
         "itinerary_line_no",
+        "is_per_diem",
         "exception_reason",
         "notes",
     ],

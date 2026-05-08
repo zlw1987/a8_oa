@@ -171,6 +171,7 @@ class ApprovalRuleAdmin(admin.ModelAdmin):
         "request_type",
         "department",
         "requester_level",
+        "is_general_fallback",
         "priority",
         "is_active",
     )
@@ -185,6 +186,7 @@ class ApprovalRuleAdmin(admin.ModelAdmin):
     list_filter = (
         "request_type",
         "requester_level",
+        "is_general_fallback",
         "is_active",
         "department",
     )

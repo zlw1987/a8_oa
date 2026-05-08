@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from common.choices import DepartmentType
-from .models import Department
+from .models import Department, UserDepartment
 
 
 User = get_user_model()
@@ -99,3 +99,56 @@ class DepartmentManagementPageTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "child departments as parent")
+
+    def test_department_user_link_can_be_created(self):
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse("accounts:department_user_link_create", args=[self.department.id]),
+            {
+                "user": self.regular_user.id,
+                "dept_job_title": "Buyer",
+                "can_approve": "on",
+                "is_active": "on",
+                "start_date": "",
+                "end_date": "",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:department_detail", args=[self.department.id]),
+        )
+        link = UserDepartment.objects.get(user=self.regular_user, department=self.department)
+        self.assertEqual(link.dept_job_title, "Buyer")
+        self.assertTrue(link.can_approve)
+
+    def test_department_user_link_edit_updates_approval_flag(self):
+        link = UserDepartment.objects.create(
+            user=self.regular_user,
+            department=self.department,
+            dept_job_title="Requester",
+            can_approve=False,
+            is_active=True,
+        )
+        self.client.force_login(self.staff_user)
+
+        response = self.client.post(
+            reverse("accounts:department_user_link_edit", args=[self.department.id, link.id]),
+            {
+                "user": self.regular_user.id,
+                "dept_job_title": "Department Approver",
+                "can_approve": "on",
+                "is_active": "on",
+                "start_date": "",
+                "end_date": "",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("accounts:department_detail", args=[self.department.id]),
+        )
+        link.refresh_from_db()
+        self.assertEqual(link.dept_job_title, "Department Approver")
+        self.assertTrue(link.can_approve)

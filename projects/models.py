@@ -1,15 +1,39 @@
 from django.db import models
 from django.conf import settings
+from django.contrib.contenttypes.fields import GenericRelation
+from django.core.exceptions import ValidationError
 from django.db.models import Sum
+from django.db import transaction
 from django.utils import timezone
 
-from common.choices import BudgetEntryType, RequestType, CurrencyCode
+from common.choices import BudgetEntryType, RequestType, CurrencyCode, ApproverType, DepartmentType, ApprovalTaskStatus
 
 from decimal import Decimal
 
 class ProjectStatus(models.TextChoices):
     OPEN = "OPEN", "Open"
     CLOSED = "CLOSED", "Closed"
+
+class ProjectType(models.TextChoices):
+    INTERNAL = "INTERNAL", "Internal Project"
+    TRADE_SHOW = "TRADE_SHOW", "Trade Show"
+    DEPARTMENT_GENERAL = "DEPARTMENT_GENERAL", "Department General Budget"
+    CUSTOMER_SERVICE = "CUSTOMER_SERVICE", "Customer Service"
+    SALES_ORDER = "SALES_ORDER", "Sales Order"
+
+class ProjectBudgetApprovalStatus(models.TextChoices):
+    DRAFT = "DRAFT", "Draft"
+    PENDING_APPROVAL = "PENDING_APPROVAL", "Pending Approval"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+    RETURNED = "RETURNED", "Returned"
+    NOT_REQUIRED = "NOT_REQUIRED", "Not Required"
+
+class ProjectExternalOrderType(models.TextChoices):
+    NONE = "", "-"
+    SALES_ORDER = "SALES_ORDER", "Sales Order"
+    SERVICE_ORDER = "SERVICE_ORDER", "Service Order"
+    CUSTOMER_VISIT = "CUSTOMER_VISIT", "Customer Visit"
 
 class Project(models.Model):
     project_code = models.CharField(max_length=30, unique=True)
@@ -33,6 +57,29 @@ class Project(models.Model):
         on_delete=models.SET_NULL,
         related_name="created_projects",
     )
+    project_type = models.CharField(
+        max_length=30,
+        choices=ProjectType,
+        default=ProjectType.INTERNAL,
+    )
+    budget_approval_status = models.CharField(
+        max_length=30,
+        choices=ProjectBudgetApprovalStatus,
+        default=ProjectBudgetApprovalStatus.APPROVED,
+    )
+    matched_rule = models.ForeignKey(
+        "approvals.ApprovalRule",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="project_requests",
+    )
+    approval_tasks = GenericRelation(
+        "approvals.ApprovalTask",
+        content_type_field="request_content_type",
+        object_id_field="request_object_id",
+        related_query_name="project_request",
+    )
 
     status = models.CharField(
         max_length=20,
@@ -48,6 +95,16 @@ class Project(models.Model):
     )
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
+    budget_period_start = models.DateField(null=True, blank=True)
+    budget_period_end = models.DateField(null=True, blank=True)
+    external_order_type = models.CharField(
+        max_length=30,
+        choices=ProjectExternalOrderType,
+        blank=True,
+        default="",
+    )
+    external_order_no = models.CharField(max_length=50, blank=True, default="")
+    customer_name = models.CharField(max_length=150, blank=True, default="")
     is_active = models.BooleanField(default=True)
     notes = models.TextField(blank=True, default="")
 
@@ -61,7 +118,154 @@ class Project(models.Model):
         return f"{self.project_code} - {self.project_name}"
 
     def is_open(self):
-        return self.status == ProjectStatus.OPEN and self.is_active
+        return (
+            self.status == ProjectStatus.OPEN
+            and self.is_active
+            and self.budget_approval_status in [
+                ProjectBudgetApprovalStatus.APPROVED,
+                ProjectBudgetApprovalStatus.NOT_REQUIRED,
+            ]
+        )
+
+    @property
+    def requester(self):
+        return self.created_by or self.project_manager
+
+    @property
+    def request_department(self):
+        return self.owning_department
+
+    @property
+    def estimated_total(self):
+        return self.budget_amount
+
+    def get_current_task(self):
+        return (
+            self.approval_tasks.filter(
+                status__in=[ApprovalTaskStatus.POOL, ApprovalTaskStatus.PENDING]
+            )
+            .order_by("step_no", "id")
+            .first()
+        )
+
+    def get_current_step_name(self):
+        current_task = self.get_current_task()
+        return current_task.step_name if current_task else "-"
+
+    def get_current_approver(self):
+        current_task = self.get_current_task()
+        if not current_task:
+            return "-"
+        if current_task.status == ApprovalTaskStatus.POOL:
+            return "Approval Pool"
+        if current_task.assigned_user:
+            return str(current_task.assigned_user)
+        return "-"
+
+    def get_approval_progress_text(self):
+        total_steps = self.approval_tasks.count()
+        if total_steps == 0:
+            return "0 / 0"
+        completed_steps = self.approval_tasks.filter(status=ApprovalTaskStatus.APPROVED).count()
+        return f"{completed_steps} / {total_steps}"
+
+    def resolve_fixed_step_assignee(self, step):
+        if step.approver_type == ApproverType.SPECIFIC_USER:
+            return step.approver_user
+        if step.approver_type == ApproverType.DEPARTMENT_MANAGER:
+            return self.owning_department.manager
+        if step.approver_type == ApproverType.REQUESTER_MANAGER:
+            requester = self.requester
+            if requester and requester.primary_department_id:
+                return requester.primary_department.manager
+        return None
+
+    def _dedupe_users(self, users):
+        unique_users = {}
+        for user in users:
+            if user and user.id not in unique_users:
+                unique_users[user.id] = user
+        return list(unique_users.values())
+
+    def resolve_step_candidates(self, step):
+        from accounts.models import UserDepartment
+
+        users = []
+        if step.approver_type == ApproverType.GLOBAL_APPROVER:
+            from django.contrib.auth import get_user_model
+            users = list(get_user_model().objects.filter(can_approve_all_departments=True, is_active=True).order_by("id"))
+        elif step.approver_type == ApproverType.DEPARTMENT_APPROVER:
+            target_department = step.approver_department or self.owning_department
+            links = UserDepartment.objects.filter(
+                department=target_department,
+                can_approve=True,
+                is_active=True,
+            ).select_related("user").order_by("user__id")
+            users = [link.user for link in links]
+        elif step.approver_type in [ApproverType.FINANCE, ApproverType.PURCHASING, ApproverType.HR]:
+            dept_type_map = {
+                ApproverType.FINANCE: DepartmentType.FIN,
+                ApproverType.PURCHASING: DepartmentType.PUR,
+                ApproverType.HR: DepartmentType.HR,
+            }
+            links = UserDepartment.objects.filter(
+                department__dept_type=dept_type_map[step.approver_type],
+                can_approve=True,
+                is_active=True,
+            ).select_related("user").order_by("user__id")
+            users = [link.user for link in links]
+        return self._dedupe_users(users)
+
+    @transaction.atomic
+    def submit_budget_for_approval(self, acting_user=None):
+        if self.budget_approval_status not in [
+            ProjectBudgetApprovalStatus.DRAFT,
+            ProjectBudgetApprovalStatus.RETURNED,
+            ProjectBudgetApprovalStatus.REJECTED,
+        ]:
+            raise ValidationError("Only Draft, Returned, or Rejected project budgets can be submitted.")
+        if self.budget_amount <= 0:
+            raise ValidationError("Project budget must be greater than 0 before approval.")
+
+        from approvals.services import create_approval_tasks_for_request, resolve_approval_rule_for_request
+
+        matched_rule = resolve_approval_rule_for_request(self)
+        if not matched_rule:
+            raise ValidationError("No active project approval rule matched this project.")
+
+        self.matched_rule = matched_rule
+        self.budget_approval_status = ProjectBudgetApprovalStatus.PENDING_APPROVAL
+        self.status = ProjectStatus.OPEN
+        self.save(update_fields=["matched_rule", "budget_approval_status", "status"])
+        create_approval_tasks_for_request(self, matched_rule)
+
+    @transaction.atomic
+    def mark_as_approved(self, acting_user=None, comment=""):
+        self.budget_approval_status = ProjectBudgetApprovalStatus.APPROVED
+        self.status = ProjectStatus.OPEN
+        self.save(update_fields=["budget_approval_status", "status"])
+
+    @transaction.atomic
+    def mark_as_rejected(self, acting_user=None, comment="", exclude_task_id=None):
+        self.budget_approval_status = ProjectBudgetApprovalStatus.REJECTED
+        self.save(update_fields=["budget_approval_status"])
+        self._cancel_open_approval_tasks(exclude_task_id, "Project budget rejected.")
+
+    @transaction.atomic
+    def mark_as_returned(self, acting_user=None, comment="", exclude_task_id=None):
+        self.budget_approval_status = ProjectBudgetApprovalStatus.RETURNED
+        self.save(update_fields=["budget_approval_status"])
+        self._cancel_open_approval_tasks(exclude_task_id, "Project budget returned.")
+
+    def _cancel_open_approval_tasks(self, exclude_task_id=None, comment=""):
+        for task in self.approval_tasks.exclude(id=exclude_task_id).filter(
+            status__in=[
+                ApprovalTaskStatus.WAITING,
+                ApprovalTaskStatus.POOL,
+                ApprovalTaskStatus.PENDING,
+            ]
+        ):
+            task.cancel_by_system(comment=comment)
 
     def can_user_manage_members(self, user):
         if not user or not user.is_authenticated:

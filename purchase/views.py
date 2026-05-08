@@ -30,6 +30,7 @@ from .models import (
     PurchaseRequestAttachment,
     PurchaseActualReviewStatus,
     PurchaseRequestAttachmentType,
+    PurchaseRequestLine,
 )
 from purchase.access import (
     user_can_view_purchase,
@@ -890,3 +891,40 @@ def pr_upload_actual_review_attachment(request, pk):
                 messages.error(request, f"{label}: {error}")
 
     return redirect("purchase:pr_detail", pk=purchase_request.pk)
+
+
+@login_required
+@require_POST
+def pr_create_supplemental(request, pk):
+    original = get_object_or_404(PurchaseRequest.get_visible_queryset(request.user), pk=pk)
+
+    enforce_purchase_permission(user_can_view_purchase(request.user, original))
+
+    amount = original.pending_overage_amount
+    if amount <= 0:
+        messages.error(request, "There is no pending overage amount to create a supplemental request.")
+        return redirect("purchase:pr_detail", pk=original.pk)
+
+    supplemental = PurchaseRequest.objects.create(
+        title=f"Supplemental for {original.pr_no}",
+        requester=original.requester,
+        request_department=original.request_department,
+        project=original.project,
+        parent_request=original,
+        request_date=date.today(),
+        needed_by_date=original.needed_by_date,
+        currency=original.currency,
+        justification=f"Supplemental approval for overage on {original.pr_no}.",
+        supplemental_reason=original.pending_overage_note,
+    )
+    PurchaseRequestLine.objects.create(
+        request=supplemental,
+        line_no=1,
+        item_name=f"Supplemental overage for {original.pr_no}",
+        quantity=Decimal("1.00"),
+        unit_price=amount,
+        notes=original.pending_overage_note,
+    )
+
+    messages.success(request, f"Supplemental request {supplemental.pr_no} created.")
+    return redirect("purchase:pr_detail", pk=supplemental.pk)

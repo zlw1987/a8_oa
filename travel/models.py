@@ -1,18 +1,16 @@
 from decimal import Decimal
 from pathlib import Path
-from datetime import date, timedelta
+from datetime import date
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import Sum, Max, Q
+from django.db.models import Sum, Max
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
 from common.choices import CurrencyCode, RequestType, BudgetEntryType
-from common.approval_constants import POOL_APPROVER_TYPES
-
-from approvals.models import ApprovalRule, ApprovalTask, ApprovalTaskStatus, ApprovalTaskCandidate
+from approvals.models import ApprovalTask, ApprovalTaskStatus
 from projects.models import ProjectBudgetEntry
 
 class TravelRequestNumberSequence(models.Model):
@@ -45,6 +43,33 @@ class TravelActualReviewStatus(models.TextChoices):
     PENDING_REVIEW = "PENDING_REVIEW", "Pending Review"
     APPROVED_TO_PROCEED = "APPROVED_TO_PROCEED", "Approved to Proceed"
     REJECTED = "REJECTED", "Rejected"
+
+class TravelPerDiemPolicy(models.Model):
+    policy_code = models.CharField(max_length=30, unique=True)
+    policy_name = models.CharField(max_length=100)
+    department = models.ForeignKey(
+        "accounts.Department",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="travel_per_diem_policies",
+    )
+    currency = models.CharField(
+        max_length=10,
+        choices=CurrencyCode,
+        default=CurrencyCode.USD,
+    )
+    daily_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    effective_from = models.DateField(null=True, blank=True)
+    effective_to = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "PS_A8_TR_PER_DIEM"
+        ordering = ["department", "-effective_from", "policy_code"]
+
+    def __str__(self):
+        return f"{self.policy_code} - {self.policy_name}"
 
 class TravelTransportType(models.TextChoices):
     AIR = "AIR", "Air"
@@ -156,6 +181,13 @@ class TravelRequest(models.Model):
         on_delete=models.SET_NULL,
         related_name="travel_requests",
     )
+    parent_request = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="supplemental_requests",
+    )
     status = models.CharField(
         max_length=30,
         choices=TravelRequestStatus,
@@ -169,12 +201,17 @@ class TravelRequest(models.Model):
     end_date = models.DateField()
     estimated_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     actual_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    per_diem_days = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    per_diem_daily_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    per_diem_allowed_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    per_diem_claim_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     currency = models.CharField(
         max_length=10,
         choices=CurrencyCode,
         default=CurrencyCode.USD,
     )
     notes = models.TextField(blank=True, default="")
+    supplemental_reason = models.TextField(blank=True, default="")
     is_over_estimate = models.BooleanField(default=False)
     actual_review_status = models.CharField(
         max_length=30,
@@ -190,6 +227,8 @@ class TravelRequest(models.Model):
         related_name="travel_actual_reviews",
     )
     actual_reviewed_at = models.DateTimeField(null=True, blank=True)
+    pending_overage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    pending_overage_note = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "PS_A8_TR_HDR"
@@ -238,15 +277,21 @@ class TravelRequest(models.Model):
         self.is_over_estimate = over_estimate
 
         if over_estimate:
-            self.actual_review_status = TravelActualReviewStatus.PENDING_REVIEW
-            self.actual_review_comment = ""
-            self.actual_reviewed_by = None
-            self.actual_reviewed_at = None
+            if self.actual_review_status not in [
+                TravelActualReviewStatus.APPROVED_TO_PROCEED,
+                TravelActualReviewStatus.REJECTED,
+            ]:
+                self.actual_review_status = TravelActualReviewStatus.PENDING_REVIEW
+                self.actual_review_comment = ""
+                self.actual_reviewed_by = None
+                self.actual_reviewed_at = None
         else:
             self.actual_review_status = TravelActualReviewStatus.NOT_REQUIRED
             self.actual_review_comment = ""
             self.actual_reviewed_by = None
             self.actual_reviewed_at = None
+            self.pending_overage_amount = Decimal("0.00")
+            self.pending_overage_note = ""
 
         if commit:
             self.save(
@@ -256,6 +301,8 @@ class TravelRequest(models.Model):
                     "actual_review_comment",
                     "actual_reviewed_by",
                     "actual_reviewed_at",
+                    "pending_overage_amount",
+                    "pending_overage_note",
                 ]
             )
 
@@ -416,10 +463,66 @@ class TravelRequest(models.Model):
         return total or Decimal("0.00")
 
     def refresh_estimated_total(self, commit=True):
+        self.refresh_per_diem_totals(commit=False)
         self.estimated_total = self.get_estimated_expense_total()
         if commit:
-            self.save(update_fields=["estimated_total"])
+            self.save(
+                update_fields=[
+                    "estimated_total",
+                    "per_diem_days",
+                    "per_diem_daily_amount",
+                    "per_diem_allowed_total",
+                    "per_diem_claim_total",
+                ]
+            )
         return self.estimated_total
+
+    def get_trip_days(self):
+        if not self.start_date or not self.end_date:
+            return Decimal("0.00")
+        return Decimal((self.end_date - self.start_date).days + 1)
+
+    def resolve_per_diem_policy(self):
+        qs = TravelPerDiemPolicy.objects.filter(
+            is_active=True,
+            currency=self.currency,
+        ).filter(
+            models.Q(department=self.request_department) | models.Q(department__isnull=True)
+        )
+        if self.start_date:
+            qs = qs.filter(
+                models.Q(effective_from__isnull=True) | models.Q(effective_from__lte=self.start_date)
+            ).filter(
+                models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=self.start_date)
+            )
+        return qs.order_by("department__isnull", "-effective_from", "policy_code").first()
+
+    def refresh_per_diem_totals(self, commit=True):
+        policy = self.resolve_per_diem_policy()
+        days = self.get_trip_days()
+        daily_amount = policy.daily_amount if policy else Decimal("0.00")
+        allowed_total = days * daily_amount
+        claim_total = (
+            self.estimated_expense_lines.filter(is_per_diem=True).aggregate(
+                total=Sum("estimated_amount")
+            )["total"]
+            or Decimal("0.00")
+        )
+
+        self.per_diem_days = days
+        self.per_diem_daily_amount = daily_amount
+        self.per_diem_allowed_total = allowed_total
+        self.per_diem_claim_total = claim_total
+
+        if commit:
+            self.save(
+                update_fields=[
+                    "per_diem_days",
+                    "per_diem_daily_amount",
+                    "per_diem_allowed_total",
+                    "per_diem_claim_total",
+                ]
+            )
 
     def get_actual_total(self):
         total = self.actual_expense_lines.aggregate(total=Sum("actual_amount"))["total"]
@@ -491,6 +594,31 @@ class TravelRequest(models.Model):
                 "Actual expenses can only be recorded when the travel request is "
                 "Approved, In Trip, Expense Pending, or Expense Submitted."
             )
+        projected_actual_total = self.get_actual_total() + actual_amount
+        if (
+            projected_actual_total > self.estimated_total
+            and self.actual_review_status != TravelActualReviewStatus.APPROVED_TO_PROCEED
+        ):
+            self.is_over_estimate = True
+            self.actual_review_status = TravelActualReviewStatus.PENDING_REVIEW
+            self.pending_overage_amount = actual_amount
+            self.pending_overage_note = (
+                f"Attempted actual expense {self.currency} {actual_amount} would raise actual total "
+                f"to {self.currency} {projected_actual_total}, above approved estimate "
+                f"{self.currency} {self.estimated_total}."
+            )
+            self.save(
+                update_fields=[
+                    "is_over_estimate",
+                    "actual_review_status",
+                    "pending_overage_amount",
+                    "pending_overage_note",
+                ]
+            )
+            raise ValidationError(
+                "Actual expense exceeds the approved estimate. It was not recorded and has been routed to accounting review."
+            )
+
         next_line_no = (
             self.actual_expense_lines.aggregate(max_line_no=Max("line_no"))["max_line_no"] or 0
         ) + 1
@@ -551,6 +679,8 @@ class TravelRequest(models.Model):
             self.status = TravelRequestStatus.EXPENSE_PENDING
 
         self.refresh_actual_review_state(commit=False)
+        self.pending_overage_amount = Decimal("0.00")
+        self.pending_overage_note = ""
 
         self.save(
             update_fields=[
@@ -561,6 +691,8 @@ class TravelRequest(models.Model):
                 "actual_review_comment",
                 "actual_reviewed_by",
                 "actual_reviewed_at",
+                "pending_overage_amount",
+                "pending_overage_note",
             ]
         )
 
@@ -676,6 +808,11 @@ class TravelRequest(models.Model):
             raise ValidationError("At least one estimated expense line is required before submit.")
 
         self.refresh_estimated_total(commit=True)
+        if self.per_diem_claim_total > self.per_diem_allowed_total:
+            raise ValidationError(
+                f"Per diem claim total {self.currency} {self.per_diem_claim_total} exceeds "
+                f"allowed total {self.currency} {self.per_diem_allowed_total}."
+            )
 
         available_budget = self.get_project_available_budget()
         if self.estimated_total > available_budget:
@@ -694,90 +831,17 @@ class TravelRequest(models.Model):
             created_by=acting_user,
         )
 
-        matched_rule = (
-            ApprovalRule.objects.filter(
-                is_active=True,
-                request_type=RequestType.TRAVEL,
-            )
-            .filter(
-                Q(department=self.request_department) | Q(department__isnull=True)
-            )
-            .order_by("priority", "rule_code", "id")
-            .first()
+        from approvals.services import (
+            create_approval_tasks_for_request,
+            resolve_approval_rule_for_request,
         )
 
+        matched_rule = resolve_approval_rule_for_request(self)
         if not matched_rule:
             raise ValidationError("No active approval rule found for this travel request.")
 
-        self.get_approval_tasks_queryset().delete()
-
-        content_type = ContentType.objects.get_for_model(type(self))
-        steps = matched_rule.steps.filter(is_active=True).order_by("step_no", "id")
-
-        if not steps.exists():
-            raise ValidationError("The matched approval rule has no active steps.")
-
-        created_count = 0
-        first_task = None
-
-        for step in steps:
-            is_first_step = created_count == 0
-
-            if step.approver_type in POOL_APPROVER_TYPES:
-                candidates = self.resolve_step_candidates(step)
-                if not candidates:
-                    raise ValidationError(
-                        f"Unable to resolve any candidates for step {step.step_no} - {step.step_name}."
-                    )
-
-                task_status = ApprovalTaskStatus.POOL if is_first_step else ApprovalTaskStatus.WAITING
-
-                task = ApprovalTask.objects.create(
-                    request_content_type=content_type,
-                    request_object_id=self.id,
-                    rule=matched_rule,
-                    step=step,
-                    step_no=step.step_no,
-                    step_name=step.step_name,
-                    status=task_status,
-                    assigned_user=None,
-                    due_at=timezone.now() + timedelta(days=step.sla_days or 0),
-                    completed_at=None,
-                )
-
-                ApprovalTaskCandidate.objects.bulk_create(
-                    [ApprovalTaskCandidate(task=task, user=user) for user in candidates]
-                )
-
-                if is_first_step:
-                    first_task = task
-
-            else:
-                assigned_user = self.resolve_fixed_step_assignee(step) if is_first_step else None
-                if is_first_step and not assigned_user:
-                    raise ValidationError(
-                        f"Unable to resolve approver for step {step.step_no} - {step.step_name}."
-                    )
-
-                task_status = ApprovalTaskStatus.PENDING if is_first_step else ApprovalTaskStatus.WAITING
-
-                task = ApprovalTask.objects.create(
-                    request_content_type=content_type,
-                    request_object_id=self.id,
-                    rule=matched_rule,
-                    step=step,
-                    step_no=step.step_no,
-                    step_name=step.step_name,
-                    assigned_user=assigned_user,
-                    status=task_status,
-                    due_at=timezone.now() + timedelta(days=step.sla_days or 0),
-                    completed_at=None,
-                )
-
-                if is_first_step:
-                    first_task = task
-
-            created_count += 1
+        created_tasks = create_approval_tasks_for_request(self, matched_rule)
+        first_task = created_tasks[0] if created_tasks else None
 
         from_status = self.status
         self.status = TravelRequestStatus.PENDING_APPROVAL
@@ -916,6 +980,8 @@ class TravelRequest(models.Model):
             TravelRequestStatus.EXPENSE_SUBMITTED,
         ]:
             raise ValidationError("Only approved or expense-stage travel requests can be closed.")
+        if self.actual_review_status == TravelActualReviewStatus.PENDING_REVIEW:
+            raise ValidationError("Cannot close travel request while actual expense review is pending.")
 
         reserved_remaining = self.get_reserved_remaining_amount()
         if reserved_remaining > 0:
@@ -1102,6 +1168,7 @@ class TravelEstimatedExpenseLine(models.Model):
     receipt_required_flag = models.BooleanField(default=False)
     receipt_attached_flag = models.BooleanField(default=False)
     exception_reason = models.CharField(max_length=300, blank=True, default="")
+    is_per_diem = models.BooleanField(default=False)
 
     itinerary_line_no = models.PositiveIntegerField(null=True, blank=True)
     notes = models.CharField(max_length=200, blank=True, default="")

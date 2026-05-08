@@ -28,11 +28,13 @@ from .forms import (
 )
 from .models import (
     TravelRequest,
+    TravelEstimatedExpenseLine,
     TravelRequestAttachment,
     TravelRequestContentAuditActionType,
     TravelRequestStatus,
     TravelAttachmentType, 
     TravelActualReviewStatus,
+    TravelExpenseType,
 )
 from travel.access import (
     user_can_view_travel,
@@ -859,3 +861,47 @@ def tr_upload_actual_review_attachment(request, pk):
                 messages.error(request, f"{label}: {error}")
 
     return redirect("travel:tr_detail", pk=travel_request.pk)
+
+
+@login_required
+@require_POST
+def tr_create_supplemental(request, pk):
+    original = get_object_or_404(TravelRequest.get_visible_queryset(request.user), pk=pk)
+
+    enforce_travel_permission(user_can_view_travel(request.user, original))
+
+    amount = original.pending_overage_amount
+    if amount <= 0:
+        messages.error(request, "There is no pending overage amount to create a supplemental request.")
+        return redirect("travel:tr_detail", pk=original.pk)
+
+    supplemental = TravelRequest.objects.create(
+        purpose=f"Supplemental for {original.travel_no}",
+        requester=original.requester,
+        request_department=original.request_department,
+        project=original.project,
+        parent_request=original,
+        request_date=original.request_date,
+        start_date=original.start_date,
+        end_date=original.end_date,
+        origin_city=original.origin_city,
+        destination_city=original.destination_city,
+        currency=original.currency,
+        supplemental_reason=original.pending_overage_note,
+        notes=f"Supplemental approval for overage on {original.travel_no}.",
+    )
+    TravelEstimatedExpenseLine.objects.create(
+        travel_request=supplemental,
+        line_no=1,
+        expense_type=TravelExpenseType.MISC,
+        expense_date=original.end_date,
+        estimated_amount=amount,
+        currency=original.currency,
+        expense_location=original.destination_city,
+        exception_reason=original.pending_overage_note,
+        notes=f"Supplemental overage for {original.travel_no}",
+    )
+    supplemental.refresh_estimated_total(commit=True)
+
+    messages.success(request, f"Supplemental travel request {supplemental.travel_no} created.")
+    return redirect("travel:tr_detail", pk=supplemental.pk)

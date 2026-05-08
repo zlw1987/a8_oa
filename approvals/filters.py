@@ -13,6 +13,7 @@ class ApprovalTaskHistoryFilterForm(forms.Form):
             ("", "All"),
             ("PURCHASE", "Purchase"),
             ("TRAVEL", "Travel"),
+            ("PROJECT", "Project"),
         ]
 
         self.fields["outcome_status"].choices = [
@@ -36,6 +37,7 @@ class ApprovalTaskListFilterForm(forms.Form):
             ("", "All"),
             ("PURCHASE", "Purchase"),
             ("TRAVEL", "Travel"),
+            ("PROJECT", "Project"),
         ]
         self.fields["due_state"].choices = [
             ("", "All"),

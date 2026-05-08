@@ -1,4 +1,5 @@
 from django.db.models import Q
+from django.contrib.contenttypes.models import ContentType
 
 from accounts.models import Department
 from .models import Project
@@ -13,11 +14,20 @@ def get_visible_projects_queryset_for_user(user):
     if user.is_superuser:
         return qs
 
+    content_type = ContentType.objects.get_for_model(Project)
+
     return qs.filter(
         Q(created_by=user)
         | Q(project_manager=user)
         | Q(owning_department__manager=user)
         | Q(members__user=user, members__is_active=True)
+        | Q(approval_tasks__request_content_type=content_type, approval_tasks__assigned_user=user)
+        | Q(
+            approval_tasks__request_content_type=content_type,
+            approval_tasks__candidates__user=user,
+            approval_tasks__candidates__is_active=True,
+        )
+        | Q(approval_tasks__request_content_type=content_type, approval_tasks__acted_by=user)
     ).distinct()
 
 

@@ -21,6 +21,7 @@
                         <option value="">All</option>
                         <option value="PURCHASE" {% if request_type == "PURCHASE" %}selected{% endif %}>Purchase</option>
                         <option value="TRAVEL" {% if request_type == "TRAVEL" %}selected{% endif %}>Travel</option>
+                        <option value="PROJECT" {% if request_type == "PROJECT" %}selected{% endif %}>Project</option>
                     </select>
                 </td>
             </tr>
@@ -31,6 +32,16 @@
                         <option value="">All</option>
                         <option value="true" {% if is_active == "true" %}selected{% endif %}>Active</option>
                         <option value="false" {% if is_active == "false" %}selected{% endif %}>Inactive</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="id_fallback">General Fallback</label></th>
+                <td>
+                    <select name="fallback" id="id_fallback">
+                        <option value="">All</option>
+                        <option value="true" {% if fallback == "true" %}selected{% endif %}>Fallback Only</option>
+                        <option value="false" {% if fallback == "false" %}selected{% endif %}>Regular Rules Only</option>
                     </select>
                 </td>
             </tr>
@@ -53,6 +64,7 @@
                 <th>Request Type</th>
                 <th>Department</th>
                 <th>Amount Range</th>
+                <th>Fallback</th>
                 <th>Priority</th>
                 <th>Active</th>
                 <th>Step Count</th>
@@ -73,6 +85,7 @@
                     All
                     {% endif %}
                 </td>
+                <td>{% if rule.is_general_fallback %}Yes{% else %}No{% endif %}</td>
                 <td>{{ rule.priority }}</td>
                 <td>{% if rule.is_active %}Yes{% else %}No{% endif %}</td>
                 <td>{{ rule.step_count }}</td>
@@ -80,7 +93,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="9">No approval rules found.</td>
+                <td colspan="10">No approval rules found.</td>
             </tr>
             {% endfor %}
         </tbody>

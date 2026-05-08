@@ -1,14 +1,13 @@
 import os
 from pathlib import Path
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import date
 
 from django.db import models, transaction
-from django.db.models import Sum, Q
+from django.db.models import Sum
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from django.contrib.contenttypes.models import ContentType
 
 from common.choices import (
     RequestStatus,
@@ -21,14 +20,7 @@ from common.choices import (
     UnitOfMeasure,
     CurrencyCode,
 )
-from common.approval_constants import POOL_APPROVER_TYPES
 from projects.models import ProjectBudgetEntry
-from approvals.models import (
-    ApprovalRule,
-    ApprovalTask,
-    ApprovalTaskCandidate,
-    ApprovalTaskActionType,
-)
 from accounts.models import UserDepartment
 
 class PurchaseRequestNumberSequence(models.Model):
@@ -86,6 +78,13 @@ class PurchaseRequest(models.Model):
         on_delete=models.SET_NULL,
         related_name="purchase_requests",
     )
+    parent_request = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="supplemental_requests",
+    )
     status = models.CharField(
         max_length=20,
         choices=RequestStatus,
@@ -110,6 +109,7 @@ class PurchaseRequest(models.Model):
     vendor_suggestion = models.CharField(max_length=100, blank=True, default="")
     delivery_location = models.CharField(max_length=200, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    supplemental_reason = models.TextField(blank=True, default="")
     is_over_estimate = models.BooleanField(default=False)
     actual_review_status = models.CharField(
         max_length=30,
@@ -125,6 +125,8 @@ class PurchaseRequest(models.Model):
         related_name="purchase_actual_reviews",
     )
     actual_reviewed_at = models.DateTimeField(null=True, blank=True)
+    pending_overage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    pending_overage_note = models.TextField(blank=True, default="")
 
 
     class Meta:
@@ -284,24 +286,9 @@ class PurchaseRequest(models.Model):
         )
 
     def resolve_approval_rule(self):
-        lines_total = self.get_lines_total()
+        from approvals.services import resolve_approval_rule_for_request
 
-        rules = ApprovalRule.objects.filter(
-            is_active=True,
-            request_type=RequestType.PURCHASE,
-        ).filter(
-            Q(department=self.request_department) | Q(department__isnull=True)
-        ).filter(
-            Q(amount_from__isnull=True) | Q(amount_from__lte=lines_total)
-        ).filter(
-            Q(amount_to__isnull=True) | Q(amount_to__gte=lines_total)
-        ).filter(
-            Q(requester_level="") | Q(requester_level=self.requester.approval_level)
-        ).filter(
-            Q(specific_requester__isnull=True) | Q(specific_requester=self.requester)
-        ).order_by("priority", "rule_code")
-
-        return rules.first()
+        return resolve_approval_rule_for_request(self)
 
     def resolve_fixed_step_assignee(self, step):
         if step.approver_type == ApproverType.SPECIFIC_USER:
@@ -380,99 +367,9 @@ class PurchaseRequest(models.Model):
         return self._dedupe_users(users)
 
     def create_approval_tasks(self):
-        purchase_request_content_type = ContentType.objects.get_for_model(type(self))
+        from approvals.services import create_approval_tasks_for_request
 
-        if not self.matched_rule_id:
-            raise ValidationError("Cannot create approval tasks without a matched approval rule.")
-
-        steps = self.matched_rule.steps.filter(is_active=True).order_by("step_no")
-        if not steps.exists():
-            raise ValidationError("The matched approval rule has no active steps.")
-
-        self.approval_tasks.all().delete()
-
-        created_count = 0
-        for step in steps:
-            is_first_step = created_count == 0
-
-            if step.approver_type in POOL_APPROVER_TYPES:
-                candidates = self.resolve_step_candidates(step)
-                if not candidates:
-                    raise ValidationError(
-                        f"Unable to resolve any candidates for step {step.step_no} - {step.step_name}."
-                    )
-
-                task_status = ApprovalTaskStatus.POOL if is_first_step else ApprovalTaskStatus.WAITING
-
-                task = ApprovalTask.objects.create(
-                    purchase_request=self,
-                    request_content_type=purchase_request_content_type,
-                    request_object_id=self.id,
-                    rule=self.matched_rule,
-                    step=step,
-                    step_no=step.step_no,
-                    step_name=step.step_name,
-                    status=task_status,
-                    assigned_user=None,
-                    due_at=timezone.now() + timedelta(days=step.sla_days or 0),
-                    completed_at=None,
-                )
-
-                ApprovalTaskCandidate.objects.bulk_create(
-                    [
-                        ApprovalTaskCandidate(task=task, user=user)
-                        for user in candidates
-                    ]
-                )
-
-                task._add_history(
-                    action_type=ApprovalTaskActionType.CREATED,
-                    action_by=None,
-                    from_status=None,
-                    to_status=task.status,
-                    from_assignee=None,
-                    to_assignee=None,
-                    comment=f"Pool task created with {len(candidates)} candidate(s).",
-                )
-
-            else:
-                assigned_user = self.resolve_fixed_step_assignee(step) if is_first_step else None
-                if is_first_step and not assigned_user:
-                    raise ValidationError(
-                        f"Unable to resolve approver for step {step.step_no} - {step.step_name}."
-                    )
-
-                task_status = ApprovalTaskStatus.PENDING if is_first_step else ApprovalTaskStatus.WAITING
-
-                task = ApprovalTask.objects.create(
-                    purchase_request=self,
-                    request_content_type=purchase_request_content_type,
-                    request_object_id=self.id,
-                    rule=self.matched_rule,
-                    step=step,
-                    step_no=step.step_no,
-                    step_name=step.step_name,
-                    assigned_user=assigned_user,
-                    status=task_status,
-                    due_at=timezone.now() + timedelta(days=step.sla_days or 0),
-                    completed_at=None,
-                )
-
-                task._add_history(
-                    action_type=ApprovalTaskActionType.CREATED,
-                    action_by=None,
-                    from_status=None,
-                    to_status=task.status,
-                    from_assignee=None,
-                    to_assignee=assigned_user,
-                    comment=(
-                        f"Task created and assigned to {assigned_user}."
-                        if assigned_user
-                        else "Waiting task created. Assignee will be resolved on activation."
-                    ),
-                )
-
-            created_count += 1
+        return create_approval_tasks_for_request(self, self.matched_rule)
 
     def validate_for_submit(self):
         errors = []
@@ -729,15 +626,21 @@ class PurchaseRequest(models.Model):
         self.is_over_estimate = over_estimate
 
         if over_estimate:
-            self.actual_review_status = PurchaseActualReviewStatus.PENDING_REVIEW
-            self.actual_review_comment = ""
-            self.actual_reviewed_by = None
-            self.actual_reviewed_at = None
+            if self.actual_review_status not in [
+                PurchaseActualReviewStatus.APPROVED_TO_PROCEED,
+                PurchaseActualReviewStatus.REJECTED,
+            ]:
+                self.actual_review_status = PurchaseActualReviewStatus.PENDING_REVIEW
+                self.actual_review_comment = ""
+                self.actual_reviewed_by = None
+                self.actual_reviewed_at = None
         else:
             self.actual_review_status = PurchaseActualReviewStatus.NOT_REQUIRED
             self.actual_review_comment = ""
             self.actual_reviewed_by = None
             self.actual_reviewed_at = None
+            self.pending_overage_amount = Decimal("0.00")
+            self.pending_overage_note = ""
 
         if commit:
             self.save(
@@ -747,6 +650,8 @@ class PurchaseRequest(models.Model):
                     "actual_review_comment",
                     "actual_reviewed_by",
                     "actual_reviewed_at",
+                    "pending_overage_amount",
+                    "pending_overage_note",
                 ]
             )
 
@@ -790,6 +695,31 @@ class PurchaseRequest(models.Model):
 
         if amount <= 0:
             raise ValidationError("Actual spend amount must be greater than 0.")
+
+        projected_actual_total = self.get_actual_spent_total() + amount
+        if (
+            projected_actual_total > self.estimated_total
+            and self.actual_review_status != PurchaseActualReviewStatus.APPROVED_TO_PROCEED
+        ):
+            self.is_over_estimate = True
+            self.actual_review_status = PurchaseActualReviewStatus.PENDING_REVIEW
+            self.pending_overage_amount = amount
+            self.pending_overage_note = (
+                f"Attempted actual spend {self.currency} {amount} would raise actual total "
+                f"to {self.currency} {projected_actual_total}, above approved estimate "
+                f"{self.currency} {self.estimated_total}."
+            )
+            self.save(
+                update_fields=[
+                    "is_over_estimate",
+                    "actual_review_status",
+                    "pending_overage_amount",
+                    "pending_overage_note",
+                ]
+            )
+            raise ValidationError(
+                "Actual spend exceeds the approved estimate. It was not recorded and has been routed to accounting review."
+            )
 
         reserved_remaining = self.get_reserved_remaining_amount()
         extra_needed = amount - reserved_remaining if amount > reserved_remaining else Decimal("0.00")
@@ -836,6 +766,8 @@ class PurchaseRequest(models.Model):
             )
 
         self.fulfillment_status = PurchaseFulfillmentStatus.PARTIAL
+        self.pending_overage_amount = Decimal("0.00")
+        self.pending_overage_note = ""
         self.refresh_actual_review_state(commit=False)
         self.save(
             update_fields=[
@@ -845,6 +777,8 @@ class PurchaseRequest(models.Model):
                 "actual_review_comment",
                 "actual_reviewed_by",
                 "actual_reviewed_at",
+                "pending_overage_amount",
+                "pending_overage_note",
             ]
         )
 
@@ -865,6 +799,8 @@ class PurchaseRequest(models.Model):
     def close_purchase(self, acting_user=None, comment=""):
         if self.status != RequestStatus.APPROVED:
             raise ValidationError("Only approved purchase requests can be closed.")
+        if self.actual_review_status == PurchaseActualReviewStatus.PENDING_REVIEW:
+            raise ValidationError("Cannot close purchase request while actual spending review is pending.")
 
         reserved_remaining = self.get_reserved_remaining_amount()
         actual_spent_total = self.get_actual_spent_total()

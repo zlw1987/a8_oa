@@ -1,0 +1,26 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}{{ form_title }}{% endblock %}
+{% block page_title %}{{ form_title }}{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'accounts:department_detail' department.id %}">Back to Department</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>{{ department.dept_code }} - {{ department.dept_name }}</h2>
+    <form method="post">
+        {% csrf_token %}
+        <table>
+            {{ form.as_table }}
+        </table>
+        <div class="action-row">
+            <button type="submit">{{ submit_label }}</button>
+            <a href="{% url 'accounts:department_detail' department.id %}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

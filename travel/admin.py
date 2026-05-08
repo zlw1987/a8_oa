@@ -8,7 +8,24 @@ from .models import (
     TravelRequestAttachment,
     TravelRequestContentAudit,
     TravelActualExpenseLine,
+    TravelPerDiemPolicy,
 )
+
+
+@admin.register(TravelPerDiemPolicy)
+class TravelPerDiemPolicyAdmin(admin.ModelAdmin):
+    list_display = (
+        "policy_code",
+        "policy_name",
+        "department",
+        "currency",
+        "daily_amount",
+        "effective_from",
+        "effective_to",
+        "is_active",
+    )
+    list_filter = ("currency", "department", "is_active")
+    search_fields = ("policy_code", "policy_name", "department__dept_code", "department__dept_name")
 
 
 class TravelItineraryInline(admin.TabularInline):

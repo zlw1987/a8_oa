@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 from django.urls import reverse
 
 from common.choices import BudgetEntryType, RequestType
@@ -274,8 +275,30 @@ def project_detail(request, pk):
         "can_manage_budget": user_can_manage_project_budget(request.user, project),
         "project_adjust_budget_url": reverse("projects:project_add_budget_adjustment", args=[project.id]),
         "can_manage_members": user_can_manage_project_members(request.user, project),
+        "current_task": project.get_current_task(),
+        "approval_progress": project.get_approval_progress_text(),
+        "can_submit_budget": user_can_manage_project_budget(request.user, project),
+        "project_submit_budget_url": reverse("projects:project_submit_budget", args=[project.id]),
     }
     return render(request, "projects/project_detail.html", context)
+
+
+@login_required
+@require_POST
+def project_submit_budget(request, pk):
+    project = get_object_or_404(get_visible_projects_queryset_for_user(request.user), pk=pk)
+
+    if not user_can_manage_project_budget(request.user, project):
+        raise PermissionDenied("You do not have permission to submit this project budget.")
+
+    try:
+        project.submit_budget_for_approval(acting_user=request.user)
+        messages.success(request, f"{project.project_code} budget submitted for approval.")
+    except ValidationError as exc:
+        for message in exc.messages:
+            messages.error(request, message)
+
+    return redirect("projects:project_detail", pk=project.id)
 
 
 @login_required

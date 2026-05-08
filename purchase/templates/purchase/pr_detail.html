@@ -97,6 +97,13 @@
     </form>
     {% endif %}
 
+    {% if purchase_request.pending_overage_amount > 0 %}
+    <form method="post" action="{% url 'purchase:pr_create_supplemental' purchase_request.id %}" style="margin-top: 16px;">
+        {% csrf_token %}
+        <button type="submit">Create Supplemental Request</button>
+    </form>
+    {% endif %}
+
     <table style="margin-top: 16px;">
         <thead>
             <tr>
@@ -153,6 +160,12 @@
 
         <div class="summary-label">Review Comment</div>
         <div>{{ purchase_request.actual_review_comment|default:"-" }}</div>
+
+        <div class="summary-label">Pending Overage Amount</div>
+        <div>{{ purchase_request.currency }} {{ purchase_request.pending_overage_amount }}</div>
+
+        <div class="summary-label">Pending Overage Note</div>
+        <div>{{ purchase_request.pending_overage_note|default:"-" }}</div>
     </div>
 
     {% if can_review_actual and actual_review_form %}

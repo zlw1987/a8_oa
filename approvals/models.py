@@ -43,6 +43,7 @@ class ApprovalRule(models.Model):
         on_delete=models.SET_NULL,
         related_name="specific_approval_rules",
     )
+    is_general_fallback = models.BooleanField(default=False)
     priority = models.PositiveIntegerField(default=100)
     is_active = models.BooleanField(default=True)
 
@@ -51,9 +52,37 @@ class ApprovalRule(models.Model):
         verbose_name = "Approval Rule"
         verbose_name_plural = "Approval Rules"
         ordering = ["priority", "rule_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["request_type"],
+                condition=models.Q(is_active=True, is_general_fallback=True),
+                name="uq_active_general_fallback_per_request_type",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.rule_code} - {self.rule_name}"
+
+    def clean(self):
+        super().clean()
+
+        if not self.is_general_fallback:
+            return
+
+        errors = {}
+        if self.department_id:
+            errors["department"] = "General fallback rule must not be limited to a department."
+        if self.amount_from is not None:
+            errors["amount_from"] = "General fallback rule must not have Amount From."
+        if self.amount_to is not None:
+            errors["amount_to"] = "General fallback rule must not have Amount To."
+        if self.requester_level:
+            errors["requester_level"] = "General fallback rule must not be limited to requester level."
+        if self.specific_requester_id:
+            errors["specific_requester"] = "General fallback rule must not be limited to a requester."
+
+        if errors:
+            raise ValidationError(errors)
 
 
 class ApprovalRuleStep(models.Model):
@@ -183,6 +212,16 @@ class ApprovalTask(models.Model):
         verbose_name_plural = "Approval Tasks"
         ordering = ["purchase_request", "step_no"]
         unique_together = ("purchase_request", "step_no")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["request_content_type", "request_object_id", "step_no"],
+                condition=models.Q(
+                    request_content_type__isnull=False,
+                    request_object_id__isnull=False,
+                ),
+                name="uq_generic_request_step",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.request_no or '-'} / Step {self.step_no} / {self.status}"
@@ -348,12 +387,22 @@ class ApprovalTask(models.Model):
     @property
     def request_no(self):
         request_obj = self.get_request_object()
-        return getattr(request_obj, "pr_no", "") or getattr(request_obj, "travel_no", "") or ""
+        return (
+            getattr(request_obj, "pr_no", "")
+            or getattr(request_obj, "travel_no", "")
+            or getattr(request_obj, "project_code", "")
+            or ""
+        )
 
     @property
     def request_title(self):
         request_obj = self.get_request_object()
-        return getattr(request_obj, "title", "") or getattr(request_obj, "purpose", "") or ""
+        return (
+            getattr(request_obj, "title", "")
+            or getattr(request_obj, "purpose", "")
+            or getattr(request_obj, "project_name", "")
+            or ""
+        )
 
     def get_request_tasks_queryset(self):
         if self.request_content_type_id and self.request_object_id:

@@ -10,4 +10,14 @@ urlpatterns = [
     path("departments/create/", views.department_create, name="department_create"),
     path("departments/<int:pk>/", views.department_detail, name="department_detail"),
     path("departments/<int:pk>/edit/", views.department_edit, name="department_edit"),
+    path(
+        "departments/<int:pk>/users/add/",
+        views.department_user_link_create,
+        name="department_user_link_create",
+    ),
+    path(
+        "departments/<int:pk>/users/<int:link_id>/edit/",
+        views.department_user_link_edit,
+        name="department_user_link_edit",
+    ),
 ]

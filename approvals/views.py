@@ -44,6 +44,8 @@ def _get_request_detail_url(task):
 
     if task.request_content_type_id and task.request_content_type.app_label == "travel":
         return reverse("travel:tr_detail", args=[request_obj.pk])
+    if task.request_content_type_id and task.request_content_type.app_label == "projects":
+        return reverse("projects:project_detail", args=[request_obj.pk])
 
     return reverse("purchase:pr_detail", args=[request_obj.pk])
 
@@ -118,6 +120,9 @@ def _decorate_task(task):
         elif app_label == "travel":
             task.request_type_label = "Travel"
             task.request_type_value = "TRAVEL"
+        elif app_label == "projects":
+            task.request_type_label = "Project"
+            task.request_type_value = "PROJECT"
         else:
             task.request_type_label = app_label.title()
             task.request_type_value = app_label.upper()
@@ -282,6 +287,7 @@ def rule_list(request):
     keyword = (request.GET.get("q") or "").strip()
     request_type = (request.GET.get("request_type") or "").strip()
     is_active = (request.GET.get("is_active") or "").strip()
+    fallback = (request.GET.get("fallback") or "").strip()
 
     if keyword:
         queryset = queryset.filter(
@@ -297,6 +303,11 @@ def rule_list(request):
     elif is_active == "false":
         queryset = queryset.filter(is_active=False)
 
+    if fallback == "true":
+        queryset = queryset.filter(is_general_fallback=True)
+    elif fallback == "false":
+        queryset = queryset.filter(is_general_fallback=False)
+
     paginator = Paginator(queryset, 15)
     page_obj = paginator.get_page(request.GET.get("page"))
 
@@ -309,6 +320,7 @@ def rule_list(request):
         "keyword": keyword,
         "request_type": request_type,
         "is_active": is_active,
+        "fallback": fallback,
         "pagination_querystring": pagination_querystring,
     }
     return render(request, "approvals/rule_list.html", context)

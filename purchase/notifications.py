@@ -60,6 +60,10 @@ def _travel_detail_url(travel_request):
     return _build_absolute_url(f"/travel/{travel_request.id}/")
 
 
+def _project_detail_url(project):
+    return _build_absolute_url(f"/projects/{project.id}/")
+
+
 def _task_assignment_label(task):
     if not task:
         return "-"
@@ -83,10 +87,10 @@ def _request_common_lines(request_obj):
     )
 
     return [
-        f"Request No: {getattr(request_obj, 'pr_no', getattr(request_obj, 'travel_no', '-'))}",
-        f"Title/Purpose: {getattr(request_obj, 'title', getattr(request_obj, 'purpose', '-'))}",
+        f"Request No: {getattr(request_obj, 'pr_no', getattr(request_obj, 'travel_no', getattr(request_obj, 'project_code', '-')))}",
+        f"Title/Purpose: {getattr(request_obj, 'title', getattr(request_obj, 'purpose', getattr(request_obj, 'project_name', '-')))}",
         f"Status: {request_obj.get_status_display()}",
-        f"Project: {getattr(request_obj, 'project', '-')}",
+        f"Project: {getattr(request_obj, 'project', request_obj if hasattr(request_obj, 'project_code') else '-')}",
         f"Amount: {getattr(request_obj, 'currency', '')} {getattr(request_obj, 'estimated_total', '')}",
         f"Matched Approval Rule: {matched_rule_text}",
     ]
@@ -136,8 +140,10 @@ def notify_current_task_activated(task):
 
     if hasattr(request_obj, "pr_no"):
         detail_url = _purchase_detail_url(request_obj)
-    else:
+    elif hasattr(request_obj, "travel_no"):
         detail_url = _travel_detail_url(request_obj)
+    else:
+        detail_url = _project_detail_url(request_obj)
 
     matched_rule = getattr(request_obj, "matched_rule", None)
     matched_rule_text = (

@@ -16,6 +16,10 @@
             <td>{{ project.project_name }}</td>
         </tr>
         <tr>
+            <th>Project Type</th>
+            <td>{{ project.get_project_type_display }}</td>
+        </tr>
+        <tr>
             <th>Owning Department</th>
             <td>{{ project.owning_department }}</td>
         </tr>
@@ -26,6 +30,40 @@
         <tr>
             <th>Currency</th>
             <td>{{ project.currency }}</td>
+        </tr>
+        <tr>
+            <th>Budget Approval Status</th>
+            <td>{{ project.get_budget_approval_status_display }}</td>
+        </tr>
+        <tr>
+            <th>Matched Approval Rule</th>
+            <td>{{ project.matched_rule|default:"-" }}</td>
+        </tr>
+        <tr>
+            <th>Approval Progress</th>
+            <td>{{ approval_progress }}</td>
+        </tr>
+        <tr>
+            <th>Current Approval Task</th>
+            <td>{{ current_task.step_name|default:"-" }}</td>
+        </tr>
+        <tr>
+            <th>Budget Period</th>
+            <td>{{ project.budget_period_start|default:"-" }} ~ {{ project.budget_period_end|default:"-" }}</td>
+        </tr>
+        <tr>
+            <th>External Order</th>
+            <td>
+                {% if project.external_order_type or project.external_order_no %}
+                {{ project.get_external_order_type_display }} {{ project.external_order_no }}
+                {% else %}
+                -
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th>Customer</th>
+            <td>{{ project.customer_name|default:"-" }}</td>
         </tr>
         <tr>
             <th>Active</th>
@@ -46,6 +84,12 @@
         <a href="{{ project_budget_url }}">Open Project Budget Ledger</a>
         {% if can_manage_budget %}
         <a href="{{ project_adjust_budget_url }}">Add Budget Adjustment</a>
+        {% endif %}
+        {% if can_submit_budget %}
+        <form method="post" action="{{ project_submit_budget_url }}" class="inline-form">
+            {% csrf_token %}
+            <button type="submit">Submit Budget for Approval</button>
+        </form>
         {% endif %}
     </div>
 </div>

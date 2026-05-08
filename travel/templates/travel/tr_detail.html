@@ -32,6 +32,23 @@
     </div>
 </div>
 
+<div class="card">
+    <h2>Per Diem Summary</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Trip Days</div>
+        <div>{{ travel_request.per_diem_days }}</div>
+
+        <div class="summary-label">Daily Amount</div>
+        <div>{{ travel_request.currency }} {{ travel_request.per_diem_daily_amount }}</div>
+
+        <div class="summary-label">Allowed Total</div>
+        <div>{{ travel_request.currency }} {{ travel_request.per_diem_allowed_total }}</div>
+
+        <div class="summary-label">Claim Total</div>
+        <div>{{ travel_request.currency }} {{ travel_request.per_diem_claim_total }}</div>
+    </div>
+</div>
+
 {% include "includes/request_budget_snapshot.html" %}
 {% include "includes/request_budget_meaning.html" %}
 {% include "includes/request_detail_current_task.html" %}
@@ -131,6 +148,13 @@
     </form>
     {% endif %}
 
+    {% if travel_request.pending_overage_amount > 0 %}
+    <form method="post" action="{% url 'travel:tr_create_supplemental' travel_request.id %}" style="margin-top: 16px;">
+        {% csrf_token %}
+        <button type="submit">Create Supplemental Request</button>
+    </form>
+    {% endif %}
+
     <table style="margin-top: 16px;">
         <thead>
             <tr>
@@ -203,6 +227,12 @@
 
         <div class="summary-label">Review Comment</div>
         <div>{{ travel_request.actual_review_comment|default:"-" }}</div>
+
+        <div class="summary-label">Pending Overage Amount</div>
+        <div>{{ travel_request.currency }} {{ travel_request.pending_overage_amount }}</div>
+
+        <div class="summary-label">Pending Overage Note</div>
+        <div>{{ travel_request.pending_overage_note|default:"-" }}</div>
     </div>
 
     {% if can_review_actual and actual_review_form %}

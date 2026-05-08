@@ -11,6 +11,7 @@ urlpatterns = [
     path("<int:pk>/attachments/upload/", views.pr_upload_attachment, name="pr_upload_attachment"),
     path("<int:pk>/attachments/<int:attachment_id>/delete/", views.pr_delete_attachment, name="pr_delete_attachment"),
     path("<int:pk>/actual-spend/record/", views.pr_record_actual_spend, name="pr_record_actual_spend"),
+    path("<int:pk>/supplemental/create/", views.pr_create_supplemental, name="pr_create_supplemental"),
     path("<int:pk>/submit/", views.pr_submit, name="pr_submit"),
     path("<int:pk>/cancel/", views.pr_cancel, name="pr_cancel"),
     path("<int:pk>/close/", views.pr_close, name="pr_close"),

@@ -8,6 +8,7 @@
     <div class="action-row">
         <a href="{% url 'accounts:department_list' %}">Back to Departments</a>
         <a href="{{ department.edit_url }}">Edit Department</a>
+        <a href="{{ user_link_create_url }}">Add Department User</a>
     </div>
 </div>
 
@@ -57,6 +58,7 @@
                 <th>Status</th>
                 <th>Start Date</th>
                 <th>End Date</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -80,10 +82,13 @@
                 </td>
                 <td>{{ link.start_date|default:"-" }}</td>
                 <td>{{ link.end_date|default:"-" }}</td>
+                <td>
+                    <a href="{% url 'accounts:department_user_link_edit' department.id link.id %}">Edit</a>
+                </td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="6">No users linked to this department.</td>
+                <td colspan="7">No users linked to this department.</td>
             </tr>
             {% endfor %}
         </tbody>

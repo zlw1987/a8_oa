@@ -18,6 +18,7 @@ class ApprovalRuleForm(forms.ModelForm):
             "amount_to",
             "requester_level",
             "specific_requester",
+            "is_general_fallback",
             "priority",
             "is_active",
         ]
@@ -30,6 +31,20 @@ class ApprovalRuleForm(forms.ModelForm):
 
         if amount_from is not None and amount_to is not None and amount_from > amount_to:
             raise ValidationError("Amount From cannot be greater than Amount To.")
+
+        is_general_fallback = cleaned_data.get("is_general_fallback")
+        if is_general_fallback:
+            fallback_fields = {
+                "department": "General fallback rule cannot be limited to a department.",
+                "amount_from": "General fallback rule cannot have Amount From.",
+                "amount_to": "General fallback rule cannot have Amount To.",
+                "requester_level": "General fallback rule cannot be limited to requester level.",
+                "specific_requester": "General fallback rule cannot be limited to a requester.",
+            }
+            for field_name, message in fallback_fields.items():
+                value = cleaned_data.get(field_name)
+                if value not in (None, ""):
+                    self.add_error(field_name, message)
 
         return cleaned_data
 
