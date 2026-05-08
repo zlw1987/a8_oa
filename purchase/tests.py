@@ -2686,13 +2686,13 @@ class PurchaseSmokeTest(TestCase):
         pr.review_actual_variance(
             review_status=PurchaseActualReviewStatus.APPROVED_TO_PROCEED,
             comment="Approved by accounting.",
-            acting_user=self.requester,
+            acting_user=self.manager,
         )
 
         pr.refresh_from_db()
         self.assertEqual(pr.actual_review_status, PurchaseActualReviewStatus.APPROVED_TO_PROCEED)
         self.assertEqual(pr.actual_review_comment, "Approved by accounting.")
-        self.assertEqual(pr.actual_reviewed_by, self.requester)
+        self.assertEqual(pr.actual_reviewed_by, self.manager)
         self.assertIsNotNone(pr.actual_reviewed_at)
 
     def test_purchase_detail_shows_accounting_actual_review_section(self):

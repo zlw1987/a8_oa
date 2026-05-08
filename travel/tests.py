@@ -310,7 +310,7 @@ class TravelSmokeTest(TestCase):
         tr.record_actual_expense(
             expense_type="HOTEL",
             expense_date=tr.start_date,
-            actual_amount=Decimal("520.00"),
+            actual_amount=Decimal("480.00"),
             acting_user=self.requester,
             estimated_expense_line=estimated_line,
             currency="USD",
@@ -322,7 +322,7 @@ class TravelSmokeTest(TestCase):
         tr.refresh_from_db()
 
         self.assertEqual(tr.actual_expense_lines.count(), 1)
-        self.assertEqual(tr.actual_total, Decimal("520.00"))
+        self.assertEqual(tr.actual_total, Decimal("480.00"))
         self.assertEqual(tr.status, TravelRequestStatus.EXPENSE_PENDING)
 
         tr.close_request(
@@ -439,7 +439,7 @@ class TravelSmokeTest(TestCase):
         tr.record_actual_expense(
             expense_type="HOTEL",
             expense_date=tr.start_date,
-            actual_amount=Decimal("520.00"),
+            actual_amount=Decimal("480.00"),
             acting_user=self.requester,
             estimated_expense_line=estimated_line,
             currency="USD",
@@ -3793,7 +3793,7 @@ class TravelSmokeTest(TestCase):
         tr.review_actual_variance(
             review_status=TravelActualReviewStatus.APPROVED_TO_PROCEED,
             comment="Approved by accounting.",
-            acting_user=self.requester,
+            acting_user=self.manager,
         )
 
         tr.refresh_from_db()
@@ -3802,7 +3802,7 @@ class TravelSmokeTest(TestCase):
             TravelActualReviewStatus.APPROVED_TO_PROCEED,
         )
         self.assertEqual(tr.actual_review_comment, "Approved by accounting.")
-        self.assertEqual(tr.actual_reviewed_by, self.requester)
+        self.assertEqual(tr.actual_reviewed_by, self.manager)
         self.assertIsNotNone(tr.actual_reviewed_at)
 
     def test_travel_actual_review_can_be_saved(self):
@@ -3816,7 +3816,7 @@ class TravelSmokeTest(TestCase):
         tr.review_actual_variance(
             review_status=TravelActualReviewStatus.APPROVED_TO_PROCEED,
             comment="Approved by accounting.",
-            acting_user=self.requester,
+            acting_user=self.manager,
         )
 
         tr.refresh_from_db()
@@ -3825,7 +3825,7 @@ class TravelSmokeTest(TestCase):
             TravelActualReviewStatus.APPROVED_TO_PROCEED,
         )
         self.assertEqual(tr.actual_review_comment, "Approved by accounting.")
-        self.assertEqual(tr.actual_reviewed_by, self.requester)
+        self.assertEqual(tr.actual_reviewed_by, self.manager)
         self.assertIsNotNone(tr.actual_reviewed_at)
 
     def test_travel_detail_shows_over_estimate_flag_in_review_section(self):

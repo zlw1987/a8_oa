@@ -511,7 +511,17 @@ class TravelRequest(models.Model):
             ).filter(
                 models.Q(effective_to__isnull=True) | models.Q(effective_to__gte=self.start_date)
             )
-        return qs.order_by("department__isnull", "-effective_from", "policy_code").first()
+        return (
+            qs.annotate(
+                department_specific_rank=models.Case(
+                    models.When(department__isnull=False, then=0),
+                    default=1,
+                    output_field=models.IntegerField(),
+                )
+            )
+            .order_by("department_specific_rank", "-effective_from", "policy_code")
+            .first()
+        )
 
     def refresh_per_diem_totals(self, commit=True):
         policy = self.resolve_per_diem_policy()
@@ -705,6 +715,15 @@ class TravelRequest(models.Model):
             ]
         )
 
+        if policy_result is not None:
+            from finance.services import apply_actual_expense_policy_result
+
+            apply_actual_expense_policy_result(
+                policy_result,
+                actual_expense=actual_line,
+                acting_user=acting_user,
+            )
+
         from_status = self.status
 
         if self.status in [TravelRequestStatus.APPROVED, TravelRequestStatus.IN_TRIP]:
@@ -839,15 +858,6 @@ class TravelRequest(models.Model):
             notes=f"Budget reserved by submitting {self.travel_no}",
             created_by=acting_user,
         )
-
-        if policy_result is not None:
-            from finance.services import apply_actual_expense_policy_result
-
-            apply_actual_expense_policy_result(
-                policy_result,
-                actual_expense=actual_line,
-                acting_user=acting_user,
-            )
 
         from approvals.services import (
             create_approval_tasks_for_request,
