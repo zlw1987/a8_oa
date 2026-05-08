@@ -1,0 +1,27 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Create Card Transaction{% endblock %}
+{% block page_title %}Create Card Transaction{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'finance:card_transaction_list' %}">Back to Card Transactions</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="post">
+        {% csrf_token %}
+        <div class="summary-grid">
+            {% for field in form %}
+            <div class="summary-label">{{ field.label }}</div>
+            <div>{{ field }}</div>
+            {% endfor %}
+        </div>
+        <div class="action-row" style="margin-top: 18px;">
+            <button type="submit">Save</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

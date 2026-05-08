@@ -240,11 +240,13 @@
         <a href="{% url 'projects:project_list' %}">Projects</a>
         <a href="{% url 'approvals:my_tasks' %}">My Tasks</a>
         <a href="{% url 'approvals:my_history' %}">My Approval History</a>
-        <a href="{% url 'approvals:accounting_review_queue' %}">Accounting Review Queue</a>
+        <a href="{% url 'finance:accounting_review_queue' %}">Accounting Review Queue</a>
+        <a href="{% url 'finance:card_transaction_list' %}">Card Transactions</a>
         <a href="{% url 'approvals:variance_exception_report' %}">Variance Report</a>
         {% if request.user.is_staff %}
         <a href="{% url 'accounts:department_list' %}">Departments</a>
         <a href="{% url 'approvals:rule_list' %}">Approval Rules</a>
+        <a href="{% url 'finance:over_budget_policy_list' %}">Over-Budget Policies</a>
         <a href="{% url 'admin:index' %}">Admin</a>
         {% endif %}
         <div class="spacer"></div>

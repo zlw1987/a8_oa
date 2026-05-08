@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'dashboard',
     'travel',
     'common',
+    'finance',
 ]
 
 MIDDLEWARE = [

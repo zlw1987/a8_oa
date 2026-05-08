@@ -1,0 +1,78 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Card Transaction{% endblock %}
+{% block page_title %}Card Transaction Detail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'finance:card_transaction_list' %}">Back to Card Transactions</a>
+    </div>
+</div>
+
+{% if possible_duplicate %}
+<div class="message error">Possible duplicate transaction detected.</div>
+{% endif %}
+
+<div class="card">
+    <h2>Transaction</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Statement Date</div><div>{{ transaction.statement_date }}</div>
+        <div class="summary-label">Transaction Date</div><div>{{ transaction.transaction_date }}</div>
+        <div class="summary-label">Merchant</div><div>{{ transaction.merchant_name }}</div>
+        <div class="summary-label">Amount</div><div>{{ transaction.currency }} {{ transaction.amount }}</div>
+        <div class="summary-label">Cardholder</div><div>{{ transaction.cardholder }}</div>
+        <div class="summary-label">Reference</div><div>{{ transaction.reference_no }}</div>
+        <div class="summary-label">Match Status</div><div>{{ transaction.get_match_status_display }}</div>
+        <div class="summary-label">Unallocated</div><div>{{ transaction.get_unallocated_amount }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Add Allocation</h2>
+    <form method="post" action="{% url 'finance:card_transaction_allocate' transaction.id %}">
+        {% csrf_token %}
+        <div class="summary-grid">
+            {% for field in allocation_form %}
+            <div class="summary-label">{{ field.label }}</div>
+            <div>{{ field }}</div>
+            {% endfor %}
+        </div>
+        <div class="action-row" style="margin-top: 18px;">
+            <button type="submit">Allocate</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Allocations</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Target</th>
+                <th>Amount</th>
+                <th>Policy Action</th>
+                <th>Created By</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for allocation in allocations %}
+            <tr>
+                <td>
+                    {% if allocation.purchase_request %}<a href="{% url 'purchase:pr_detail' allocation.purchase_request.id %}">{{ allocation.purchase_request.pr_no }}</a>{% endif %}
+                    {% if allocation.travel_request %}<a href="{% url 'travel:tr_detail' allocation.travel_request.id %}">{{ allocation.travel_request.travel_no }}</a>{% endif %}
+                    {% if allocation.project %}<a href="{% url 'projects:project_detail' allocation.project.id %}">{{ allocation.project.project_code }}</a>{% endif %}
+                </td>
+                <td>{{ allocation.amount }}</td>
+                <td>{{ allocation.policy_action|default:"-" }}</td>
+                <td>{{ allocation.created_by|default:"-" }}</td>
+                <td>{{ allocation.notes|default:"-" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">No allocations.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

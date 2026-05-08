@@ -28,6 +28,11 @@ def user_can_approve_task(user, task):
     if not user or not user.is_authenticated:
         return False
 
+    request_obj = task.get_request_object() if hasattr(task, "get_request_object") else None
+    requester_id = getattr(request_obj, "requester_id", None)
+    if requester_id and requester_id == user.id:
+        return False
+
     return (
         task.status == ApprovalTaskStatus.PENDING
         and task.assigned_user_id == user.id

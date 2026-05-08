@@ -310,6 +310,8 @@ class TravelRequest(models.Model):
     def review_actual_variance(self, *, review_status, comment="", acting_user=None):
         if not self.is_over_estimate:
             raise ValidationError("Actual review is not required for this request.")
+        if acting_user and self.requester_id == acting_user.id:
+            raise ValidationError("Requester cannot mark their own actual expense as accounting-reviewed.")
 
         allowed = {
             TravelActualReviewStatus.APPROVED_TO_PROCEED,
@@ -329,6 +331,20 @@ class TravelRequest(models.Model):
                 "actual_reviewed_by",
                 "actual_reviewed_at",
             ]
+        )
+        from finance.models import AccountingReviewDecision
+        from finance.services import resolve_accounting_review_items_for_request
+
+        decision = (
+            AccountingReviewDecision.APPROVE_EXCEPTION
+            if review_status == TravelActualReviewStatus.APPROVED_TO_PROCEED
+            else AccountingReviewDecision.REJECT
+        )
+        resolve_accounting_review_items_for_request(
+            self,
+            decision=decision,
+            comment=comment,
+            acting_user=acting_user,
         )
 
     def resolve_fixed_step_assignee(self, step):
@@ -581,6 +597,7 @@ class TravelRequest(models.Model):
             reference_no="",
             expense_location="",
             notes="",
+            skip_finance_policy=False,
         ):
         allowed_statuses = [
             TravelRequestStatus.APPROVED,
@@ -594,30 +611,22 @@ class TravelRequest(models.Model):
                 "Actual expenses can only be recorded when the travel request is "
                 "Approved, In Trip, Expense Pending, or Expense Submitted."
             )
-        projected_actual_total = self.get_actual_total() + actual_amount
-        if (
-            projected_actual_total > self.estimated_total
-            and self.actual_review_status != TravelActualReviewStatus.APPROVED_TO_PROCEED
-        ):
-            self.is_over_estimate = True
-            self.actual_review_status = TravelActualReviewStatus.PENDING_REVIEW
-            self.pending_overage_amount = actual_amount
-            self.pending_overage_note = (
-                f"Attempted actual expense {self.currency} {actual_amount} would raise actual total "
-                f"to {self.currency} {projected_actual_total}, above approved estimate "
-                f"{self.currency} {self.estimated_total}."
+        policy_result = None
+        if not skip_finance_policy:
+            from finance.services import (
+                apply_actual_expense_policy_result,
+                evaluate_actual_expense_policy,
             )
-            self.save(
-                update_fields=[
-                    "is_over_estimate",
-                    "actual_review_status",
-                    "pending_overage_amount",
-                    "pending_overage_note",
-                ]
+            from finance.models import PaymentMethod
+
+            policy_result = evaluate_actual_expense_policy(
+                self,
+                current_actual_amount=actual_amount,
+                payment_method=PaymentMethod.REIMBURSEMENT,
+                currency=currency or self.currency,
             )
-            raise ValidationError(
-                "Actual expense exceeds the approved estimate. It was not recorded and has been routed to accounting review."
-            )
+            if not policy_result.allows_recording:
+                apply_actual_expense_policy_result(policy_result, acting_user=acting_user)
 
         next_line_no = (
             self.actual_expense_lines.aggregate(max_line_no=Max("line_no"))["max_line_no"] or 0
@@ -831,6 +840,15 @@ class TravelRequest(models.Model):
             created_by=acting_user,
         )
 
+        if policy_result is not None:
+            from finance.services import apply_actual_expense_policy_result
+
+            apply_actual_expense_policy_result(
+                policy_result,
+                actual_expense=actual_line,
+                acting_user=acting_user,
+            )
+
         from approvals.services import (
             create_approval_tasks_for_request,
             resolve_approval_rule_for_request,
@@ -982,6 +1000,9 @@ class TravelRequest(models.Model):
             raise ValidationError("Only approved or expense-stage travel requests can be closed.")
         if self.actual_review_status == TravelActualReviewStatus.PENDING_REVIEW:
             raise ValidationError("Cannot close travel request while actual expense review is pending.")
+        from finance.services import validate_request_can_close
+
+        validate_request_can_close(self)
 
         reserved_remaining = self.get_reserved_remaining_amount()
         if reserved_remaining > 0:

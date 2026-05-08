@@ -1,0 +1,59 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Card Transactions{% endblock %}
+{% block page_title %}Card Transactions{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'finance:card_transaction_create' %}">Create Card Transaction</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="get" class="action-row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Merchant, reference, cardholder">
+        <select name="status">
+            <option value="">All Statuses</option>
+            <option value="UNMATCHED" {% if status == "UNMATCHED" %}selected{% endif %}>Unmatched</option>
+            <option value="PARTIALLY_MATCHED" {% if status == "PARTIALLY_MATCHED" %}selected{% endif %}>Partially Matched</option>
+            <option value="MATCHED" {% if status == "MATCHED" %}selected{% endif %}>Matched</option>
+            <option value="REVIEWED" {% if status == "REVIEWED" %}selected{% endif %}>Reviewed</option>
+        </select>
+        <button type="submit">Filter</button>
+    </form>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Statement Date</th>
+                <th>Transaction Date</th>
+                <th>Merchant</th>
+                <th>Amount</th>
+                <th>Cardholder</th>
+                <th>Reference</th>
+                <th>Status</th>
+                <th>Allocated</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for transaction in page_obj.object_list %}
+            <tr>
+                <td>{{ transaction.statement_date }}</td>
+                <td>{{ transaction.transaction_date }}</td>
+                <td><a href="{% url 'finance:card_transaction_detail' transaction.id %}">{{ transaction.merchant_name }}</a></td>
+                <td>{{ transaction.currency }} {{ transaction.amount }}</td>
+                <td>{{ transaction.cardholder }}</td>
+                <td>{{ transaction.reference_no }}</td>
+                <td>{{ transaction.get_match_status_display }}</td>
+                <td>{{ transaction.get_allocated_amount }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="8">No card transactions.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

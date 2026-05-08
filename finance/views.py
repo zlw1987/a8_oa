@@ -1,0 +1,234 @@
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
+from django.db.models import Q
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
+
+from .forms import (
+    AccountingReviewDecisionForm,
+    AccountingReviewFilterForm,
+    CardTransactionAllocationForm,
+    CardTransactionForm,
+    OverBudgetPolicyForm,
+)
+from .models import (
+    AccountingReviewItem,
+    AccountingReviewStatus,
+    CardTransaction,
+    OverBudgetPolicy,
+)
+from .services import allocate_card_transaction
+
+
+def _enforce_finance_setup_permission(user):
+    if not user.is_authenticated or not user.is_staff:
+        raise PermissionDenied("You do not have permission to manage finance setup.")
+
+
+def _enforce_accounting_permission(user):
+    if not user.is_authenticated or not user.is_staff:
+        raise PermissionDenied("You do not have permission to perform accounting actions.")
+
+
+@login_required
+def over_budget_policy_list(request):
+    _enforce_finance_setup_permission(request.user)
+    queryset = OverBudgetPolicy.objects.select_related("department").order_by("priority", "policy_code")
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        queryset = queryset.filter(Q(policy_code__icontains=q) | Q(policy_name__icontains=q))
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "finance/over_budget_policy_list.html",
+        {"page_obj": page_obj, "q": q},
+    )
+
+
+@login_required
+def over_budget_policy_create(request):
+    _enforce_finance_setup_permission(request.user)
+    if request.method == "POST":
+        form = OverBudgetPolicyForm(request.POST)
+        if form.is_valid():
+            policy = form.save()
+            messages.success(request, f"Over-budget policy '{policy.policy_code}' created.")
+            return redirect("finance:over_budget_policy_edit", pk=policy.pk)
+    else:
+        form = OverBudgetPolicyForm()
+    return render(request, "finance/over_budget_policy_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def over_budget_policy_edit(request, pk):
+    _enforce_finance_setup_permission(request.user)
+    policy = get_object_or_404(OverBudgetPolicy, pk=pk)
+    if request.method == "POST":
+        form = OverBudgetPolicyForm(request.POST, instance=policy)
+        if form.is_valid():
+            policy = form.save()
+            messages.success(request, f"Over-budget policy '{policy.policy_code}' updated.")
+            return redirect("finance:over_budget_policy_edit", pk=policy.pk)
+    else:
+        form = OverBudgetPolicyForm(instance=policy)
+    return render(
+        request,
+        "finance/over_budget_policy_form.html",
+        {"form": form, "policy": policy, "page_mode": "edit"},
+    )
+
+
+@login_required
+def accounting_review_queue(request):
+    _enforce_accounting_permission(request.user)
+    queryset = (
+        AccountingReviewItem.objects.select_related(
+            "purchase_request",
+            "travel_request",
+            "purchase_request__requester",
+            "travel_request__requester",
+            "policy",
+            "assigned_reviewer",
+            "reviewed_by",
+        )
+        .order_by("status", "-created_at", "-id")
+    )
+    form = AccountingReviewFilterForm(request.GET or None)
+    if form.is_valid():
+        q = (form.cleaned_data.get("q") or "").strip()
+        status = form.cleaned_data.get("status")
+        reason = form.cleaned_data.get("reason")
+        if q:
+            queryset = queryset.filter(Q(title__icontains=q) | Q(description__icontains=q))
+        if status:
+            queryset = queryset.filter(status=status)
+        if reason:
+            queryset = queryset.filter(reason=reason)
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    pending_count = queryset.filter(status=AccountingReviewStatus.PENDING_REVIEW).count()
+    return render(
+        request,
+        "finance/accounting_review_queue.html",
+        {"filter_form": form, "page_obj": page_obj, "pending_count": pending_count},
+    )
+
+
+@login_required
+@require_POST
+def accounting_review_decide(request, pk):
+    _enforce_accounting_permission(request.user)
+    item = get_object_or_404(AccountingReviewItem, pk=pk)
+    requester_id = None
+    if item.purchase_request_id:
+        requester_id = item.purchase_request.requester_id
+    elif item.travel_request_id:
+        requester_id = item.travel_request.requester_id
+    if requester_id and requester_id == request.user.id:
+        raise PermissionDenied("Requester cannot review their own actual expense.")
+
+    form = AccountingReviewDecisionForm(request.POST)
+    if form.is_valid():
+        item.decision = form.cleaned_data["decision"]
+        if item.decision == "APPROVE_EXCEPTION":
+            item.status = "APPROVED_EXCEPTION"
+        elif item.decision == "RETURN":
+            item.status = "RETURNED"
+        elif item.decision == "REJECT":
+            item.status = "REJECTED"
+        else:
+            item.status = "RESOLVED"
+        item.comment = form.cleaned_data.get("comment") or ""
+        item.reviewed_by = request.user
+        from django.utils import timezone
+
+        item.reviewed_at = timezone.now()
+        item.save(update_fields=["decision", "status", "comment", "reviewed_by", "reviewed_at", "updated_at"])
+        messages.success(request, "Accounting review item updated.")
+    else:
+        messages.error(request, "Invalid review decision.")
+    return redirect("finance:accounting_review_queue")
+
+
+@login_required
+def card_transaction_list(request):
+    _enforce_accounting_permission(request.user)
+    queryset = CardTransaction.objects.select_related("cardholder").order_by("-statement_date", "-transaction_date", "-id")
+    q = (request.GET.get("q") or "").strip()
+    status = (request.GET.get("status") or "").strip()
+    if q:
+        queryset = queryset.filter(Q(merchant_name__icontains=q) | Q(reference_no__icontains=q) | Q(cardholder__username__icontains=q))
+    if status:
+        queryset = queryset.filter(match_status=status)
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "finance/card_transaction_list.html",
+        {"page_obj": page_obj, "q": q, "status": status},
+    )
+
+
+@login_required
+def card_transaction_create(request):
+    _enforce_accounting_permission(request.user)
+    if request.method == "POST":
+        form = CardTransactionForm(request.POST)
+        if form.is_valid():
+            transaction = form.save(commit=False)
+            transaction.imported_by = request.user
+            transaction.save()
+            if transaction.has_possible_duplicate():
+                messages.warning(request, "Possible duplicate card transaction detected.")
+            messages.success(request, "Card transaction created.")
+            return redirect("finance:card_transaction_detail", pk=transaction.pk)
+    else:
+        form = CardTransactionForm()
+    return render(request, "finance/card_transaction_form.html", {"form": form})
+
+
+@login_required
+def card_transaction_detail(request, pk):
+    _enforce_accounting_permission(request.user)
+    transaction = get_object_or_404(CardTransaction.objects.select_related("cardholder"), pk=pk)
+    allocation_form = CardTransactionAllocationForm(initial={"amount": transaction.get_unallocated_amount()})
+    allocations = transaction.allocations.select_related("purchase_request", "travel_request", "project", "created_by")
+    return render(
+        request,
+        "finance/card_transaction_detail.html",
+        {
+            "transaction": transaction,
+            "allocation_form": allocation_form,
+            "allocations": allocations,
+            "possible_duplicate": transaction.has_possible_duplicate(),
+        },
+    )
+
+
+@login_required
+@require_POST
+def card_transaction_allocate(request, pk):
+    _enforce_accounting_permission(request.user)
+    transaction = get_object_or_404(CardTransaction, pk=pk)
+    form = CardTransactionAllocationForm(request.POST)
+    if form.is_valid():
+        try:
+            allocate_card_transaction(
+                card_transaction=transaction,
+                amount=form.cleaned_data["amount"],
+                purchase_request=form.cleaned_data.get("purchase_request"),
+                travel_request=form.cleaned_data.get("travel_request"),
+                project=form.cleaned_data.get("project"),
+                acting_user=request.user,
+                notes=form.cleaned_data.get("notes", ""),
+            )
+            messages.success(request, "Card transaction allocation saved.")
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+    return redirect("finance:card_transaction_detail", pk=transaction.pk)

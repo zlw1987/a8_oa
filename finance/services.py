@@ -1,0 +1,518 @@
+from dataclasses import dataclass
+from decimal import Decimal, ROUND_HALF_UP
+
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.utils import timezone
+
+from common.choices import BudgetEntryType, RequestType
+from projects.models import ProjectBudgetEntry
+
+from .models import (
+    AccountingReviewDecision,
+    AccountingReviewItem,
+    AccountingReviewReason,
+    AccountingReviewStatus,
+    CardTransactionAllocation,
+    OverBudgetAction,
+    OverBudgetPolicy,
+    PaymentMethod,
+)
+
+
+OPEN_REVIEW_STATUSES = [
+    AccountingReviewStatus.PENDING_REVIEW,
+    AccountingReviewStatus.RETURNED,
+]
+
+
+@dataclass
+class ActualExpensePolicyResult:
+    request_obj: object
+    request_type: str
+    approved_amount: Decimal
+    existing_actual_total: Decimal
+    current_actual_amount: Decimal
+    new_actual_total: Decimal
+    over_amount: Decimal
+    over_percent: Decimal
+    action: str
+    policy: OverBudgetPolicy | None
+    payment_method: str
+    currency: str
+    message: str
+
+    @property
+    def is_over_budget(self):
+        return self.over_amount > Decimal("0.00")
+
+    @property
+    def allows_recording(self):
+        return self.action in [
+            OverBudgetAction.ALLOW,
+            OverBudgetAction.WARNING,
+            OverBudgetAction.REVIEW,
+            OverBudgetAction.AMENDMENT_REQUIRED,
+        ]
+
+
+def _money(value):
+    return (value or Decimal("0.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _percent(value):
+    return (value or Decimal("0.0000")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+def get_request_type(request_obj):
+    if hasattr(request_obj, "pr_no"):
+        return RequestType.PURCHASE
+    if hasattr(request_obj, "travel_no"):
+        return RequestType.TRAVEL
+    raise ValidationError("Unsupported request type for finance policy evaluation.")
+
+
+def get_request_no(request_obj):
+    return getattr(request_obj, "pr_no", "") or getattr(request_obj, "travel_no", "") or str(request_obj.pk)
+
+
+def get_request_title(request_obj):
+    return getattr(request_obj, "title", "") or getattr(request_obj, "purpose", "") or ""
+
+
+def get_request_detail_url_name(request_obj):
+    if hasattr(request_obj, "pr_no"):
+        return "purchase:pr_detail"
+    if hasattr(request_obj, "travel_no"):
+        return "travel:tr_detail"
+    return ""
+
+
+def get_request_department(request_obj):
+    return getattr(request_obj, "request_department", None)
+
+
+def get_request_project_type(request_obj):
+    project = getattr(request_obj, "project", None)
+    return getattr(project, "project_type", "") if project else ""
+
+
+def get_approved_amount(request_obj):
+    return _money(getattr(request_obj, "estimated_total", Decimal("0.00")))
+
+
+def get_existing_actual_total(request_obj):
+    if hasattr(request_obj, "get_actual_spent_total"):
+        return _money(request_obj.get_actual_spent_total())
+    if hasattr(request_obj, "get_actual_total"):
+        return _money(request_obj.get_actual_total())
+    return _money(getattr(request_obj, "actual_total", Decimal("0.00")))
+
+
+def _matches_threshold(policy, over_amount, over_percent):
+    if policy.over_amount_from is not None and over_amount < policy.over_amount_from:
+        return False
+    if policy.over_amount_to is not None and over_amount > policy.over_amount_to:
+        return False
+    if policy.over_percent_from is not None and over_percent < policy.over_percent_from:
+        return False
+    if policy.over_percent_to is not None and over_percent > policy.over_percent_to:
+        return False
+    return True
+
+
+def resolve_over_budget_policy(
+    *,
+    request_obj,
+    over_amount,
+    over_percent,
+    payment_method=PaymentMethod.REIMBURSEMENT,
+    currency="",
+):
+    request_type = get_request_type(request_obj)
+    department = get_request_department(request_obj)
+    project_type = get_request_project_type(request_obj)
+
+    queryset = OverBudgetPolicy.objects.filter(is_active=True).order_by("priority", "policy_code", "id")
+    queryset = queryset.filter(request_type__in=["ALL", request_type])
+    queryset = queryset.filter(payment_method__in=[PaymentMethod.ALL, payment_method])
+    queryset = queryset.filter(department__isnull=True) | queryset.filter(department=department)
+    queryset = queryset.filter(project_type__in=["", project_type])
+    if currency:
+        queryset = queryset.filter(currency__in=["", currency])
+    else:
+        queryset = queryset.filter(currency="")
+
+    for policy in queryset:
+        if _matches_threshold(policy, over_amount, over_percent):
+            return policy
+    return None
+
+
+def evaluate_actual_expense_policy(
+    request_obj,
+    *,
+    current_actual_amount,
+    payment_method=PaymentMethod.REIMBURSEMENT,
+    currency="",
+):
+    current_actual_amount = _money(current_actual_amount)
+    if current_actual_amount <= 0:
+        raise ValidationError("Actual expense amount must be greater than 0.")
+
+    request_type = get_request_type(request_obj)
+    approved_amount = get_approved_amount(request_obj)
+    existing_actual_total = get_existing_actual_total(request_obj)
+    new_actual_total = _money(existing_actual_total + current_actual_amount)
+    over_amount = _money(max(new_actual_total - approved_amount, Decimal("0.00")))
+    if approved_amount > 0:
+        over_percent = _percent(over_amount / approved_amount)
+    else:
+        over_percent = Decimal("1.0000") if over_amount > 0 else Decimal("0.0000")
+
+    effective_currency = currency or getattr(request_obj, "currency", "")
+    policy = None
+    action = OverBudgetAction.ALLOW
+
+    if over_amount > 0:
+        policy = resolve_over_budget_policy(
+            request_obj=request_obj,
+            over_amount=over_amount,
+            over_percent=over_percent,
+            payment_method=payment_method,
+            currency=effective_currency,
+        )
+        action = policy.action if policy else OverBudgetAction.REVIEW
+
+    if action == OverBudgetAction.ALLOW:
+        message = "Actual expense is within approved amount."
+    elif action == OverBudgetAction.WARNING:
+        message = "Actual expense exceeds approved amount but is allowed with warning."
+    elif action == OverBudgetAction.REVIEW:
+        message = "Actual expense exceeds approved amount and was routed to accounting review."
+    elif action == OverBudgetAction.AMENDMENT_REQUIRED:
+        message = "Actual expense exceeds approved amount and requires a supplemental request or exception approval."
+    else:
+        message = "Actual expense exceeds approved amount and is blocked by finance policy."
+
+    return ActualExpensePolicyResult(
+        request_obj=request_obj,
+        request_type=request_type,
+        approved_amount=approved_amount,
+        existing_actual_total=existing_actual_total,
+        current_actual_amount=current_actual_amount,
+        new_actual_total=new_actual_total,
+        over_amount=over_amount,
+        over_percent=over_percent,
+        action=action,
+        policy=policy,
+        payment_method=payment_method,
+        currency=effective_currency,
+        message=message,
+    )
+
+
+def _set_request_pending_review_fields(result, *, note="", commit=True):
+    request_obj = result.request_obj
+    if not hasattr(request_obj, "is_over_estimate"):
+        return
+
+    request_obj.is_over_estimate = result.is_over_budget
+    if result.is_over_budget:
+        request_obj.actual_review_status = "PENDING_REVIEW"
+        request_obj.pending_overage_amount = result.current_actual_amount
+        request_obj.pending_overage_note = note or result.message
+    else:
+        request_obj.actual_review_status = "NOT_REQUIRED"
+        request_obj.pending_overage_amount = Decimal("0.00")
+        request_obj.pending_overage_note = ""
+
+    if commit:
+        request_obj.save(
+            update_fields=[
+                "is_over_estimate",
+                "actual_review_status",
+                "pending_overage_amount",
+                "pending_overage_note",
+            ]
+        )
+
+
+def create_accounting_review_item(
+    result,
+    *,
+    reason=AccountingReviewReason.OVER_BUDGET,
+    actual_expense=None,
+    card_transaction=None,
+    card_allocation=None,
+    created_by=None,
+    description="",
+):
+    request_obj = result.request_obj
+    content_type = None
+    object_id = None
+    if actual_expense is not None:
+        content_type = ContentType.objects.get_for_model(actual_expense)
+        object_id = actual_expense.pk
+
+    defaults = {
+        "source_type": result.request_type,
+        "purchase_request": request_obj if result.request_type == RequestType.PURCHASE else None,
+        "travel_request": request_obj if result.request_type == RequestType.TRAVEL else None,
+        "purchase_actual_spend": actual_expense if result.request_type == RequestType.PURCHASE else None,
+        "travel_actual_expense": actual_expense if result.request_type == RequestType.TRAVEL else None,
+        "card_transaction": card_transaction,
+        "card_allocation": card_allocation,
+        "source_content_type": content_type,
+        "source_object_id": object_id,
+        "reason": reason,
+        "status": AccountingReviewStatus.PENDING_REVIEW,
+        "policy": result.policy,
+        "policy_action": result.action,
+        "amount": result.current_actual_amount,
+        "over_amount": result.over_amount,
+        "over_percent": result.over_percent,
+        "title": f"{get_request_no(request_obj)} over-budget review",
+        "description": description or result.message,
+        "created_by": created_by,
+    }
+    return AccountingReviewItem.objects.create(**defaults)
+
+
+def _add_request_history(request_obj, *, acting_user=None, comment=""):
+    writer = getattr(request_obj, "_add_history", None)
+    if callable(writer):
+        try:
+            writer(
+                action_type="SPEND_RECORDED",
+                from_status=getattr(request_obj, "status", None),
+                to_status=getattr(request_obj, "status", None),
+                acting_user=acting_user,
+                comment=comment,
+            )
+        except Exception:
+            return
+
+
+def apply_actual_expense_policy_result(
+    result,
+    *,
+    actual_expense=None,
+    card_transaction=None,
+    card_allocation=None,
+    acting_user=None,
+):
+    if result.action == OverBudgetAction.BLOCK:
+        _set_request_pending_review_fields(result, note=result.message)
+        raise ValidationError(result.message)
+
+    if result.action == OverBudgetAction.AMENDMENT_REQUIRED:
+        _set_request_pending_review_fields(result, note=result.message)
+        return create_accounting_review_item(
+            result,
+            actual_expense=actual_expense,
+            card_transaction=card_transaction,
+            card_allocation=card_allocation,
+            created_by=acting_user,
+            description=result.message,
+        )
+
+    if result.action == OverBudgetAction.WARNING:
+        request_obj = result.request_obj
+        if result.is_over_budget and hasattr(request_obj, "actual_review_status"):
+            request_obj.is_over_estimate = True
+            request_obj.actual_review_status = "APPROVED_TO_PROCEED"
+            request_obj.actual_review_comment = result.message
+            request_obj.actual_reviewed_by = acting_user
+            request_obj.actual_reviewed_at = timezone.now()
+            request_obj.pending_overage_amount = Decimal("0.00")
+            request_obj.pending_overage_note = ""
+            request_obj.save(
+                update_fields=[
+                    "is_over_estimate",
+                    "actual_review_status",
+                    "actual_review_comment",
+                    "actual_reviewed_by",
+                    "actual_reviewed_at",
+                    "pending_overage_amount",
+                    "pending_overage_note",
+                ]
+            )
+        _add_request_history(
+            result.request_obj,
+            acting_user=acting_user,
+            comment=(
+                f"Over-budget warning: approved {result.currency} {result.approved_amount}, "
+                f"new actual total {result.currency} {result.new_actual_total}, "
+                f"over {result.currency} {result.over_amount}."
+            ),
+        )
+        return None
+
+    if result.action == OverBudgetAction.ALLOW and result.is_over_budget:
+        request_obj = result.request_obj
+        if hasattr(request_obj, "actual_review_status"):
+            request_obj.is_over_estimate = True
+            request_obj.actual_review_status = "APPROVED_TO_PROCEED"
+            request_obj.actual_review_comment = result.message
+            request_obj.actual_reviewed_by = acting_user
+            request_obj.actual_reviewed_at = timezone.now()
+            request_obj.pending_overage_amount = Decimal("0.00")
+            request_obj.pending_overage_note = ""
+            request_obj.save(
+                update_fields=[
+                    "is_over_estimate",
+                    "actual_review_status",
+                    "actual_review_comment",
+                    "actual_reviewed_by",
+                    "actual_reviewed_at",
+                    "pending_overage_amount",
+                    "pending_overage_note",
+                ]
+            )
+        return None
+
+    if result.action == OverBudgetAction.REVIEW:
+        _set_request_pending_review_fields(result, note=result.message)
+        return create_accounting_review_item(
+            result,
+            actual_expense=actual_expense,
+            card_transaction=card_transaction,
+            card_allocation=card_allocation,
+            created_by=acting_user,
+            description=result.message,
+        )
+
+    return None
+
+
+def unresolved_review_items_for_request(request_obj):
+    request_type = get_request_type(request_obj)
+    queryset = AccountingReviewItem.objects.filter(status__in=OPEN_REVIEW_STATUSES)
+    if request_type == RequestType.PURCHASE:
+        queryset = queryset.filter(purchase_request=request_obj)
+    elif request_type == RequestType.TRAVEL:
+        queryset = queryset.filter(travel_request=request_obj)
+    return queryset
+
+
+def validate_request_can_close(request_obj):
+    if unresolved_review_items_for_request(request_obj).exists():
+        raise ValidationError("Cannot close request while accounting review items are unresolved.")
+    if hasattr(request_obj, "approval_tasks"):
+        if request_obj.approval_tasks.filter(status__in=["WAITING", "POOL", "PENDING"]).exists():
+            raise ValidationError("Cannot close request while approval tasks are still open.")
+    if hasattr(request_obj, "card_allocations"):
+        if request_obj.card_allocations.filter(card_transaction__match_status__in=["UNMATCHED", "PARTIALLY_MATCHED"]).exists():
+            raise ValidationError("Cannot close request while linked card transactions are not fully reconciled.")
+
+
+@transaction.atomic
+def resolve_accounting_review_items_for_request(request_obj, *, decision, comment="", acting_user=None):
+    status_map = {
+        AccountingReviewDecision.APPROVE_EXCEPTION: AccountingReviewStatus.APPROVED_EXCEPTION,
+        AccountingReviewDecision.RETURN: AccountingReviewStatus.RETURNED,
+        AccountingReviewDecision.REJECT: AccountingReviewStatus.REJECTED,
+        AccountingReviewDecision.RESOLVE: AccountingReviewStatus.RESOLVED,
+    }
+    status = status_map.get(decision)
+    if not status:
+        raise ValidationError("Invalid accounting review decision.")
+    items = unresolved_review_items_for_request(request_obj)
+    now = timezone.now()
+    count = items.update(
+        status=status,
+        decision=decision,
+        comment=comment or "",
+        reviewed_by=acting_user,
+        reviewed_at=now,
+    )
+    return count
+
+
+@transaction.atomic
+def allocate_card_transaction(
+    *,
+    card_transaction,
+    amount,
+    purchase_request=None,
+    travel_request=None,
+    project=None,
+    acting_user=None,
+    notes="",
+):
+    allocation = CardTransactionAllocation(
+        card_transaction=card_transaction,
+        amount=amount,
+        purchase_request=purchase_request,
+        travel_request=travel_request,
+        project=project,
+        created_by=acting_user,
+        notes=notes or "",
+    )
+    allocation.full_clean()
+
+    request_obj = purchase_request or travel_request
+    result = None
+    if request_obj is not None:
+        result = evaluate_actual_expense_policy(
+            request_obj,
+            current_actual_amount=amount,
+            payment_method=PaymentMethod.COMPANY_CARD,
+            currency=card_transaction.currency,
+        )
+        if not result.allows_recording:
+            apply_actual_expense_policy_result(
+                result,
+                card_transaction=card_transaction,
+                card_allocation=None,
+                acting_user=acting_user,
+            )
+
+    allocation.policy = result.policy if result else None
+    allocation.policy_action = result.action if result else ""
+    allocation.save()
+
+    if request_obj is not None and result is not None:
+        apply_actual_expense_policy_result(
+            result,
+            card_transaction=card_transaction,
+            card_allocation=allocation,
+            acting_user=acting_user,
+        )
+        if purchase_request is not None:
+            purchase_request.record_actual_spend(
+                spend_date=card_transaction.transaction_date,
+                amount=amount,
+                acting_user=acting_user,
+                vendor_name=card_transaction.merchant_name,
+                reference_no=card_transaction.reference_no,
+                notes=notes or "Company card allocation.",
+                skip_finance_policy=True,
+            )
+        elif travel_request is not None:
+            travel_request.record_actual_expense(
+                expense_type="MISC",
+                expense_date=card_transaction.transaction_date,
+                actual_amount=amount,
+                acting_user=acting_user,
+                currency=card_transaction.currency,
+                vendor_name=card_transaction.merchant_name,
+                reference_no=card_transaction.reference_no,
+                notes=notes or "Company card allocation.",
+                skip_finance_policy=True,
+            )
+    elif project is not None:
+        ProjectBudgetEntry.objects.create(
+            project=project,
+            entry_type=BudgetEntryType.CONSUME,
+            source_type=RequestType.PROJECT,
+            source_id=project.id,
+            amount=amount,
+            notes=f"Company card transaction {card_transaction.reference_no} allocated directly to project.",
+            created_by=acting_user,
+        )
+
+    card_transaction.refresh_match_status()
+    return allocation

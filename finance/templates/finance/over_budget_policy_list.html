@@ -1,0 +1,62 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Over-Budget Policies{% endblock %}
+{% block page_title %}Over-Budget Policies{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'finance:over_budget_policy_create' %}">Create Policy</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="get" class="action-row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Code or name">
+        <button type="submit">Filter</button>
+        <a href="{% url 'finance:over_budget_policy_list' %}">Reset</a>
+    </form>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Priority</th>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Request Type</th>
+                <th>Department</th>
+                <th>Project Type</th>
+                <th>Payment</th>
+                <th>Currency</th>
+                <th>Threshold</th>
+                <th>Action</th>
+                <th>Active</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for policy in page_obj.object_list %}
+            <tr>
+                <td>{{ policy.priority }}</td>
+                <td><a href="{% url 'finance:over_budget_policy_edit' policy.id %}">{{ policy.policy_code }}</a></td>
+                <td>{{ policy.policy_name }}</td>
+                <td>{{ policy.get_request_type_display }}</td>
+                <td>{{ policy.department|default:"-" }}</td>
+                <td>{{ policy.get_project_type_display|default:"-" }}</td>
+                <td>{{ policy.get_payment_method_display }}</td>
+                <td>{{ policy.currency|default:"All" }}</td>
+                <td>
+                    Amount {{ policy.over_amount_from|default:"0" }} - {{ policy.over_amount_to|default:"*" }};
+                    Percent {{ policy.over_percent_from|default:"0" }} - {{ policy.over_percent_to|default:"*" }}
+                </td>
+                <td>{{ policy.get_action_display }}</td>
+                <td>{{ policy.is_active|yesno:"Yes,No" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="11">No policies found.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
