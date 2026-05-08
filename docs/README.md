@@ -8,6 +8,8 @@ This folder contains project documentation for A8 OA.
 - [Current Version](versions/current.md)
 - [用户使用手册 中文](user-guide-zh.md)
 - [User Guide English](user-guide-en.md)
+- [Pilot Hardening Business-Control Gap Review](pilot-hardening-gap-review.md)
+- [Pilot Hardening Priority Matrix](pilot-hardening-priority-matrix.md)
 - [V0.4 Business UAT Checklist](uat/v0.4-business-uat.md)
 - [V0.4 Demo Script](uat/v0.4-demo-script.md)
 - [V0.4 UAT Result Matrix](uat/v0.4-result-matrix.md)
