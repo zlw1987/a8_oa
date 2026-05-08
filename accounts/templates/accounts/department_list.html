@@ -1,0 +1,95 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Departments{% endblock %}
+{% block page_title %}Departments{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{{ department_create_url }}">New Department</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Filter Departments</h2>
+    <form method="get">
+        <div class="summary-grid">
+            <div class="summary-label">Keyword</div>
+            <div><input type="text" name="q" value="{{ q }}" placeholder="Code, name, cost center, manager"></div>
+
+            <div class="summary-label">Department Type</div>
+            <div>
+                <select name="dept_type">
+                    <option value="">All</option>
+                    {% for value, label in dept_type_choices %}
+                    <option value="{{ value }}" {% if selected_dept_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="summary-label">Status</div>
+            <div>
+                <select name="status">
+                    <option value="" {% if not selected_status %}selected{% endif %}>All</option>
+                    <option value="active" {% if selected_status == "active" %}selected{% endif %}>Active</option>
+                    <option value="inactive" {% if selected_status == "inactive" %}selected{% endif %}>Inactive</option>
+                </select>
+            </div>
+        </div>
+        <div class="action-row" style="margin-top: 16px;">
+            <button type="submit">Apply</button>
+            <a href="{% url 'accounts:department_list' %}">Clear</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Department Directory</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Cost Center</th>
+                <th>Manager</th>
+                <th>Parent</th>
+                <th>Users</th>
+                <th>Children</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for department in departments %}
+            <tr>
+                <td><a href="{{ department.detail_url }}">{{ department.dept_code }}</a></td>
+                <td>{{ department.dept_name }}</td>
+                <td>{{ department.get_dept_type_display }}</td>
+                <td>{{ department.cost_center|default:"-" }}</td>
+                <td>{{ department.manager|default:"-" }}</td>
+                <td>{{ department.parent_department|default:"-" }}</td>
+                <td>{{ department.active_user_count }}</td>
+                <td>{{ department.child_department_count }}</td>
+                <td>
+                    {% if department.is_active %}
+                    <span class="badge badge-success">Active</span>
+                    {% else %}
+                    <span class="badge badge-dark">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{{ department.detail_url }}">Open</a>
+                    |
+                    <a href="{{ department.edit_url }}">Edit</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="10">No departments found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

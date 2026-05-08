@@ -1,0 +1,128 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}{{ department.dept_code }}{% endblock %}
+{% block page_title %}Department Detail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'accounts:department_list' %}">Back to Departments</a>
+        <a href="{{ department.edit_url }}">Edit Department</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>{{ department.dept_code }} - {{ department.dept_name }}</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Department Code</div>
+        <div>{{ department.dept_code }}</div>
+
+        <div class="summary-label">Department Name</div>
+        <div>{{ department.dept_name }}</div>
+
+        <div class="summary-label">Department Type</div>
+        <div>{{ department.get_dept_type_display }}</div>
+
+        <div class="summary-label">Cost Center</div>
+        <div>{{ department.cost_center|default:"-" }}</div>
+
+        <div class="summary-label">Manager</div>
+        <div>{{ department.manager|default:"-" }}</div>
+
+        <div class="summary-label">Parent Department</div>
+        <div>{{ department.parent_department|default:"-" }}</div>
+
+        <div class="summary-label">Sort Order</div>
+        <div>{{ department.sort_order }}</div>
+
+        <div class="summary-label">Status</div>
+        <div>
+            {% if department.is_active %}
+            <span class="badge badge-success">Active</span>
+            {% else %}
+            <span class="badge badge-dark">Inactive</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Department Users</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>User</th>
+                <th>Department Job Title</th>
+                <th>Can Approve</th>
+                <th>Status</th>
+                <th>Start Date</th>
+                <th>End Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for link in user_links %}
+            <tr>
+                <td>{{ link.user }}</td>
+                <td>{{ link.dept_job_title|default:"-" }}</td>
+                <td>
+                    {% if link.can_approve %}
+                    <span class="badge badge-info">Yes</span>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if link.is_active %}
+                    <span class="badge badge-success">Active</span>
+                    {% else %}
+                    <span class="badge badge-dark">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>{{ link.start_date|default:"-" }}</td>
+                <td>{{ link.end_date|default:"-" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6">No users linked to this department.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Child Departments</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Manager</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for child in child_departments %}
+            <tr>
+                <td>{{ child.dept_code }}</td>
+                <td>{{ child.dept_name }}</td>
+                <td>{{ child.get_dept_type_display }}</td>
+                <td>{{ child.manager|default:"-" }}</td>
+                <td>
+                    {% if child.is_active %}
+                    <span class="badge badge-success">Active</span>
+                    {% else %}
+                    <span class="badge badge-dark">Inactive</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5">No child departments.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
