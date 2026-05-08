@@ -16,6 +16,12 @@
         {{ filter_form.q }}
         {{ filter_form.status }}
         {{ filter_form.reason }}
+        {{ filter_form.source_type }}
+        {{ filter_form.policy_action }}
+        {{ filter_form.requester }}
+        {{ filter_form.department }}
+        {{ filter_form.project }}
+        {{ filter_form.min_age_days }}
         <button type="submit">Filter</button>
         <a href="{% url 'finance:accounting_review_queue' %}">Reset</a>
     </form>
@@ -26,13 +32,15 @@
         <thead>
             <tr>
                 <th>Created</th>
+                <th>Aging</th>
                 <th>Source</th>
+                <th>Requester / Department / Project</th>
                 <th>Reason</th>
                 <th>Status</th>
                 <th>Amount</th>
                 <th>Over</th>
                 <th>Policy</th>
-                <th>Description</th>
+                <th>Required Action</th>
                 <th>Decision</th>
             </tr>
         </thead>
@@ -40,17 +48,20 @@
             {% for item in page_obj.object_list %}
             <tr>
                 <td>{{ item.created_at }}</td>
+                <td>{{ item.aging_days }} days</td>
                 <td>
                     {{ item.get_source_type_display }}<br>
                     {% if item.purchase_request %}<a href="{% url 'purchase:pr_detail' item.purchase_request.id %}">{{ item.purchase_request.pr_no }}</a>{% endif %}
                     {% if item.travel_request %}<a href="{% url 'travel:tr_detail' item.travel_request.id %}">{{ item.travel_request.travel_no }}</a>{% endif %}
+                    {% if item.card_transaction %}<a href="{% url 'finance:card_transaction_detail' item.card_transaction.id %}">{{ item.card_transaction.reference_no }}</a>{% endif %}
                 </td>
+                <td>{{ item.requester_display }}<br>{{ item.department_display }}<br>{{ item.project_display }}</td>
                 <td>{{ item.get_reason_display }}</td>
                 <td>{{ item.get_status_display }}</td>
                 <td>{{ item.amount }}</td>
                 <td>{{ item.over_amount }} / {{ item.over_percent }}</td>
                 <td>{{ item.policy|default:"Default" }}<br>{{ item.policy_action }}</td>
-                <td>{{ item.description }}</td>
+                <td>{{ item.required_action_display }}<br><span class="muted">{{ item.description }}</span></td>
                 <td>
                     {% if item.is_unresolved %}
                     <form method="post" action="{% url 'finance:accounting_review_decide' item.id %}">
@@ -70,7 +81,7 @@
                 </td>
             </tr>
             {% empty %}
-            <tr><td colspan="9">No review items.</td></tr>
+            <tr><td colspan="11">No review items.</td></tr>
             {% endfor %}
         </tbody>
     </table>

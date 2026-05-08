@@ -757,6 +757,9 @@ class PurchaseRequest(models.Model):
         reference_no="",
         notes="",
         skip_finance_policy=False,
+        payment_method=None,
+        card_transaction=None,
+        card_allocation=None,
     ):
         if self.status != RequestStatus.APPROVED:
             raise ValidationError("Actual spend can only be recorded after the purchase request is fully approved.")
@@ -765,17 +768,19 @@ class PurchaseRequest(models.Model):
             raise ValidationError("Actual spend amount must be greater than 0.")
 
         policy_result = None
+        from finance.models import PaymentMethod
+
+        effective_payment_method = payment_method or PaymentMethod.REIMBURSEMENT
         if not skip_finance_policy:
             from finance.services import (
                 apply_actual_expense_policy_result,
                 evaluate_actual_expense_policy,
             )
-            from finance.models import PaymentMethod
 
             policy_result = evaluate_actual_expense_policy(
                 self,
                 current_actual_amount=amount,
-                payment_method=PaymentMethod.REIMBURSEMENT,
+                payment_method=effective_payment_method,
                 currency=self.currency,
             )
             if not policy_result.allows_recording:
@@ -809,8 +814,23 @@ class PurchaseRequest(models.Model):
             apply_actual_expense_policy_result(
                 policy_result,
                 actual_expense=actual_spend,
+                card_transaction=card_transaction,
+                card_allocation=card_allocation,
                 acting_user=acting_user,
             )
+
+        from finance.services import apply_receipt_policy_for_actual
+
+        apply_receipt_policy_for_actual(
+            self,
+            actual_expense=actual_spend,
+            amount=amount,
+            payment_method=effective_payment_method,
+            currency=self.currency,
+            card_transaction=card_transaction,
+            card_allocation=card_allocation,
+            acting_user=acting_user,
+        )
 
         ProjectBudgetEntry.objects.create(
             project=self.project,

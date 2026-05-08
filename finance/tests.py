@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from accounts.models import Department
@@ -12,11 +13,14 @@ from purchase.models import PurchaseRequest
 from .models import (
     AccountingReviewItem,
     AccountingReviewReason,
+    CardTransaction,
+    CardTransactionMatchStatus,
     OverBudgetAction,
     OverBudgetPolicy,
     PaymentMethod,
+    ReceiptPolicy,
 )
-from .services import evaluate_actual_expense_policy
+from .services import allocate_card_transaction, create_duplicate_card_review_item, evaluate_actual_expense_policy
 
 
 User = get_user_model()
@@ -124,3 +128,90 @@ class OverBudgetPolicyServiceTest(TestCase):
                 policy_action=OverBudgetAction.REVIEW,
             ).exists()
         )
+
+    def test_receipt_policy_creates_missing_receipt_review_item_and_blocks_close(self):
+        ReceiptPolicy.objects.create(
+            policy_code="RCPT-REQ",
+            policy_name="Receipt Required",
+            request_type=RequestType.PURCHASE,
+            payment_method=PaymentMethod.REIMBURSEMENT,
+            amount_from=Decimal("0.01"),
+            requires_receipt=True,
+            priority=1,
+            is_active=True,
+        )
+
+        actual_spend = self.purchase_request.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("50.00"),
+            acting_user=self.accounting,
+            vendor_name="Receipt Vendor",
+            reference_no="INV-RCPT",
+        )
+
+        self.assertTrue(
+            AccountingReviewItem.objects.filter(
+                purchase_request=self.purchase_request,
+                purchase_actual_spend=actual_spend,
+                reason=AccountingReviewReason.MISSING_RECEIPT,
+            ).exists()
+        )
+        with self.assertRaisesMessage(ValidationError, "Cannot close request while accounting review items are unresolved."):
+            self.purchase_request.close_purchase(acting_user=self.accounting)
+
+    def test_card_allocation_cannot_exceed_unallocated_amount(self):
+        card_transaction = CardTransaction.objects.create(
+            statement_date=date.today(),
+            transaction_date=date.today(),
+            merchant_name="Card Vendor",
+            amount=Decimal("100.00"),
+            currency="USD",
+            cardholder=self.requester,
+            reference_no="CARD-001",
+            imported_by=self.accounting,
+        )
+
+        allocate_card_transaction(
+            card_transaction=card_transaction,
+            amount=Decimal("80.00"),
+            purchase_request=self.purchase_request,
+            acting_user=self.accounting,
+        )
+        card_transaction.refresh_from_db()
+        self.assertEqual(card_transaction.match_status, CardTransactionMatchStatus.PARTIALLY_MATCHED)
+
+        with self.assertRaisesMessage(ValidationError, "Allocation amount cannot exceed"):
+            allocate_card_transaction(
+                card_transaction=card_transaction,
+                amount=Decimal("30.00"),
+                purchase_request=self.purchase_request,
+                acting_user=self.accounting,
+            )
+
+    def test_duplicate_card_transaction_creates_review_item_without_blocking(self):
+        base = CardTransaction.objects.create(
+            statement_date=date.today(),
+            transaction_date=date.today(),
+            merchant_name="Duplicate Merchant",
+            amount=Decimal("42.00"),
+            currency="USD",
+            cardholder=self.requester,
+            reference_no="DUP-001",
+            imported_by=self.accounting,
+        )
+        duplicate = CardTransaction.objects.create(
+            statement_date=base.statement_date,
+            transaction_date=base.transaction_date,
+            merchant_name=base.merchant_name,
+            amount=base.amount,
+            currency=base.currency,
+            cardholder=self.requester,
+            reference_no=base.reference_no,
+            imported_by=self.accounting,
+        )
+
+        review_item = create_duplicate_card_review_item(duplicate, created_by=self.accounting)
+
+        self.assertIsNotNone(review_item)
+        self.assertEqual(review_item.reason, AccountingReviewReason.DUPLICATE_CARD)
+        self.assertEqual(review_item.card_transaction, duplicate)

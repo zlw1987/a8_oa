@@ -608,6 +608,9 @@ class TravelRequest(models.Model):
             expense_location="",
             notes="",
             skip_finance_policy=False,
+            payment_method=None,
+            card_transaction=None,
+            card_allocation=None,
         ):
         allowed_statuses = [
             TravelRequestStatus.APPROVED,
@@ -622,17 +625,19 @@ class TravelRequest(models.Model):
                 "Approved, In Trip, Expense Pending, or Expense Submitted."
             )
         policy_result = None
+        from finance.models import PaymentMethod
+
+        effective_payment_method = payment_method or PaymentMethod.REIMBURSEMENT
         if not skip_finance_policy:
             from finance.services import (
                 apply_actual_expense_policy_result,
                 evaluate_actual_expense_policy,
             )
-            from finance.models import PaymentMethod
 
             policy_result = evaluate_actual_expense_policy(
                 self,
                 current_actual_amount=actual_amount,
-                payment_method=PaymentMethod.REIMBURSEMENT,
+                payment_method=effective_payment_method,
                 currency=currency or self.currency,
             )
             if not policy_result.allows_recording:
@@ -721,8 +726,24 @@ class TravelRequest(models.Model):
             apply_actual_expense_policy_result(
                 policy_result,
                 actual_expense=actual_line,
+                card_transaction=card_transaction,
+                card_allocation=card_allocation,
                 acting_user=acting_user,
             )
+
+        from finance.services import apply_receipt_policy_for_actual
+
+        apply_receipt_policy_for_actual(
+            self,
+            actual_expense=actual_line,
+            amount=actual_amount,
+            payment_method=effective_payment_method,
+            expense_type=expense_type,
+            currency=currency or self.currency,
+            card_transaction=card_transaction,
+            card_allocation=card_allocation,
+            acting_user=acting_user,
+        )
 
         from_status = self.status
 

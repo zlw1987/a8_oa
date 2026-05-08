@@ -1,9 +1,12 @@
+from datetime import timedelta
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .forms import (
@@ -12,14 +15,21 @@ from .forms import (
     CardTransactionAllocationForm,
     CardTransactionForm,
     OverBudgetPolicyForm,
+    ReceiptPolicyForm,
 )
 from .models import (
     AccountingReviewItem,
     AccountingReviewStatus,
     CardTransaction,
     OverBudgetPolicy,
+    ReceiptPolicy,
 )
-from .services import allocate_card_transaction
+from .reporting import build_finance_report_context
+from .services import (
+    allocate_card_transaction,
+    create_duplicate_card_review_item,
+    mark_card_transaction_reviewed,
+)
 
 
 def _enforce_finance_setup_permission(user):
@@ -81,6 +91,76 @@ def over_budget_policy_edit(request, pk):
 
 
 @login_required
+def receipt_policy_list(request):
+    _enforce_finance_setup_permission(request.user)
+    queryset = ReceiptPolicy.objects.select_related("department").order_by("priority", "policy_code")
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        queryset = queryset.filter(Q(policy_code__icontains=q) | Q(policy_name__icontains=q))
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "finance/receipt_policy_list.html",
+        {"page_obj": page_obj, "q": q},
+    )
+
+
+@login_required
+def receipt_policy_create(request):
+    _enforce_finance_setup_permission(request.user)
+    if request.method == "POST":
+        form = ReceiptPolicyForm(request.POST)
+        if form.is_valid():
+            policy = form.save()
+            messages.success(request, f"Receipt policy '{policy.policy_code}' created.")
+            return redirect("finance:receipt_policy_edit", pk=policy.pk)
+    else:
+        form = ReceiptPolicyForm()
+    return render(request, "finance/receipt_policy_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def receipt_policy_edit(request, pk):
+    _enforce_finance_setup_permission(request.user)
+    policy = get_object_or_404(ReceiptPolicy, pk=pk)
+    if request.method == "POST":
+        form = ReceiptPolicyForm(request.POST, instance=policy)
+        if form.is_valid():
+            policy = form.save()
+            messages.success(request, f"Receipt policy '{policy.policy_code}' updated.")
+            return redirect("finance:receipt_policy_edit", pk=policy.pk)
+    else:
+        form = ReceiptPolicyForm(instance=policy)
+    return render(
+        request,
+        "finance/receipt_policy_form.html",
+        {"form": form, "policy": policy, "page_mode": "edit"},
+    )
+
+
+def _enrich_review_items(items):
+    now = timezone.now()
+    for item in items:
+        request_obj = item.purchase_request or item.travel_request
+        item.source_request_obj = request_obj
+        item.aging_days = (now - item.created_at).days if item.created_at else 0
+        item.requester_display = getattr(getattr(request_obj, "requester", None), "username", "-") if request_obj else "-"
+        item.department_display = getattr(getattr(request_obj, "request_department", None), "dept_name", "-") if request_obj else "-"
+        item.project_display = getattr(getattr(request_obj, "project", None), "project_code", "-") if request_obj else "-"
+        if item.reason == "MISSING_RECEIPT":
+            item.required_action_display = "Upload required receipt/invoice or approve an exception."
+        elif item.reason == "DUPLICATE_CARD":
+            item.required_action_display = "Confirm duplicate status and resolve review."
+        elif item.policy_action == "AMENDMENT_REQUIRED":
+            item.required_action_display = "Create/approve amendment or approve accounting exception."
+        elif item.reason == "OVER_BUDGET":
+            item.required_action_display = "Review over-budget exception."
+        else:
+            item.required_action_display = "Review and resolve."
+    return items
+
+
+@login_required
 def accounting_review_queue(request):
     _enforce_accounting_permission(request.user)
     queryset = (
@@ -92,6 +172,10 @@ def accounting_review_queue(request):
             "policy",
             "assigned_reviewer",
             "reviewed_by",
+            "purchase_request__request_department",
+            "travel_request__request_department",
+            "purchase_request__project",
+            "travel_request__project",
         )
         .order_by("status", "-created_at", "-id")
     )
@@ -100,13 +184,45 @@ def accounting_review_queue(request):
         q = (form.cleaned_data.get("q") or "").strip()
         status = form.cleaned_data.get("status")
         reason = form.cleaned_data.get("reason")
+        source_type = form.cleaned_data.get("source_type")
+        policy_action = form.cleaned_data.get("policy_action")
+        requester = (form.cleaned_data.get("requester") or "").strip()
+        department = (form.cleaned_data.get("department") or "").strip()
+        project = (form.cleaned_data.get("project") or "").strip()
+        min_age_days = form.cleaned_data.get("min_age_days")
         if q:
             queryset = queryset.filter(Q(title__icontains=q) | Q(description__icontains=q))
         if status:
             queryset = queryset.filter(status=status)
         if reason:
             queryset = queryset.filter(reason=reason)
+        if source_type:
+            queryset = queryset.filter(source_type=source_type)
+        if policy_action:
+            queryset = queryset.filter(policy_action=policy_action)
+        if requester:
+            queryset = queryset.filter(
+                Q(purchase_request__requester__username__icontains=requester)
+                | Q(travel_request__requester__username__icontains=requester)
+            )
+        if department:
+            queryset = queryset.filter(
+                Q(purchase_request__request_department__dept_name__icontains=department)
+                | Q(purchase_request__request_department__dept_code__icontains=department)
+                | Q(travel_request__request_department__dept_name__icontains=department)
+                | Q(travel_request__request_department__dept_code__icontains=department)
+            )
+        if project:
+            queryset = queryset.filter(
+                Q(purchase_request__project__project_code__icontains=project)
+                | Q(purchase_request__project__project_name__icontains=project)
+                | Q(travel_request__project__project_code__icontains=project)
+                | Q(travel_request__project__project_name__icontains=project)
+            )
+        if min_age_days is not None:
+            queryset = queryset.filter(created_at__lte=timezone.now() - timedelta(days=min_age_days))
     page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    _enrich_review_items(page_obj.object_list)
     pending_count = queryset.filter(status=AccountingReviewStatus.PENDING_REVIEW).count()
     return render(
         request,
@@ -179,6 +295,7 @@ def card_transaction_create(request):
             transaction.imported_by = request.user
             transaction.save()
             if transaction.has_possible_duplicate():
+                create_duplicate_card_review_item(transaction, created_by=request.user)
                 messages.warning(request, "Possible duplicate card transaction detected.")
             messages.success(request, "Card transaction created.")
             return redirect("finance:card_transaction_detail", pk=transaction.pk)
@@ -232,3 +349,23 @@ def card_transaction_allocate(request, pk):
             for error in errors:
                 messages.error(request, f"{label}: {error}")
     return redirect("finance:card_transaction_detail", pk=transaction.pk)
+
+
+@login_required
+@require_POST
+def card_transaction_mark_reviewed(request, pk):
+    _enforce_accounting_permission(request.user)
+    transaction = get_object_or_404(CardTransaction, pk=pk)
+    try:
+        mark_card_transaction_reviewed(transaction, acting_user=request.user)
+        messages.success(request, "Card transaction marked reviewed.")
+    except ValidationError as exc:
+        for message in exc.messages:
+            messages.error(request, message)
+    return redirect("finance:card_transaction_detail", pk=transaction.pk)
+
+
+@login_required
+def finance_reports(request):
+    _enforce_accounting_permission(request.user)
+    return render(request, "finance/reports.html", build_finance_report_context())

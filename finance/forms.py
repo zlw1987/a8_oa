@@ -9,7 +9,9 @@ from .models import (
     AccountingReviewItem,
     CardTransaction,
     CardTransactionAllocation,
+    OverBudgetAction,
     OverBudgetPolicy,
+    ReceiptPolicy,
 )
 
 
@@ -33,6 +35,28 @@ class OverBudgetPolicyForm(forms.ModelForm):
             "requires_attachment",
             "requires_manager_review",
             "requires_finance_review",
+            "priority",
+            "is_active",
+        ]
+
+
+class ReceiptPolicyForm(forms.ModelForm):
+    class Meta:
+        model = ReceiptPolicy
+        fields = [
+            "policy_code",
+            "policy_name",
+            "request_type",
+            "department",
+            "project_type",
+            "expense_type",
+            "payment_method",
+            "currency",
+            "amount_from",
+            "amount_to",
+            "requires_receipt",
+            "requires_invoice",
+            "allows_exception",
             "priority",
             "is_active",
         ]
@@ -122,3 +146,15 @@ class AccountingReviewFilterForm(forms.Form):
     q = forms.CharField(required=False, label="Keyword")
     status = forms.ChoiceField(required=False, choices=[("", "All Statuses")] + list(AccountingReviewItem._meta.get_field("status").choices))
     reason = forms.ChoiceField(required=False, choices=[("", "All Reasons")] + list(AccountingReviewItem._meta.get_field("reason").choices))
+    source_type = forms.ChoiceField(
+        required=False,
+        choices=[("", "All Sources")] + list(AccountingReviewItem._meta.get_field("source_type").choices),
+    )
+    policy_action = forms.ChoiceField(
+        required=False,
+        choices=[("", "All Policy Actions")] + list(OverBudgetAction.choices),
+    )
+    requester = forms.CharField(required=False, label="Requester")
+    department = forms.CharField(required=False, label="Department")
+    project = forms.CharField(required=False, label="Project")
+    min_age_days = forms.IntegerField(required=False, min_value=0, label="Min Aging Days")

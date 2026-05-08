@@ -15,9 +15,11 @@ from .models import (
     AccountingReviewReason,
     AccountingReviewStatus,
     CardTransactionAllocation,
+    CardTransactionMatchStatus,
     OverBudgetAction,
     OverBudgetPolicy,
     PaymentMethod,
+    ReceiptPolicy,
 )
 
 
@@ -55,6 +57,25 @@ class ActualExpensePolicyResult:
             OverBudgetAction.REVIEW,
             OverBudgetAction.AMENDMENT_REQUIRED,
         ]
+
+
+@dataclass
+class ReceiptPolicyResult:
+    request_obj: object
+    request_type: str
+    amount: Decimal
+    payment_method: str
+    expense_type: str
+    currency: str
+    policy: ReceiptPolicy | None
+    requires_receipt: bool
+    requires_invoice: bool
+    allows_exception: bool
+    message: str
+
+    @property
+    def requires_review(self):
+        return self.requires_receipt or self.requires_invoice
 
 
 def _money(value):
@@ -122,6 +143,14 @@ def _matches_threshold(policy, over_amount, over_percent):
     return True
 
 
+def _matches_amount_threshold(policy, amount):
+    if policy.amount_from is not None and amount < policy.amount_from:
+        return False
+    if policy.amount_to is not None and amount > policy.amount_to:
+        return False
+    return True
+
+
 def resolve_over_budget_policy(
     *,
     request_obj,
@@ -148,6 +177,80 @@ def resolve_over_budget_policy(
         if _matches_threshold(policy, over_amount, over_percent):
             return policy
     return None
+
+
+def resolve_receipt_policy(
+    *,
+    request_obj,
+    amount,
+    payment_method=PaymentMethod.REIMBURSEMENT,
+    expense_type="",
+    currency="",
+):
+    request_type = get_request_type(request_obj)
+    department = get_request_department(request_obj)
+    project_type = get_request_project_type(request_obj)
+    effective_currency = currency or getattr(request_obj, "currency", "")
+    queryset = ReceiptPolicy.objects.filter(is_active=True).order_by("priority", "policy_code", "id")
+    queryset = queryset.filter(request_type__in=["ALL", request_type])
+    queryset = queryset.filter(payment_method__in=[PaymentMethod.ALL, payment_method])
+    queryset = queryset.filter(department__isnull=True) | queryset.filter(department=department)
+    queryset = queryset.filter(project_type__in=["", project_type])
+    queryset = queryset.filter(expense_type__in=["", expense_type or ""])
+    if effective_currency:
+        queryset = queryset.filter(currency__in=["", effective_currency])
+    else:
+        queryset = queryset.filter(currency="")
+
+    amount = _money(amount)
+    for policy in queryset:
+        if _matches_amount_threshold(policy, amount):
+            return policy
+    return None
+
+
+def evaluate_receipt_policy(
+    request_obj,
+    *,
+    amount,
+    payment_method=PaymentMethod.REIMBURSEMENT,
+    expense_type="",
+    currency="",
+):
+    amount = _money(amount)
+    request_type = get_request_type(request_obj)
+    effective_currency = currency or getattr(request_obj, "currency", "")
+    policy = resolve_receipt_policy(
+        request_obj=request_obj,
+        amount=amount,
+        payment_method=payment_method,
+        expense_type=expense_type,
+        currency=effective_currency,
+    )
+    requires_receipt = bool(policy.requires_receipt) if policy else False
+    requires_invoice = bool(policy.requires_invoice) if policy else False
+    allows_exception = bool(policy.allows_exception) if policy else True
+    requirements = []
+    if requires_receipt:
+        requirements.append("receipt")
+    if requires_invoice:
+        requirements.append("invoice")
+    message = "Required attachment is present."
+    if requirements:
+        message = f"Missing required {' and '.join(requirements)} for actual expense."
+    return ReceiptPolicyResult(
+        request_obj=request_obj,
+        request_type=request_type,
+        amount=amount,
+        payment_method=payment_method,
+        expense_type=expense_type or "",
+        currency=effective_currency,
+        policy=policy,
+        requires_receipt=requires_receipt,
+        requires_invoice=requires_invoice,
+        allows_exception=allows_exception,
+        message=message,
+    )
 
 
 def evaluate_actual_expense_policy(
@@ -210,6 +313,106 @@ def evaluate_actual_expense_policy(
         payment_method=payment_method,
         currency=effective_currency,
         message=message,
+    )
+
+
+def _request_has_attachment_for_receipt_policy(request_obj):
+    attachments = getattr(request_obj, "attachments", None)
+    if attachments is None:
+        return False
+    return attachments.exclude(document_type="ACCOUNTING_APPROVAL").exists()
+
+
+def _receipt_review_exists(result, actual_expense=None, card_transaction=None, card_allocation=None):
+    queryset = AccountingReviewItem.objects.filter(
+        reason=AccountingReviewReason.MISSING_RECEIPT,
+        status__in=OPEN_REVIEW_STATUSES,
+    )
+    if actual_expense is not None:
+        if result.request_type == RequestType.PURCHASE:
+            queryset = queryset.filter(purchase_actual_spend=actual_expense)
+        elif result.request_type == RequestType.TRAVEL:
+            queryset = queryset.filter(travel_actual_expense=actual_expense)
+    if card_transaction is not None:
+        queryset = queryset.filter(card_transaction=card_transaction)
+    if card_allocation is not None:
+        queryset = queryset.filter(card_allocation=card_allocation)
+    return queryset.exists()
+
+
+def apply_receipt_policy_result(
+    result,
+    *,
+    actual_expense=None,
+    card_transaction=None,
+    card_allocation=None,
+    acting_user=None,
+):
+    if not result.requires_review or _request_has_attachment_for_receipt_policy(result.request_obj):
+        return None
+    if _receipt_review_exists(result, actual_expense, card_transaction, card_allocation):
+        return None
+
+    content_type = None
+    object_id = None
+    if actual_expense is not None:
+        content_type = ContentType.objects.get_for_model(actual_expense)
+        object_id = actual_expense.pk
+
+    required = []
+    if result.requires_receipt:
+        required.append("receipt")
+    if result.requires_invoice:
+        required.append("invoice")
+    required_text = " and ".join(required) or "attachment"
+    request_obj = result.request_obj
+    return AccountingReviewItem.objects.create(
+        source_type=result.request_type,
+        purchase_request=request_obj if result.request_type == RequestType.PURCHASE else None,
+        travel_request=request_obj if result.request_type == RequestType.TRAVEL else None,
+        purchase_actual_spend=actual_expense if result.request_type == RequestType.PURCHASE else None,
+        travel_actual_expense=actual_expense if result.request_type == RequestType.TRAVEL else None,
+        card_transaction=card_transaction,
+        card_allocation=card_allocation,
+        source_content_type=content_type,
+        source_object_id=object_id,
+        reason=AccountingReviewReason.MISSING_RECEIPT,
+        status=AccountingReviewStatus.PENDING_REVIEW,
+        policy_action="",
+        amount=result.amount,
+        over_amount=Decimal("0.00"),
+        over_percent=Decimal("0.0000"),
+        title=f"{get_request_no(request_obj)} missing {required_text}",
+        description=result.message,
+        created_by=acting_user,
+    )
+
+
+def apply_receipt_policy_for_actual(
+    request_obj,
+    *,
+    actual_expense=None,
+    amount,
+    payment_method=PaymentMethod.REIMBURSEMENT,
+    expense_type="",
+    currency="",
+    card_transaction=None,
+    card_allocation=None,
+    acting_user=None,
+):
+    result = evaluate_receipt_policy(
+        request_obj,
+        amount=amount,
+        payment_method=payment_method,
+        expense_type=expense_type,
+        currency=currency,
+    )
+    return apply_receipt_policy_result(
+        result,
+        actual_expense=actual_expense,
+        card_transaction=card_transaction,
+        card_allocation=card_allocation,
+        acting_user=acting_user,
     )
 
 
@@ -397,6 +600,40 @@ def unresolved_review_items_for_request(request_obj):
     return queryset
 
 
+def create_duplicate_card_review_item(card_transaction, *, created_by=None):
+    if not card_transaction.has_possible_duplicate():
+        return None
+    if card_transaction.review_items.filter(
+        reason=AccountingReviewReason.DUPLICATE_CARD,
+        status__in=OPEN_REVIEW_STATUSES,
+    ).exists():
+        return None
+    return AccountingReviewItem.objects.create(
+        source_type="CARD_TRANSACTION",
+        card_transaction=card_transaction,
+        reason=AccountingReviewReason.DUPLICATE_CARD,
+        status=AccountingReviewStatus.PENDING_REVIEW,
+        amount=card_transaction.amount,
+        title=f"Possible duplicate card transaction {card_transaction.reference_no}",
+        description=(
+            "Same merchant, amount, transaction date, and reference were found. "
+            "Review before treating this as a legitimate separate transaction."
+        ),
+        created_by=created_by,
+    )
+
+
+@transaction.atomic
+def mark_card_transaction_reviewed(card_transaction, *, acting_user=None):
+    if card_transaction.match_status != CardTransactionMatchStatus.MATCHED:
+        raise ValidationError("Only fully matched card transactions can be marked reviewed.")
+    if card_transaction.review_items.filter(status__in=OPEN_REVIEW_STATUSES).exists():
+        raise ValidationError("Cannot mark card transaction reviewed while review items are unresolved.")
+    card_transaction.match_status = CardTransactionMatchStatus.REVIEWED
+    card_transaction.save(update_fields=["match_status"])
+    return card_transaction
+
+
 def validate_request_can_close(request_obj):
     if unresolved_review_items_for_request(request_obj).exists():
         raise ValidationError("Cannot close request while accounting review items are unresolved.")
@@ -453,6 +690,10 @@ def allocate_card_transaction(
     acting_user=None,
     notes="",
 ):
+    amount = _money(amount)
+    if amount > card_transaction.get_unallocated_amount():
+        raise ValidationError("Allocation amount cannot exceed the unallocated card transaction amount.")
+
     allocation = CardTransactionAllocation(
         card_transaction=card_transaction,
         amount=amount,
@@ -501,6 +742,9 @@ def allocate_card_transaction(
                 reference_no=card_transaction.reference_no,
                 notes=notes or "Company card allocation.",
                 skip_finance_policy=True,
+                payment_method=PaymentMethod.COMPANY_CARD,
+                card_transaction=card_transaction,
+                card_allocation=allocation,
             )
         elif travel_request is not None:
             travel_request.record_actual_expense(
@@ -513,6 +757,9 @@ def allocate_card_transaction(
                 reference_no=card_transaction.reference_no,
                 notes=notes or "Company card allocation.",
                 skip_finance_policy=True,
+                payment_method=PaymentMethod.COMPANY_CARD,
+                card_transaction=card_transaction,
+                card_allocation=allocation,
             )
     elif project is not None:
         ProjectBudgetEntry.objects.create(

@@ -603,6 +603,13 @@ def pr_upload_attachment(request, pk):
         attachment.purchase_request = purchase_request
         attachment.uploaded_by = request.user
         attachment.save()
+        purchase_request._add_content_audit(
+            "HEADER_UPDATED",
+            changed_by=request.user,
+            field_name="attachment",
+            new_value=attachment.title or attachment.filename,
+            notes=f"Attachment uploaded: {attachment.document_type}",
+        )
         messages.success(request, f"Attachment '{attachment.title}' uploaded successfully.")
     else:
         for field_name, errors in form.errors.items():
@@ -631,6 +638,13 @@ def pr_delete_attachment(request, pk, attachment_id):
     )
 
     attachment_title = attachment.title or attachment.filename
+    purchase_request._add_content_audit(
+        "HEADER_UPDATED",
+        changed_by=request.user,
+        field_name="attachment",
+        old_value=attachment_title,
+        notes=f"Attachment deleted: {attachment.document_type}",
+    )
     attachment.delete()
     messages.success(request, f"Attachment '{attachment_title}' deleted successfully.")
 
@@ -885,6 +899,13 @@ def pr_upload_actual_review_attachment(request, pk):
         attachment.document_type = PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
         attachment.uploaded_by = request.user
         attachment.save()
+        purchase_request._add_content_audit(
+            "HEADER_UPDATED",
+            changed_by=request.user,
+            field_name="attachment",
+            new_value=attachment.title or attachment.filename,
+            notes="Accounting approval attachment uploaded.",
+        )
         messages.success(request, "Accounting approval document uploaded successfully.")
     else:
         for field_name, errors in form.errors.items():

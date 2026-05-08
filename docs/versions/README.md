@@ -9,6 +9,7 @@ This directory tracks major functional versions of A8 OA.
 - [V0.3 Budget And Project Ledger](v0.3-budget-project-ledger.md): project budget reservation, release, consumption, and ledger visibility.
 - [V0.4 Finance Controls](v0.4-finance-controls.md): over-budget policies, accounting review queue, card transactions, and allocation controls.
 - [V0.5 Proposed Technical Design](v0.5-proposed-technical-design.md): proposed stabilization-driven scope after V0.4 UAT.
+- [V0.5 Business Control Completion](v0.5-business-control-complete.md): amendment, receipt policy, accounting workbench, card controls, reports, and production readiness.
 - [Current Version](current.md): latest implemented state and verification snapshot.
 
 ## Update Rule

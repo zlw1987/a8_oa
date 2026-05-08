@@ -26,6 +26,12 @@
         <div class="summary-label">Match Status</div><div>{{ transaction.get_match_status_display }}</div>
         <div class="summary-label">Unallocated</div><div>{{ transaction.get_unallocated_amount }}</div>
     </div>
+    {% if transaction.match_status == "MATCHED" %}
+    <form method="post" action="{% url 'finance:card_transaction_mark_reviewed' transaction.id %}" class="action-row" style="margin-top: 18px;">
+        {% csrf_token %}
+        <button type="submit">Mark Reviewed</button>
+    </form>
+    {% endif %}
 </div>
 
 <div class="card">

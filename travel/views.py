@@ -699,6 +699,14 @@ def tr_upload_attachment(request, pk):
         attachment.travel_request = travel_request
         attachment.uploaded_by = request.user
         attachment.save()
+        travel_request._add_content_audit(
+            "HEADER_UPDATED",
+            changed_by=request.user,
+            section="attachment",
+            field_name="attachment",
+            new_value=attachment.title or attachment.filename,
+            notes=f"Attachment uploaded: {attachment.document_type}",
+        )
         messages.success(request, f"Attachment '{attachment.title}' uploaded successfully.")
     else:
         for field_name, errors in form.errors.items():
@@ -729,6 +737,14 @@ def tr_delete_attachment(request, pk, attachment_id):
     )
 
     attachment_title = attachment.title or attachment.filename
+    travel_request._add_content_audit(
+        "HEADER_UPDATED",
+        changed_by=request.user,
+        section="attachment",
+        field_name="attachment",
+        old_value=attachment_title,
+        notes=f"Attachment deleted: {attachment.document_type}",
+    )
     attachment.delete()
     messages.success(request, f"Attachment '{attachment_title}' deleted successfully.")
 
@@ -855,6 +871,14 @@ def tr_upload_actual_review_attachment(request, pk):
         attachment.document_type = TravelAttachmentType.ACCOUNTING_APPROVAL
         attachment.uploaded_by = request.user
         attachment.save()
+        travel_request._add_content_audit(
+            "HEADER_UPDATED",
+            changed_by=request.user,
+            section="attachment",
+            field_name="attachment",
+            new_value=attachment.title or attachment.filename,
+            notes="Accounting approval attachment uploaded.",
+        )
         messages.success(request, "Accounting approval document uploaded successfully.")
     else:
         for field_name, errors in form.errors.items():

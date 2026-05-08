@@ -1,0 +1,132 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Finance Reports{% endblock %}
+{% block page_title %}Finance Reports{% endblock %}
+
+{% block content %}
+<div class="summary-cards">
+    <div class="summary-card"><div class="label">Reserved</div><div class="value">{{ reserved_vs_consumed.reserved }}</div></div>
+    <div class="summary-card"><div class="label">Released</div><div class="value">{{ reserved_vs_consumed.released }}</div></div>
+    <div class="summary-card"><div class="label">Consumed</div><div class="value">{{ reserved_vs_consumed.consumed }}</div></div>
+    <div class="summary-card"><div class="label">Open Reviews</div><div class="value">{{ review_aging_rows|length }}</div></div>
+</div>
+
+<div class="card">
+    <h2>Project Budget Summary</h2>
+    <table>
+        <thead><tr><th>Project</th><th>Department</th><th>Budget</th><th>Reserved</th><th>Consumed</th><th>Available</th></tr></thead>
+        <tbody>
+            {% for row in project_budget_rows %}
+            <tr>
+                <td><a href="{% url 'projects:project_detail' row.project.id %}">{{ row.project.project_code }}</a></td>
+                <td>{{ row.project.owning_department }}</td>
+                <td>{{ row.budget }}</td>
+                <td>{{ row.reserved }}</td>
+                <td>{{ row.consumed }}</td>
+                <td>{{ row.available }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6">No projects.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Department Spending Summary</h2>
+    <table>
+        <thead><tr><th>Department</th><th>Consumed</th></tr></thead>
+        <tbody>
+            {% for row in department_spending_rows %}
+            <tr><td>{{ row.department }}</td><td>{{ row.consumed }}</td></tr>
+            {% empty %}
+            <tr><td colspan="2">No consumed budget.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Open Requests With Remaining Reserve</h2>
+    <table>
+        <thead><tr><th>Type</th><th>Request</th><th>Status</th><th>Project</th><th>Remaining Reserve</th></tr></thead>
+        <tbody>
+            {% for row in open_reserve_rows %}
+            <tr>
+                <td>{{ row.type }}</td>
+                <td>
+                    {% if row.type == "Purchase" %}<a href="{% url 'purchase:pr_detail' row.request.id %}">{{ row.request.pr_no }}</a>{% endif %}
+                    {% if row.type == "Travel" %}<a href="{% url 'travel:tr_detail' row.request.id %}">{{ row.request.travel_no }}</a>{% endif %}
+                </td>
+                <td>{{ row.request.get_status_display }}</td>
+                <td>{{ row.request.project }}</td>
+                <td>{{ row.remaining }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">No open reserve.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Over-Budget Exceptions</h2>
+    <table>
+        <thead><tr><th>Created</th><th>Source</th><th>Status</th><th>Amount</th><th>Over</th><th>Policy Action</th></tr></thead>
+        <tbody>
+            {% for item in over_budget_items %}
+            <tr>
+                <td>{{ item.created_at }}</td>
+                <td>{{ item.title }}</td>
+                <td>{{ item.get_status_display }}</td>
+                <td>{{ item.amount }}</td>
+                <td>{{ item.over_amount }}</td>
+                <td>{{ item.policy_action }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6">No over-budget exceptions.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Company Card Unmatched Transactions</h2>
+    <table>
+        <thead><tr><th>Date</th><th>Merchant</th><th>Amount</th><th>Status</th><th>Reference</th></tr></thead>
+        <tbody>
+            {% for transaction in unmatched_card_transactions %}
+            <tr>
+                <td>{{ transaction.transaction_date }}</td>
+                <td><a href="{% url 'finance:card_transaction_detail' transaction.id %}">{{ transaction.merchant_name }}</a></td>
+                <td>{{ transaction.currency }} {{ transaction.amount }}</td>
+                <td>{{ transaction.get_match_status_display }}</td>
+                <td>{{ transaction.reference_no }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">No unmatched transactions.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2>Accounting Review Aging</h2>
+    <table>
+        <thead><tr><th>Created</th><th>Aging Days</th><th>Reason</th><th>Status</th><th>Description</th></tr></thead>
+        <tbody>
+            {% for row in review_aging_rows %}
+            <tr>
+                <td>{{ row.item.created_at }}</td>
+                <td>{{ row.aging_days }}</td>
+                <td>{{ row.item.get_reason_display }}</td>
+                <td>{{ row.item.get_status_display }}</td>
+                <td>{{ row.item.description }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5">No open review items.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

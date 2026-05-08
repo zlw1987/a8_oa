@@ -88,6 +88,52 @@ class OverBudgetPolicy(models.Model):
             raise ValidationError(errors)
 
 
+class ReceiptPolicy(models.Model):
+    REQUEST_TYPE_CHOICES = [
+        ("ALL", "All"),
+        (RequestType.PURCHASE, "Purchase Request"),
+        (RequestType.TRAVEL, "Travel Request"),
+    ]
+
+    policy_code = models.CharField(max_length=30, unique=True)
+    policy_name = models.CharField(max_length=120)
+    request_type = models.CharField(max_length=20, choices=REQUEST_TYPE_CHOICES, default="ALL")
+    department = models.ForeignKey(
+        "accounts.Department",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="receipt_policies",
+    )
+    project_type = models.CharField(max_length=30, choices=ProjectType, blank=True, default="")
+    expense_type = models.CharField(max_length=30, blank=True, default="")
+    payment_method = models.CharField(max_length=30, choices=PaymentMethod, default=PaymentMethod.ALL)
+    currency = models.CharField(max_length=10, choices=CurrencyCode, blank=True, default="")
+    amount_from = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    amount_to = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    requires_receipt = models.BooleanField(default=True)
+    requires_invoice = models.BooleanField(default=False)
+    allows_exception = models.BooleanField(default=True)
+    priority = models.PositiveIntegerField(default=100)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "PS_A8_FIN_RCPT_POL"
+        verbose_name = "Receipt Policy"
+        verbose_name_plural = "Receipt Policies"
+        ordering = ["priority", "policy_code"]
+
+    def __str__(self):
+        return f"{self.policy_code} - {self.policy_name}"
+
+    def clean(self):
+        super().clean()
+        if self.amount_from is not None and self.amount_to is not None and self.amount_from > self.amount_to:
+            raise ValidationError({"amount_to": "Amount to must be greater than or equal to amount from."})
+
+
 class AccountingReviewReason(models.TextChoices):
     OVER_BUDGET = "OVER_BUDGET", "Over Budget"
     MISSING_RECEIPT = "MISSING_RECEIPT", "Missing Receipt"
@@ -301,6 +347,7 @@ class CardTransaction(models.Model):
     def has_possible_duplicate(self):
         return CardTransaction.objects.filter(
             statement_date=self.statement_date,
+            transaction_date=self.transaction_date,
             amount=self.amount,
             merchant_name__iexact=self.merchant_name,
             reference_no=self.reference_no,

@@ -1,0 +1,55 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Receipt Policies{% endblock %}
+{% block page_title %}Receipt Policies{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a href="{% url 'finance:receipt_policy_create' %}">Create Receipt Policy</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="get" class="action-row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Search code or name">
+        <button type="submit">Search</button>
+        <a href="{% url 'finance:receipt_policy_list' %}">Reset</a>
+    </form>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Scope</th>
+                <th>Amount</th>
+                <th>Requirements</th>
+                <th>Priority</th>
+                <th>Active</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for policy in page_obj.object_list %}
+            <tr>
+                <td><a href="{% url 'finance:receipt_policy_edit' policy.id %}">{{ policy.policy_code }}</a></td>
+                <td>{{ policy.policy_name }}</td>
+                <td>{{ policy.get_request_type_display }} / {{ policy.get_payment_method_display }}<br>{{ policy.department|default:"All Departments" }}</td>
+                <td>{{ policy.currency|default:"Any" }} {{ policy.amount_from|default:"0.00" }} - {{ policy.amount_to|default:"No limit" }}</td>
+                <td>
+                    Receipt: {{ policy.requires_receipt|yesno:"Yes,No" }}<br>
+                    Invoice: {{ policy.requires_invoice|yesno:"Yes,No" }}<br>
+                    Exception: {{ policy.allows_exception|yesno:"Allowed,Not allowed" }}
+                </td>
+                <td>{{ policy.priority }}</td>
+                <td>{{ policy.is_active|yesno:"Yes,No" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7">No receipt policies.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

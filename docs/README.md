@@ -11,6 +11,8 @@ This folder contains project documentation for A8 OA.
 - [V0.4 UAT Result Matrix](uat/v0.4-result-matrix.md)
 - [V0.4 Current Behavior And Limitations](uat/v0.4-current-behavior-and-limitations.md)
 - [V0.5 Proposed Technical Design](versions/v0.5-proposed-technical-design.md)
+- [V0.5 Business Control Completion](versions/v0.5-business-control-complete.md)
+- [Production Readiness Checklist](production-readiness.md)
 - [V0.1 Foundation](versions/v0.1-foundation.md)
 - [V0.2 Purchase, Travel, And Approval](versions/v0.2-purchase-travel-approval.md)
 - [V0.3 Budget And Project Ledger](versions/v0.3-budget-project-ledger.md)
