@@ -1,0 +1,19 @@
+<div class="card">
+    <h2>Closeout Checklist</h2>
+    <div class="checklist">
+        {% for item in closeout_checklist %}
+        <div class="checklist-item {% if item.passed %}checklist-pass{% else %}checklist-fail{% endif %}">
+            <div class="checklist-mark">{% if item.passed %}OK{% else %}!{% endif %}</div>
+            <div class="checklist-body">
+                <div class="checklist-label">{{ item.label }}</div>
+                {% if item.detail %}
+                <div class="muted">{{ item.detail }}</div>
+                {% endif %}
+                {% if item.link %}
+                <a href="{{ item.link }}">Open blocker</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>

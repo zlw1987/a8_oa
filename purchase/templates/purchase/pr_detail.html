@@ -5,12 +5,18 @@
 
 {% block content %}
 
-{% include "includes/request_detail_actions.html" %}
-
 {% include "includes/request_detail_header.html" %}
+{% include "includes/financial_summary_cards.html" %}
+
+<div class="detail-two-column">
+    {% include "includes/closeout_checklist.html" %}
+    {% include "includes/action_panel.html" with title="Available Actions" description="Unavailable actions remain visible with the reason they are blocked." action_items=available_actions %}
+</div>
+
+{% include "includes/open_issues_panel.html" %}
 
 {% if purchase_request.parent_request or supplemental_requests %}
-<div class="card">
+<div class="card" id="actual-spending">
     <h2>Amendment / Revision</h2>
     <div class="summary-grid">
         {% if purchase_request.parent_request %}
@@ -62,8 +68,8 @@
 </div>
 {% endif %}
 
-<div class="card">
-    <h2>Purchase Details</h2>
+<div class="card" id="close-request">
+    <h2>Business Details</h2>
     <div class="summary-grid">
         <div class="summary-label">Fulfillment Status</div>
         <div>{{ purchase_request.get_fulfillment_status_display }}</div>
@@ -101,7 +107,8 @@
 
 <div class="card">
     <h2>Line Items</h2>
-    <table>
+    <div class="table-wrap">
+    <table class="data-table">
         <thead>
             <tr>
                 <th>Line No</th>
@@ -120,10 +127,10 @@
                 <td>{{ line.line_no }}</td>
                 <td>{{ line.item_name }}</td>
                 <td>{{ line.item_description }}</td>
-                <td>{{ line.quantity }}</td>
+                <td class="number">{{ line.quantity }}</td>
                 <td>{{ line.get_uom_display }}</td>
-                <td>{{ purchase_request.currency }} {{ line.unit_price }}</td>
-                <td>{{ purchase_request.currency }} {{ line.line_amount }}</td>
+                <td class="amount">{{ purchase_request.currency }} {{ line.unit_price }}</td>
+                <td class="amount">{{ purchase_request.currency }} {{ line.line_amount }}</td>
                 <td>{{ line.notes }}</td>
             </tr>
             {% empty %}
@@ -133,6 +140,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 
 <div class="card">
@@ -157,13 +165,16 @@
     </form>
     {% endif %}
 
-    <table style="margin-top: 16px;">
+    <div class="table-wrap" style="margin-top: 16px;">
+    <table class="data-table">
         <thead>
             <tr>
                 <th>Spend Date</th>
                 <th>Amount</th>
                 <th>Vendor</th>
                 <th>Reference No</th>
+                <th>Policy / Review</th>
+                <th>Card Transaction</th>
                 <th>Created By</th>
                 <th>Created At</th>
                 <th>Notes</th>
@@ -173,20 +184,40 @@
             {% for spend in actual_spend_entries %}
             <tr>
                 <td>{{ spend.spend_date }}</td>
-                <td>{{ spend.currency }} {{ spend.amount }}</td>
+                <td class="amount">{{ spend.currency }} {{ spend.amount }}</td>
                 <td>{{ spend.vendor_name }}</td>
                 <td>{{ spend.reference_no }}</td>
+                <td>
+                    {% if spend.review_items_ui %}
+                        {% for item in spend.review_items_ui %}
+                            {% include "includes/status_badge.html" with label=item.get_reason_display tone="attention" %}
+                            <a href="{% url 'finance:accounting_review_queue' %}">{{ item.get_status_display }}</a>{% if not forloop.last %}<br>{% endif %}
+                        {% endfor %}
+                    {% else %}
+                        {% include "includes/status_badge.html" with label="Within Budget" tone="success" %}
+                    {% endif %}
+                </td>
+                <td>
+                    {% for item in spend.review_items_ui %}
+                        {% if item.card_transaction %}
+                        <a href="{% url 'finance:card_transaction_detail' item.card_transaction.id %}">{{ item.card_transaction.reference_no }}</a>
+                        {% endif %}
+                    {% empty %}
+                    -
+                    {% endfor %}
+                </td>
                 <td>{{ spend.created_by }}</td>
                 <td>{{ spend.created_at }}</td>
                 <td>{{ spend.notes }}</td>
             </tr>
             {% empty %}
             <tr>
-                <td colspan="7">No actual spend records.</td>
+                <td colspan="9">No actual spend records.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% if purchase_request.is_over_estimate or purchase_request.actual_review_status != "NOT_REQUIRED" %}
 <div class="card">
@@ -271,13 +302,13 @@
 {% endif %}
 {% include "includes/request_detail_attachments.html" %}
 
-{% if can_close_purchase %}
 <div class="card">
     <h2>Close Purchase Request</h2>
     <p class="muted">
         Use this action when the purchase execution is complete. Any remaining reserved budget will be released.
     </p>
 
+    {% if can_close_purchase and not closeout_blocker_reason %}
     <form method="post" action="{% url 'purchase:pr_close' purchase_request.id %}">
         {% csrf_token %}
         <table>
@@ -292,13 +323,18 @@
             <button type="submit">Close Purchase Request</button>
         </div>
     </form>
+    {% else %}
+    <div class="alert alert-warning">
+        Close Request is disabled. {{ closeout_blocker_reason|default:"You do not have permission to close this request in its current state." }}
+    </div>
+    <button type="button" disabled>Close Purchase Request</button>
+    {% endif %}
 </div>
-{% endif %}
 
 {% include "includes/request_detail_approval_workflow.html" %}
 {% include "includes/request_notification_activity.html" %}
-<div class="card">
-    <h2>Content Audit</h2>
+<details class="card">
+    <summary>Content Audit</summary>
     <table>
         <thead>
             <tr>
@@ -331,10 +367,10 @@
             {% endfor %}
         </tbody>
     </table>
-</div>
+</details>
 
-<div class="card">
-    <h2>Request History</h2>
+<details class="card">
+    <summary>Request History</summary>
     <table>
         <thead>
             <tr>
@@ -363,5 +399,5 @@
             {% endfor %}
         </tbody>
     </table>
-</div>
+</details>
 {% endblock %}

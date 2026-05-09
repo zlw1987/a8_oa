@@ -1,0 +1,24 @@
+<div class="card">
+    <h2>Open Issues</h2>
+    {% if open_issues %}
+    <div class="issue-list">
+        {% for issue in open_issues %}
+        <div class="issue-item">
+            <div>
+                {% include "includes/status_badge.html" with label=issue.severity tone=issue.tone %}
+                <strong>{{ issue.type }}</strong>
+            </div>
+            <div>{{ issue.explanation }}</div>
+            {% if issue.owner %}
+            <div class="muted">Owner: {{ issue.owner }}</div>
+            {% endif %}
+            {% if issue.link %}
+            <a href="{{ issue.link }}">Open issue</a>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No open issues.</p>
+    {% endif %}
+</div>

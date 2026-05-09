@@ -34,11 +34,45 @@ def get_status_badge_tone(status):
     return STATUS_TONE_MAP.get(str(status).upper(), "neutral")
 
 
-def build_action_state(label, enabled, reason="", url="", method="get"):
+def build_action_state(label, enabled, reason="", url="", method="get", style="secondary"):
     return {
         "label": label,
         "enabled": bool(enabled),
         "reason": reason or "",
         "url": url or "",
         "method": method,
+        "style": style,
+    }
+
+
+def format_money(currency, amount):
+    return f"{currency} {amount}"
+
+
+def build_summary_card(label, value, tone="neutral", detail=""):
+    return {
+        "label": label,
+        "value": value,
+        "tone": tone,
+        "detail": detail,
+    }
+
+
+def build_checklist_item(label, passed, detail="", link=""):
+    return {
+        "label": label,
+        "passed": bool(passed),
+        "detail": detail or "",
+        "link": link or "",
+    }
+
+
+def build_open_issue(issue_type, severity, explanation, owner="", link=""):
+    return {
+        "type": issue_type,
+        "severity": severity,
+        "explanation": explanation,
+        "owner": owner or "",
+        "link": link or "",
+        "tone": get_status_badge_tone(severity),
     }

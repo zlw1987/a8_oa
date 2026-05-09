@@ -53,6 +53,12 @@ from approvals.access import (
 from .presentation import (
     decorate_purchase_list_item,
     build_purchase_detail_ui_flags,
+    build_purchase_available_actions,
+    build_purchase_closeout_checklist,
+    build_purchase_detail_header,
+    build_purchase_financial_summary,
+    build_purchase_open_issues,
+    get_first_failed_checklist_reason,
 )
 from approvals.presentation import build_request_workflow_context
 from .audit import (
@@ -200,6 +206,8 @@ def pr_detail(request, pk):
         document_type=PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
     )
     actual_spend_entries = purchase_request.actual_spend_entries.all()
+    for spend in actual_spend_entries:
+        spend.review_items_ui = list(spend.accounting_review_items.all())
     content_audits = purchase_request.content_audits.all()
     approval_tasks = purchase_request.approval_tasks.all().order_by("step_no")
     histories = purchase_request.history_entries.all()
@@ -301,27 +309,28 @@ def pr_detail(request, pk):
         ]
     }
 
-    request_header = {
-        "request_label": "Purchase Request",
-        "request_no": purchase_request.pr_no,
-        "request_title": purchase_request.title,
-        "request_status": purchase_request.get_status_display(),
-        "requester": purchase_request.requester,
-        "request_department": purchase_request.request_department,
-        "project": purchase_request.project,
-        "matched_rule": purchase_request.matched_rule,
-        "current_step": workflow_ui["current_step"],
-        "current_approver": workflow_ui["current_approver"],
-        "approval_progress": workflow_ui["approval_progress"],
-        "current_task_assignment_label": workflow_ui["current_task_assignment_label"],
-        "request_currency": purchase_request.currency,
-        "request_amount": purchase_request.estimated_total,
-    }
+    request_header = build_purchase_detail_header(purchase_request, workflow_ui)
 
     ui_flags = build_purchase_detail_ui_flags(
         purchase_request,
         request.user,
         workflow_ui["current_task"],
+    )
+    closeout_checklist = build_purchase_closeout_checklist(
+        purchase_request,
+        workflow_ui["current_task"],
+    )
+    closeout_blocker_reason = get_first_failed_checklist_reason(closeout_checklist)
+    financial_summary_cards = build_purchase_financial_summary(purchase_request)
+    open_issues = build_purchase_open_issues(
+        purchase_request,
+        workflow_ui["current_task"],
+    )
+    available_actions = build_purchase_available_actions(
+        purchase_request,
+        request.user,
+        ui_flags,
+        closeout_checklist,
     )
 
     attachment_form = (
@@ -437,6 +446,11 @@ def pr_detail(request, pk):
         "current_task_assignment_label": workflow_ui["current_task_assignment_label"],
         "request_header": request_header,
         "detail_actions": detail_actions,
+        "available_actions": available_actions,
+        "closeout_checklist": closeout_checklist,
+        "closeout_blocker_reason": closeout_blocker_reason,
+        "financial_summary_cards": financial_summary_cards,
+        "open_issues": open_issues,
         "current_task_ui": current_task_ui,
         "budget_meaning": budget_meaning,
         "budget_snapshot_ui": budget_snapshot_ui,

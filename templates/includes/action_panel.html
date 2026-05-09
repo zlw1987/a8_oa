@@ -5,6 +5,24 @@
         {% if reason %}<div class="action-panel-reason">{{ reason }}</div>{% endif %}
     </div>
     <div class="action-row">
-        {{ actions }}
+        {% for action in action_items %}
+            {% if action.enabled and action.url %}
+                {% if action.method == "post" %}
+                <form method="post" action="{{ action.url }}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-{{ action.style|default:'secondary' }}">{{ action.label }}</button>
+                </form>
+                {% else %}
+                <a class="btn btn-{{ action.style|default:'secondary' }}" href="{{ action.url }}">{{ action.label }}</a>
+                {% endif %}
+            {% else %}
+            <span class="action-disabled">
+                <span class="btn btn-disabled" title="{{ action.reason }}">{{ action.label }}</span>
+                {% if action.reason %}
+                <span class="action-disabled-reason">{{ action.reason }}</span>
+                {% endif %}
+            </span>
+            {% endif %}
+        {% endfor %}
     </div>
 </div>

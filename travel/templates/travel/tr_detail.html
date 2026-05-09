@@ -5,12 +5,18 @@
 
 {% block content %}
 
-{% include "includes/request_detail_actions.html" %}
-
 {% include "includes/request_detail_header.html" %}
+{% include "includes/financial_summary_cards.html" %}
+
+<div class="detail-two-column">
+    {% include "includes/closeout_checklist.html" %}
+    {% include "includes/action_panel.html" with title="Available Actions" description="Unavailable actions remain visible with the reason they are blocked." action_items=available_actions %}
+</div>
+
+{% include "includes/open_issues_panel.html" %}
 
 {% if travel_request.parent_request or supplemental_requests %}
-<div class="card">
+<div class="card" id="actual-expenses">
     <h2>Amendment / Revision</h2>
     <div class="summary-grid">
         {% if travel_request.parent_request %}
@@ -62,8 +68,8 @@
 </div>
 {% endif %}
 
-<div class="card">
-    <h2>Travel Details</h2>
+<div class="card" id="close-request">
+    <h2>Business Details</h2>
     <div class="summary-grid">
         <div class="summary-label">Origin City</div>
         <div>{{ travel_request.origin_city }}</div>
@@ -108,7 +114,8 @@
 
 <div class="card">
     <h2>Itinerary</h2>
-    <table>
+    <div class="table-wrap">
+    <table class="data-table">
         <thead>
             <tr>
                 <th>Line No</th>
@@ -140,11 +147,13 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 
 <div class="card">
     <h2>Estimated Expenses</h2>
-    <table>
+    <div class="table-wrap">
+    <table class="data-table">
         <thead>
             <tr>
                 <th>Line No</th>
@@ -168,7 +177,7 @@
                 <td>{{ line.get_expense_type_display }}</td>
                 <td>{{ line.get_location_mode_display }}</td>
                 <td>{{ line.expense_date }}</td>
-                <td>{{ line.currency }} {{ line.estimated_amount }}</td>
+                <td class="amount">{{ line.currency }} {{ line.estimated_amount }}</td>
                 <td>{{ line.from_location }}</td>
                 <td>{{ line.to_location }}</td>
                 <td>{{ line.expense_location }}</td>
@@ -184,6 +193,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 
 <div class="card">
@@ -208,7 +218,8 @@
     </form>
     {% endif %}
 
-    <table style="margin-top: 16px;">
+    <div class="table-wrap" style="margin-top: 16px;">
+    <table class="data-table">
         <thead>
             <tr>
                 <th>Line No</th>
@@ -218,6 +229,8 @@
                 <th>Estimated Link</th>
                 <th>Vendor</th>
                 <th>Reference No</th>
+                <th>Policy / Review</th>
+                <th>Card Transaction</th>
                 <th>Expense Location</th>
                 <th>Notes</th>
                 <th>Created By</th>
@@ -230,7 +243,7 @@
                 <td>{{ line.line_no }}</td>
                 <td>{{ line.get_expense_type_display }}</td>
                 <td>{{ line.expense_date }}</td>
-                <td>{{ line.currency }} {{ line.actual_amount }}</td>
+                <td class="amount">{{ line.currency }} {{ line.actual_amount }}</td>
                 <td>
                     {% if line.estimated_expense_line %}
                     Line {{ line.estimated_expense_line.line_no }} -
@@ -241,6 +254,25 @@
                 </td>
                 <td>{{ line.vendor_name }}</td>
                 <td>{{ line.reference_no }}</td>
+                <td>
+                    {% if line.review_items_ui %}
+                        {% for item in line.review_items_ui %}
+                            {% include "includes/status_badge.html" with label=item.get_reason_display tone="attention" %}
+                            <a href="{% url 'finance:accounting_review_queue' %}">{{ item.get_status_display }}</a>{% if not forloop.last %}<br>{% endif %}
+                        {% endfor %}
+                    {% else %}
+                        {% include "includes/status_badge.html" with label="Within Budget" tone="success" %}
+                    {% endif %}
+                </td>
+                <td>
+                    {% for item in line.review_items_ui %}
+                        {% if item.card_transaction %}
+                        <a href="{% url 'finance:card_transaction_detail' item.card_transaction.id %}">{{ item.card_transaction.reference_no }}</a>
+                        {% endif %}
+                    {% empty %}
+                    -
+                    {% endfor %}
+                </td>
                 <td>{{ line.expense_location }}</td>
                 <td>{{ line.notes }}</td>
                 <td>{{ line.created_by }}</td>
@@ -248,11 +280,12 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="11">No actual expense lines.</td>
+                <td colspan="13">No actual expense lines.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 
 {% if travel_request.is_over_estimate or travel_request.actual_review_status != "NOT_REQUIRED" %}
@@ -338,13 +371,13 @@
 {% endif %}
 {% include "includes/request_detail_attachments.html" %}
 
-{% if can_close %}
 <div class="card">
     <h2>Close Travel Request</h2>
     <p class="muted">
         Use this action when the trip and expense recording are complete.
     </p>
 
+    {% if can_close and not closeout_blocker_reason %}
     <form method="post" action="{% url 'travel:tr_close' travel_request.id %}">
         {% csrf_token %}
         <table>
@@ -359,13 +392,18 @@
             <button type="submit">Close Travel Request</button>
         </div>
     </form>
+    {% else %}
+    <div class="alert alert-warning">
+        Close Request is disabled. {{ closeout_blocker_reason|default:"You do not have permission to close this request in its current state." }}
+    </div>
+    <button type="button" disabled>Close Travel Request</button>
+    {% endif %}
 </div>
-{% endif %}
 
 {% include "includes/request_detail_approval_workflow.html" %}
 {% include "includes/request_notification_activity.html" %}
-<div class="card">
-    <h2>Content Audit</h2>
+<details class="card">
+    <summary>Content Audit</summary>
     <table>
         <thead>
             <tr>
@@ -400,10 +438,10 @@
             {% endfor %}
         </tbody>
     </table>
-</div>
+</details>
 
-<div class="card">
-    <h2>Request History</h2>
+<details class="card">
+    <summary>Request History</summary>
     <table>
         <thead>
             <tr>
@@ -432,5 +470,5 @@
             {% endfor %}
         </tbody>
     </table>
-</div>
+</details>
 {% endblock %}

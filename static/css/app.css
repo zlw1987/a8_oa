@@ -161,6 +161,139 @@ main {
     line-height: 1.2;
 }
 
+.summary-card-success {
+    border-color: #b7dfc3;
+    background: #fbfffc;
+}
+
+.summary-card-attention,
+.summary-card-warning {
+    border-color: #efd47f;
+    background: #fffdf5;
+}
+
+.summary-card-danger {
+    border-color: #f3b8b8;
+    background: #fffafa;
+}
+
+.request-hero {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    justify-content: space-between;
+}
+
+.request-hero h2 {
+    margin-bottom: 10px;
+}
+
+.request-hero-main {
+    min-width: 0;
+}
+
+.request-hero-meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.request-hero-side {
+    min-width: 210px;
+    padding: 12px;
+    border: 1px solid #d9dde3;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.request-hero-amount {
+    margin-top: 6px;
+    font-size: 26px;
+    font-weight: 700;
+}
+
+.financial-summary-cards {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.checklist,
+.issue-list {
+    display: grid;
+    gap: 10px;
+}
+
+.checklist-item,
+.issue-item {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid #d9dde3;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.checklist-item {
+    grid-template-columns: 28px minmax(0, 1fr);
+}
+
+.checklist-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-weight: 700;
+}
+
+.checklist-pass .checklist-mark {
+    background: #e6f4ea;
+    color: #1e4620;
+}
+
+.checklist-fail .checklist-mark {
+    background: #fdeaea;
+    color: #8a1f1f;
+}
+
+.checklist-label {
+    font-weight: 700;
+}
+
+.detail-two-column {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+    gap: 16px;
+    align-items: start;
+    margin: 0 16px;
+}
+
+.detail-two-column > .card {
+    margin: 0;
+}
+
+.detail-section-group {
+    display: grid;
+    gap: 16px;
+    margin: 16px;
+}
+
+.detail-section-group > .card {
+    margin: 0;
+}
+
+details.card > summary {
+    cursor: pointer;
+    color: #263238;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+details.card > summary + * {
+    margin-top: 16px;
+}
+
 /* Summary grids */
 .summary-grid {
     display: grid;
@@ -282,6 +415,18 @@ button:disabled {
     background: #eef0f3;
     color: #808895;
     cursor: not-allowed;
+}
+
+.action-disabled {
+    display: inline-grid;
+    gap: 4px;
+    max-width: 260px;
+}
+
+.action-disabled-reason {
+    color: #68707d;
+    font-size: 12px;
+    line-height: 1.3;
 }
 
 /* Forms */
@@ -466,6 +611,11 @@ th,
     .summary-cards {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .financial-summary-cards,
+    .detail-two-column {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 720px) {
@@ -486,5 +636,19 @@ th,
     .summary-grid,
     .summary-cards {
         grid-template-columns: 1fr;
+    }
+
+    .request-hero {
+        display: block;
+    }
+
+    .request-hero-side {
+        margin-top: 14px;
+    }
+
+    .detail-two-column,
+    .detail-section-group {
+        margin-left: 0;
+        margin-right: 0;
     }
 }

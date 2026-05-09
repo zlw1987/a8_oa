@@ -1,15 +1,22 @@
+<div class="card request-hero">
+    <div class="request-hero-main">
+        <div class="muted">{{ request_header.request_label }}</div>
+        <h2>{{ request_header.request_no }} - {{ request_header.request_title }}</h2>
+        <div class="request-hero-meta">
+            {% include "includes/status_badge.html" with label=request_header.request_status tone=request_header.status_tone %}
+            <span>Owner: {{ request_header.current_owner|default:"-" }}</span>
+            <span>Progress: {{ request_header.approval_progress|default:"-" }}</span>
+        </div>
+    </div>
+    <div class="request-hero-side">
+        <div class="summary-label">Amount</div>
+        <div class="request-hero-amount">{{ request_header.request_currency }} {{ request_header.request_amount }}</div>
+    </div>
+</div>
+
 <div class="card">
-    <h2>{{ request_header.request_label }} Summary</h2>
+    <h2>Request Header</h2>
     <div class="summary-grid">
-        <div class="summary-label">Request No</div>
-        <div>{{ request_header.request_no }}</div>
-
-        <div class="summary-label">Title / Purpose</div>
-        <div>{{ request_header.request_title }}</div>
-
-        <div class="summary-label">Status</div>
-        <div class="status">{{ request_header.request_status }}</div>
-
         <div class="summary-label">Requester</div>
         <div>{{ request_header.requester }}</div>
 
@@ -18,6 +25,15 @@
 
         <div class="summary-label">Project</div>
         <div>{{ request_header.project|default:"-" }}</div>
+
+        <div class="summary-label">Request Date</div>
+        <div>{{ request_header.request_date|default:"-" }}</div>
+
+        <div class="summary-label">Current Step</div>
+        <div>{{ request_header.current_step|default:"-" }}</div>
+
+        <div class="summary-label">Next Action Owner</div>
+        <div>{{ request_header.current_owner|default:"-" }}</div>
 
         <div class="summary-label">Matched Approval Rule</div>
         <div>
@@ -28,21 +44,12 @@
             {% endif %}
         </div>
 
-        <div class="summary-label">Current Step</div>
-        <div>{{ request_header.current_step|default:"-" }}</div>
-
-        <div class="summary-label">Current Approver</div>
-        <div>{{ request_header.current_approver|default:"-" }}</div>
-
         <div class="summary-label">Approval Progress</div>
         <div>{{ request_header.approval_progress|default:"-" }}</div>
 
-        {% if request_header.current_task_assignment_label %}
-        <div class="summary-label">Current Task Ownership</div>
-        <div>{{ request_header.current_task_assignment_label }}</div>
-        {% endif %}
-
-        <div class="summary-label">Amount</div>
-        <div>{{ request_header.request_currency }} {{ request_header.request_amount }}</div>
+        {% for row in request_header.extra_rows %}
+        <div class="summary-label">{{ row.label }}</div>
+        <div>{{ row.value|default:"-" }}</div>
+        {% endfor %}
     </div>
 </div>

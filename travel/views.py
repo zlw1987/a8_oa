@@ -51,6 +51,12 @@ from approvals.presentation import build_request_workflow_context
 from .presentation import (
     decorate_travel_list_item,
     build_travel_detail_ui_flags,
+    build_travel_available_actions,
+    build_travel_closeout_checklist,
+    build_travel_detail_header,
+    build_travel_financial_summary,
+    build_travel_open_issues,
+    get_first_failed_checklist_reason,
 )
 from .services import (
     create_travel_request_from_forms,
@@ -275,26 +281,13 @@ def tr_detail(request, pk):
         ]
     }
 
-    request_header = {
-        "request_label": "Travel Request",
-        "request_no": travel_request.travel_no,
-        "request_title": travel_request.purpose,
-        "request_status": travel_request.get_status_display(),
-        "requester": travel_request.requester,
-        "request_department": travel_request.request_department,
-        "project": travel_request.project,
-        "matched_rule": travel_request.matched_rule,
-        "current_step": workflow_ui["current_step"],
-        "current_approver": workflow_ui["current_approver"],
-        "approval_progress": workflow_ui["approval_progress"],
-        "current_task_assignment_label": workflow_ui["current_task_assignment_label"],
-        "request_currency": travel_request.currency,
-        "request_amount": travel_request.estimated_total,
-    }
+    request_header = build_travel_detail_header(travel_request, workflow_ui)
 
     itineraries = travel_request.itineraries.all().order_by("line_no")
     expense_lines = travel_request.estimated_expense_lines.all().order_by("line_no")
     actual_expense_lines = travel_request.actual_expense_lines.all().order_by("line_no")
+    for line in actual_expense_lines:
+        line.review_items_ui = list(line.accounting_review_items.all())
     attachments = travel_request.attachments.all()
     review_attachments = attachments.filter(
         document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
@@ -329,6 +322,22 @@ def tr_detail(request, pk):
     content_audits = travel_request.content_audits.all()
     histories = travel_request.history_entries.all()
     supplemental_requests = travel_request.supplemental_requests.all().order_by("-request_date", "-id")
+    closeout_checklist = build_travel_closeout_checklist(
+        travel_request,
+        workflow_ui["current_task"],
+    )
+    closeout_blocker_reason = get_first_failed_checklist_reason(closeout_checklist)
+    financial_summary_cards = build_travel_financial_summary(travel_request)
+    open_issues = build_travel_open_issues(
+        travel_request,
+        workflow_ui["current_task"],
+    )
+    available_actions = build_travel_available_actions(
+        travel_request,
+        request.user,
+        ui_flags,
+        closeout_checklist,
+    )
 
     attachment_form = (
         TravelRequestAttachmentForm()
@@ -416,6 +425,11 @@ def tr_detail(request, pk):
         "reserved_remaining": travel_request.get_reserved_remaining_amount(),
         "request_header": request_header,
         "detail_actions": detail_actions,
+        "available_actions": available_actions,
+        "closeout_checklist": closeout_checklist,
+        "closeout_blocker_reason": closeout_blocker_reason,
+        "financial_summary_cards": financial_summary_cards,
+        "open_issues": open_issues,
         "current_task_ui": current_task_ui,
         "budget_meaning": budget_meaning,
         "budget_snapshot_ui": budget_snapshot_ui,

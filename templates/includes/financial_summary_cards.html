@@ -1,0 +1,14 @@
+<div class="card">
+    <h2>Financial Summary</h2>
+    <div class="summary-cards financial-summary-cards">
+        {% for card in financial_summary_cards %}
+        <div class="summary-card summary-card-{{ card.tone|default:'neutral' }}">
+            <div class="label">{{ card.label }}</div>
+            <div class="value">{{ card.value }}</div>
+            {% if card.detail %}
+            <div class="muted">{{ card.detail }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
