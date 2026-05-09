@@ -1,0 +1,12 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/rsnwvvl103hc/a8_oa
+    - export PYTHON=/home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python
+    - /bin/mkdir -p $DEPLOYPATH
+    - /bin/rsync -av --delete --exclude='.git' --exclude='.venv' --exclude='.env' --exclude='db.sqlite3' --exclude='media' --exclude='sent_emails' --exclude='passenger.log' --exclude='tmp' ./ $DEPLOYPATH/
+    - cd $DEPLOYPATH && $PYTHON -m pip install -r requirements.txt
+    - cd $DEPLOYPATH && DJANGO_SETTINGS_MODULE=config.settings_godaddy $PYTHON manage.py migrate
+    - cd $DEPLOYPATH && DJANGO_SETTINGS_MODULE=config.settings_godaddy $PYTHON manage.py collectstatic --noinput
+    - /bin/mkdir -p $DEPLOYPATH/tmp
+    - /bin/touch $DEPLOYPATH/tmp/restart.txt

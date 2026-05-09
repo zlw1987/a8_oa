@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# A8 OA local/deployment runtime files
+.env
+staticfiles/
+passenger.log
+.codex-test-*.log
