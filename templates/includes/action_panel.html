@@ -1,0 +1,10 @@
+<div class="card action-panel">
+    <div class="action-panel-body">
+        {% if title %}<p class="action-panel-title">{{ title }}</p>{% endif %}
+        {% if description %}<div class="muted">{{ description }}</div>{% endif %}
+        {% if reason %}<div class="action-panel-reason">{{ reason }}</div>{% endif %}
+    </div>
+    <div class="action-row">
+        {{ actions }}
+    </div>
+</div>
