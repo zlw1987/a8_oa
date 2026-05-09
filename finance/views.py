@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -25,6 +26,12 @@ from .models import (
     ReceiptPolicy,
 )
 from .reporting import build_finance_report_context
+from .presentation import (
+    apply_accounting_review_tab,
+    build_accounting_review_tabs,
+    enrich_review_item,
+    enrich_review_items,
+)
 from .services import (
     allocate_card_transaction,
     create_duplicate_card_review_item,
@@ -138,28 +145,6 @@ def receipt_policy_edit(request, pk):
     )
 
 
-def _enrich_review_items(items):
-    now = timezone.now()
-    for item in items:
-        request_obj = item.purchase_request or item.travel_request
-        item.source_request_obj = request_obj
-        item.aging_days = (now - item.created_at).days if item.created_at else 0
-        item.requester_display = getattr(getattr(request_obj, "requester", None), "username", "-") if request_obj else "-"
-        item.department_display = getattr(getattr(request_obj, "request_department", None), "dept_name", "-") if request_obj else "-"
-        item.project_display = getattr(getattr(request_obj, "project", None), "project_code", "-") if request_obj else "-"
-        if item.reason == "MISSING_RECEIPT":
-            item.required_action_display = "Upload required receipt/invoice or approve an exception."
-        elif item.reason == "DUPLICATE_CARD":
-            item.required_action_display = "Confirm duplicate status and resolve review."
-        elif item.policy_action == "AMENDMENT_REQUIRED":
-            item.required_action_display = "Create/approve amendment or approve accounting exception."
-        elif item.reason == "OVER_BUDGET":
-            item.required_action_display = "Review over-budget exception."
-        else:
-            item.required_action_display = "Review and resolve."
-    return items
-
-
 @login_required
 def accounting_review_queue(request):
     _enforce_accounting_permission(request.user)
@@ -176,9 +161,14 @@ def accounting_review_queue(request):
             "travel_request__request_department",
             "purchase_request__project",
             "travel_request__project",
+            "card_transaction",
+            "card_allocation",
+            "card_allocation__card_transaction",
         )
         .order_by("status", "-created_at", "-id")
     )
+    active_tab = request.GET.get("tab") or "pending"
+    queryset = apply_accounting_review_tab(queryset, active_tab)
     form = AccountingReviewFilterForm(request.GET or None)
     if form.is_valid():
         q = (form.cleaned_data.get("q") or "").strip()
@@ -222,12 +212,63 @@ def accounting_review_queue(request):
         if min_age_days is not None:
             queryset = queryset.filter(created_at__lte=timezone.now() - timedelta(days=min_age_days))
     page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
-    _enrich_review_items(page_obj.object_list)
+    enrich_review_items(page_obj.object_list)
     pending_count = queryset.filter(status=AccountingReviewStatus.PENDING_REVIEW).count()
     return render(
         request,
         "finance/accounting_review_queue.html",
-        {"filter_form": form, "page_obj": page_obj, "pending_count": pending_count},
+        {
+            "filter_form": form,
+            "page_obj": page_obj,
+            "pending_count": pending_count,
+            "review_tabs": build_accounting_review_tabs(active_tab, reverse("finance:accounting_review_queue")),
+            "active_tab": active_tab,
+        },
+    )
+
+
+@login_required
+def accounting_review_detail(request, pk):
+    _enforce_accounting_permission(request.user)
+    item = get_object_or_404(
+        AccountingReviewItem.objects.select_related(
+            "purchase_request",
+            "travel_request",
+            "purchase_request__requester",
+            "travel_request__requester",
+            "purchase_request__request_department",
+            "travel_request__request_department",
+            "purchase_request__project",
+            "travel_request__project",
+            "purchase_actual_spend",
+            "travel_actual_expense",
+            "card_transaction",
+            "card_allocation",
+            "card_allocation__card_transaction",
+            "policy",
+            "assigned_reviewer",
+            "reviewed_by",
+            "created_by",
+        ),
+        pk=pk,
+    )
+    enrich_review_item(item)
+    initial_decision = request.GET.get("decision") or ""
+    form = AccountingReviewDecisionForm(initial={"decision": initial_decision})
+    requester_id = None
+    if item.purchase_request_id:
+        requester_id = item.purchase_request.requester_id
+    elif item.travel_request_id:
+        requester_id = item.travel_request.requester_id
+    can_decide = item.is_unresolved and requester_id != request.user.id
+    return render(
+        request,
+        "finance/accounting_review_detail.html",
+        {
+            "item": item,
+            "form": form,
+            "can_decide": can_decide,
+        },
     )
 
 
@@ -264,7 +305,8 @@ def accounting_review_decide(request, pk):
         messages.success(request, "Accounting review item updated.")
     else:
         messages.error(request, "Invalid review decision.")
-    return redirect("finance:accounting_review_queue")
+    next_url = request.POST.get("next") or reverse("finance:accounting_review_queue")
+    return redirect(next_url)
 
 
 @login_required

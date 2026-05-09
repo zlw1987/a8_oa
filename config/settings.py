@@ -70,6 +70,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 "projects.context_processors.project_nav",
+                "common.context_processors.top_navigation",
             ],
         },
     },

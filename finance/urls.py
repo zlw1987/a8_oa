@@ -13,6 +13,7 @@ urlpatterns = [
     path("policies/receipt/<int:pk>/edit/", views.receipt_policy_edit, name="receipt_policy_edit"),
     path("reports/", views.finance_reports, name="finance_reports"),
     path("accounting-review/", views.accounting_review_queue, name="accounting_review_queue"),
+    path("accounting-review/<int:pk>/", views.accounting_review_detail, name="accounting_review_detail"),
     path("accounting-review/<int:pk>/decide/", views.accounting_review_decide, name="accounting_review_decide"),
     path("card-transactions/", views.card_transaction_list, name="card_transaction_list"),
     path("card-transactions/create/", views.card_transaction_create, name="card_transaction_create"),

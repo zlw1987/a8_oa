@@ -1,0 +1,118 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Accounting Review Detail{% endblock %}
+{% block page_title %}Accounting Review Detail{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="action-row">
+        <a class="btn btn-secondary" href="{% url 'finance:accounting_review_queue' %}">Back to Queue</a>
+    </div>
+</div>
+
+<div class="card request-hero">
+    <div class="request-hero-main">
+        <div class="muted">Accounting Review Item</div>
+        <h2>{{ item.title|default:item.get_reason_display }}</h2>
+        <div class="request-hero-meta">
+            {% include "includes/status_badge.html" with label=item.get_status_display tone=item.status_tone %}
+            {% include "includes/status_badge.html" with label=item.severity.label tone=item.severity.tone %}
+            {% include "includes/status_badge.html" with label=item.aging_bucket.label tone=item.aging_bucket.tone %}
+        </div>
+    </div>
+    <div class="request-hero-side">
+        <div class="summary-label">Amount</div>
+        <div class="request-hero-amount">{{ item.amount }}</div>
+    </div>
+</div>
+
+<div class="detail-two-column">
+    <div class="card">
+        <h2>Issue Summary</h2>
+        <div class="summary-grid">
+            <div class="summary-label">Source</div>
+            <div>
+                {% for link in item.source_links %}
+                <a href="{{ link.url }}">{{ link.label }}</a>{% if not forloop.last %}<br>{% endif %}
+                {% empty %}
+                -
+                {% endfor %}
+            </div>
+
+            <div class="summary-label">Requester</div>
+            <div>{{ item.requester_display }}</div>
+
+            <div class="summary-label">Department</div>
+            <div>{{ item.department_display }}</div>
+
+            <div class="summary-label">Project</div>
+            <div>{{ item.project_display }}</div>
+
+            <div class="summary-label">Reason</div>
+            <div>{% include "includes/status_badge.html" with label=item.get_reason_display tone=item.reason_tone %}</div>
+
+            <div class="summary-label">Policy Action</div>
+            <div>
+                {% if item.policy_action %}
+                {% include "includes/status_badge.html" with label=item.get_policy_action_display tone=item.policy_action_tone %}
+                {% else %}
+                -
+                {% endif %}
+            </div>
+
+            <div class="summary-label">Variance</div>
+            <div>{{ item.over_amount }} / {{ item.over_percent }}</div>
+
+            <div class="summary-label">Required Action</div>
+            <div>{{ item.required_action_display }}</div>
+
+            <div class="summary-label">Description</div>
+            <div>{{ item.description|default:"-" }}</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Review Decision</h2>
+        {% if can_decide %}
+        <form method="post" action="{% url 'finance:accounting_review_decide' item.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'finance:accounting_review_detail' item.id %}">
+            {% include "includes/form_field.html" with field=form.decision %}
+            {% include "includes/form_field.html" with field=form.comment %}
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">Save Decision</button>
+            </div>
+        </form>
+        {% elif item.is_unresolved %}
+        <div class="alert alert-warning">
+            You cannot resolve this item. Requester self-review is not allowed.
+        </div>
+        {% else %}
+        <div class="summary-grid">
+            <div class="summary-label">Decision</div>
+            <div>{{ item.get_decision_display|default:"-" }}</div>
+            <div class="summary-label">Reviewed By</div>
+            <div>{{ item.reviewed_by|default:"-" }}</div>
+            <div class="summary-label">Reviewed At</div>
+            <div>{{ item.reviewed_at|default:"-" }}</div>
+            <div class="summary-label">Comment</div>
+            <div>{{ item.comment|default:"-" }}</div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Audit Context</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Created By</div>
+        <div>{{ item.created_by|default:"-" }}</div>
+        <div class="summary-label">Created At</div>
+        <div>{{ item.created_at }}</div>
+        <div class="summary-label">Assigned Reviewer</div>
+        <div>{{ item.assigned_reviewer|default:"-" }}</div>
+        <div class="summary-label">Policy</div>
+        <div>{{ item.policy|default:"Default" }}</div>
+    </div>
+</div>
+{% endblock %}

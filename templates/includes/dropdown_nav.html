@@ -1,0 +1,22 @@
+<div class="nav-menu{% if group.active %} is-active{% endif %}" data-nav-menu>
+    <button
+        type="button"
+        class="nav-menu-trigger"
+        aria-expanded="false"
+        aria-haspopup="true"
+        data-nav-trigger
+    >
+        {{ group.label }}
+    </button>
+    <div class="nav-dropdown" data-nav-dropdown>
+        {% for item in group.items %}
+        <a
+            href="{{ item.url }}"
+            class="nav-dropdown-item{% if item.active %} is-active{% endif %}"
+            {% if item.active %}aria-current="page"{% endif %}
+        >
+            {{ item.label }}
+        </a>
+        {% endfor %}
+    </div>
+</div>

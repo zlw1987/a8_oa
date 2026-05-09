@@ -5,14 +5,35 @@
 
 {% block content %}
 <div class="card">
-    <div class="summary-grid">
-        <div class="summary-label">Pending Items</div>
-        <div>{{ pending_count }}</div>
+    <div class="summary-cards">
+        <div class="summary-card">
+            <div class="label">Current Tab</div>
+            <div class="value">{{ active_tab|title }}</div>
+        </div>
+        <div class="summary-card {% if pending_count %}summary-card-attention{% else %}summary-card-success{% endif %}">
+            <div class="label">Pending Items</div>
+            <div class="value">{{ pending_count }}</div>
+        </div>
     </div>
 </div>
 
 <div class="card">
-    <form method="get" class="action-row">
+    <div class="tab-row" role="tablist" aria-label="Accounting review filters">
+        {% for tab in review_tabs %}
+        <a
+            href="{{ tab.url }}"
+            class="tab-link{% if tab.active %} is-active{% endif %}"
+            {% if tab.active %}aria-current="page"{% endif %}
+        >
+            {{ tab.label }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="card">
+    <form method="get" class="filter-grid">
+        <input type="hidden" name="tab" value="{{ active_tab }}">
         {{ filter_form.q }}
         {{ filter_form.status }}
         {{ filter_form.reason }}
@@ -23,67 +44,92 @@
         {{ filter_form.project }}
         {{ filter_form.min_age_days }}
         <button type="submit">Filter</button>
-        <a href="{% url 'finance:accounting_review_queue' %}">Reset</a>
+        <a class="btn btn-secondary" href="{% url 'finance:accounting_review_queue' %}?tab={{ active_tab }}">Reset</a>
     </form>
 </div>
 
 <div class="card">
-    <table>
-        <thead>
-            <tr>
-                <th>Created</th>
-                <th>Aging</th>
-                <th>Source</th>
-                <th>Requester / Department / Project</th>
-                <th>Reason</th>
-                <th>Status</th>
-                <th>Amount</th>
-                <th>Over</th>
-                <th>Policy</th>
-                <th>Required Action</th>
-                <th>Decision</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in page_obj.object_list %}
-            <tr>
-                <td>{{ item.created_at }}</td>
-                <td>{{ item.aging_days }} days</td>
-                <td>
-                    {{ item.get_source_type_display }}<br>
-                    {% if item.purchase_request %}<a href="{% url 'purchase:pr_detail' item.purchase_request.id %}">{{ item.purchase_request.pr_no }}</a>{% endif %}
-                    {% if item.travel_request %}<a href="{% url 'travel:tr_detail' item.travel_request.id %}">{{ item.travel_request.travel_no }}</a>{% endif %}
-                    {% if item.card_transaction %}<a href="{% url 'finance:card_transaction_detail' item.card_transaction.id %}">{{ item.card_transaction.reference_no }}</a>{% endif %}
-                </td>
-                <td>{{ item.requester_display }}<br>{{ item.department_display }}<br>{{ item.project_display }}</td>
-                <td>{{ item.get_reason_display }}</td>
-                <td>{{ item.get_status_display }}</td>
-                <td>{{ item.amount }}</td>
-                <td>{{ item.over_amount }} / {{ item.over_percent }}</td>
-                <td>{{ item.policy|default:"Default" }}<br>{{ item.policy_action }}</td>
-                <td>{{ item.required_action_display }}<br><span class="muted">{{ item.description }}</span></td>
-                <td>
-                    {% if item.is_unresolved %}
-                    <form method="post" action="{% url 'finance:accounting_review_decide' item.id %}">
-                        {% csrf_token %}
-                        <select name="decision">
-                            <option value="APPROVE_EXCEPTION">Approve Exception</option>
-                            <option value="RETURN">Return</option>
-                            <option value="REJECT">Reject</option>
-                            <option value="RESOLVE">Resolve</option>
-                        </select>
-                        <textarea name="comment" placeholder="Comment"></textarea>
-                        <button type="submit">Save</button>
-                    </form>
-                    {% else %}
-                    {{ item.get_decision_display }}<br>{{ item.reviewed_by|default:"-" }}
-                    {% endif %}
-                </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="11">No review items.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <h2>Review Workbench</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Source</th>
+                    <th>Requester / Department / Project</th>
+                    <th>Reason</th>
+                    <th>Policy Action</th>
+                    <th>Amount</th>
+                    <th>Variance</th>
+                    <th>Aging / Severity</th>
+                    <th>Required Action</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in page_obj.object_list %}
+                <tr>
+                    <td>
+                        <strong>{{ item.get_source_type_display }}</strong><br>
+                        {% for link in item.source_links %}
+                        <a href="{{ link.url }}">{{ link.label }}</a>{% if not forloop.last %}<br>{% endif %}
+                        {% empty %}
+                        <span class="muted">No linked source</span>
+                        {% endfor %}
+                    </td>
+                    <td>
+                        {{ item.requester_display }}<br>
+                        <span class="muted">{{ item.department_display }}</span><br>
+                        <span class="muted">{{ item.project_display }}</span>
+                    </td>
+                    <td>{% include "includes/status_badge.html" with label=item.get_reason_display tone=item.reason_tone %}</td>
+                    <td>
+                        {% if item.policy_action %}
+                        {% include "includes/status_badge.html" with label=item.get_policy_action_display tone=item.policy_action_tone %}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td class="amount">{{ item.amount }}</td>
+                    <td class="amount">{{ item.over_amount }}<br><span class="muted">{{ item.over_percent }}</span></td>
+                    <td>
+                        {% include "includes/status_badge.html" with label=item.aging_bucket.label tone=item.aging_bucket.tone %}
+                        <br>
+                        {% include "includes/status_badge.html" with label=item.severity.label tone=item.severity.tone %}
+                    </td>
+                    <td>
+                        {{ item.required_action_display }}
+                        {% if item.description %}
+                        <div class="muted">{{ item.description }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{% include "includes/status_badge.html" with label=item.get_status_display tone=item.status_tone %}</td>
+                    <td>
+                        <div class="action-row">
+                            <a class="btn btn-secondary" href="{{ item.detail_url }}">View</a>
+                            {% if item.is_unresolved %}
+                            <a class="btn btn-primary" href="{{ item.detail_url }}?decision=RESOLVE">Resolve</a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="10">No review items.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if page_obj.has_other_pages %}
+    <div class="pagination" style="margin-top: 16px;">
+        {% if page_obj.has_previous %}
+        <a href="?tab={{ active_tab }}&page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+        <a href="?tab={{ active_tab }}&page={{ page_obj.next_page_number }}">Next</a>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 {% endblock %}
