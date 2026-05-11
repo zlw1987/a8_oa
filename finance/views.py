@@ -28,12 +28,15 @@ from .models import (
 from .reporting import build_finance_report_context
 from .presentation import (
     apply_accounting_review_tab,
+    build_accounting_review_tab_counts,
     build_accounting_review_tabs,
     build_card_review_action,
     build_card_transaction_summary,
     enrich_card_review_items,
     enrich_review_item,
     enrich_review_items,
+    has_active_accounting_review_filters,
+    has_active_advanced_accounting_review_filters,
 )
 from .services import (
     allocate_card_transaction,
@@ -151,7 +154,7 @@ def receipt_policy_edit(request, pk):
 @login_required
 def accounting_review_queue(request):
     _enforce_accounting_permission(request.user)
-    queryset = (
+    base_queryset = (
         AccountingReviewItem.objects.select_related(
             "purchase_request",
             "travel_request",
@@ -171,9 +174,14 @@ def accounting_review_queue(request):
         .order_by("status", "-created_at", "-id")
     )
     active_tab = request.GET.get("tab") or "pending"
-    queryset = apply_accounting_review_tab(queryset, active_tab)
+    tab_counts = build_accounting_review_tab_counts(base_queryset)
+    queryset = apply_accounting_review_tab(base_queryset, active_tab)
     form = AccountingReviewFilterForm(request.GET or None)
+    has_active_filters = False
+    advanced_filters_open = False
     if form.is_valid():
+        has_active_filters = has_active_accounting_review_filters(form.cleaned_data)
+        advanced_filters_open = has_active_advanced_accounting_review_filters(form.cleaned_data)
         q = (form.cleaned_data.get("q") or "").strip()
         status = form.cleaned_data.get("status")
         reason = form.cleaned_data.get("reason")
@@ -214,9 +222,13 @@ def accounting_review_queue(request):
             )
         if min_age_days is not None:
             queryset = queryset.filter(created_at__lte=timezone.now() - timedelta(days=min_age_days))
+    pagination_query = request.GET.copy()
+    pagination_query.pop("page", None)
     page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
     enrich_review_items(page_obj.object_list)
     pending_count = queryset.filter(status=AccountingReviewStatus.PENDING_REVIEW).count()
+    base_url = reverse("finance:accounting_review_queue")
+    reset_url = f"{base_url}?tab={active_tab}"
     return render(
         request,
         "finance/accounting_review_queue.html",
@@ -224,8 +236,12 @@ def accounting_review_queue(request):
             "filter_form": form,
             "page_obj": page_obj,
             "pending_count": pending_count,
-            "review_tabs": build_accounting_review_tabs(active_tab, reverse("finance:accounting_review_queue")),
+            "review_tabs": build_accounting_review_tabs(active_tab, base_url, counts=tab_counts),
             "active_tab": active_tab,
+            "has_active_filters": has_active_filters,
+            "advanced_filters_open": advanced_filters_open,
+            "reset_url": reset_url,
+            "pagination_querystring": pagination_query.urlencode(),
         },
     )
 

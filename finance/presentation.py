@@ -93,25 +93,58 @@ def enrich_review_items(items):
     return items
 
 
-def build_accounting_review_tabs(active_tab, base_url):
-    tab_defs = [
-        ("pending", "All Pending"),
-        ("over_budget", "Over-Budget"),
-        ("missing_receipt", "Missing Receipt"),
-        ("amendment", "Amendment Required"),
-        ("duplicate_card", "Duplicate Card"),
-        ("returned", "Returned"),
-        ("resolved", "Resolved"),
+ACCOUNTING_REVIEW_TAB_DEFS = [
+    ("pending", "All Pending"),
+    ("over_budget", "Over-Budget"),
+    ("missing_receipt", "Missing Receipt"),
+    ("amendment", "Amendment Required"),
+    ("duplicate_card", "Duplicate Card"),
+    ("returned", "Returned"),
+    ("resolved", "Resolved"),
+]
+
+
+def build_accounting_review_tabs(active_tab, base_url, counts=None):
+    counts = counts or {}
+    tabs = []
+    for key, label in ACCOUNTING_REVIEW_TAB_DEFS:
+        count = counts.get(key)
+        display_label = f"{label} ({count})" if count is not None else label
+        tabs.append(
+            {
+                "key": key,
+                "label": display_label,
+                "url": f"{base_url}?tab={key}",
+                "active": active_tab == key,
+            }
+        )
+    return tabs
+
+
+def build_accounting_review_tab_counts(queryset):
+    return {
+        key: apply_accounting_review_tab(queryset, key).count()
+        for key, _label in ACCOUNTING_REVIEW_TAB_DEFS
+    }
+
+
+def has_active_accounting_review_filters(cleaned_data):
+    filter_keys = [
+        "q",
+        "status",
+        "reason",
+        "source_type",
+        "policy_action",
+        "requester",
+        "department",
+        "project",
+        "min_age_days",
     ]
-    return [
-        {
-            "key": key,
-            "label": label,
-            "url": f"{base_url}?tab={key}",
-            "active": active_tab == key,
-        }
-        for key, label in tab_defs
-    ]
+    return any(cleaned_data.get(key) not in [None, ""] for key in filter_keys)
+
+
+def has_active_advanced_accounting_review_filters(cleaned_data):
+    return any(cleaned_data.get(key) not in [None, ""] for key in ["requester", "department", "project", "min_age_days"])
 
 
 def apply_accounting_review_tab(queryset, tab):

@@ -1,13 +1,40 @@
 {% extends "purchase/base.html" %}
+{% load money %}
 
 {% block title %}Finance Reports{% endblock %}
 {% block page_title %}Finance Reports{% endblock %}
 
 {% block content %}
+<div class="alert alert-info">
+    Finance report totals are grouped by currency. The current system does not perform exchange-rate conversion, so USD,
+    TWD, EUR, and other currencies are not silently combined.
+</div>
+
 <div class="summary-cards">
-    <div class="summary-card"><div class="label">Reserved</div><div class="value">{{ reserved_vs_consumed.reserved }}</div></div>
-    <div class="summary-card"><div class="label">Released</div><div class="value">{{ reserved_vs_consumed.released }}</div></div>
-    <div class="summary-card"><div class="label">Consumed</div><div class="value">{{ reserved_vs_consumed.consumed }}</div></div>
+    <div class="summary-card">
+        <div class="label">Reserved</div>
+        {% for row in reserved_vs_consumed %}
+        <div class="value">{{ row.reserved|money:row.currency }}</div>
+        {% empty %}
+        <div class="value">{{ 0|money:"USD" }}</div>
+        {% endfor %}
+    </div>
+    <div class="summary-card">
+        <div class="label">Released</div>
+        {% for row in reserved_vs_consumed %}
+        <div class="value">{{ row.released|money:row.currency }}</div>
+        {% empty %}
+        <div class="value">{{ 0|money:"USD" }}</div>
+        {% endfor %}
+    </div>
+    <div class="summary-card">
+        <div class="label">Consumed</div>
+        {% for row in reserved_vs_consumed %}
+        <div class="value">{{ row.consumed|money:row.currency }}</div>
+        {% empty %}
+        <div class="value">{{ 0|money:"USD" }}</div>
+        {% endfor %}
+    </div>
     <div class="summary-card"><div class="label">Open Reviews</div><div class="value">{{ review_aging_rows|length }}</div></div>
 </div>
 
@@ -20,10 +47,10 @@
             <tr>
                 <td><a href="{% url 'projects:project_detail' row.project.id %}">{{ row.project.project_code }}</a></td>
                 <td>{{ row.project.owning_department }}</td>
-                <td>{{ row.budget }}</td>
-                <td>{{ row.reserved }}</td>
-                <td>{{ row.consumed }}</td>
-                <td>{{ row.available }}</td>
+                <td>{{ row.budget|money:row.currency }}</td>
+                <td>{{ row.reserved|money:row.currency }}</td>
+                <td>{{ row.consumed|money:row.currency }}</td>
+                <td>{{ row.available|money:row.currency }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="6">No projects.</td></tr>
@@ -38,7 +65,7 @@
         <thead><tr><th>Department</th><th>Consumed</th></tr></thead>
         <tbody>
             {% for row in department_spending_rows %}
-            <tr><td>{{ row.department }}</td><td>{{ row.consumed }}</td></tr>
+            <tr><td>{{ row.department }}</td><td>{{ row.consumed|money:row.currency }}</td></tr>
             {% empty %}
             <tr><td colspan="2">No consumed budget.</td></tr>
             {% endfor %}
@@ -60,7 +87,7 @@
                 </td>
                 <td>{{ row.request.get_status_display }}</td>
                 <td>{{ row.request.project }}</td>
-                <td>{{ row.remaining }}</td>
+                <td>{{ row.remaining|money:row.currency }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="5">No open reserve.</td></tr>
@@ -79,8 +106,8 @@
                 <td>{{ item.created_at }}</td>
                 <td>{{ item.title }}</td>
                 <td>{{ item.get_status_display }}</td>
-                <td>{{ item.amount }}</td>
-                <td>{{ item.over_amount }}</td>
+                <td>{{ item.amount|money:item.report_currency }}</td>
+                <td>{{ item.over_amount|money:item.report_currency }}</td>
                 <td>{{ item.policy_action }}</td>
             </tr>
             {% empty %}
@@ -99,7 +126,7 @@
             <tr>
                 <td>{{ transaction.transaction_date }}</td>
                 <td><a href="{% url 'finance:card_transaction_detail' transaction.id %}">{{ transaction.merchant_name }}</a></td>
-                <td>{{ transaction.currency }} {{ transaction.amount }}</td>
+                <td>{{ transaction.amount|money:transaction.currency }}</td>
                 <td>{{ transaction.get_match_status_display }}</td>
                 <td>{{ transaction.reference_no }}</td>
             </tr>

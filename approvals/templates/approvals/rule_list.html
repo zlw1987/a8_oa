@@ -4,6 +4,16 @@
 {% block page_title %}Approval Rules{% endblock %}
 
 {% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Approval Rules</h2>
+            <p class="muted">Manage approval routing rules and fallback behavior.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'approvals:rule_create' %}">Create Rule</a>
+    </div>
+</div>
+
 <div class="card">
     <h2>Filters</h2>
     <form method="get">
@@ -49,7 +59,6 @@
         <div class="action-row">
             <button type="submit">Apply Filters</button>
             <a href="{% url 'approvals:rule_list' %}">Clear</a>
-            <a href="{% url 'approvals:rule_create' %}">Create Rule</a>
         </div>
     </form>
 </div>

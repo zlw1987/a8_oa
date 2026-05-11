@@ -32,24 +32,38 @@
 </div>
 
 <div class="card">
-    <form method="get" class="filter-grid">
+    <h2>Filters</h2>
+    <form method="get" class="filter-panel">
         <input type="hidden" name="tab" value="{{ active_tab }}">
-        {{ filter_form.q }}
-        {{ filter_form.status }}
-        {{ filter_form.reason }}
-        {{ filter_form.source_type }}
-        {{ filter_form.policy_action }}
-        {{ filter_form.requester }}
-        {{ filter_form.department }}
-        {{ filter_form.project }}
-        {{ filter_form.min_age_days }}
-        <button type="submit">Filter</button>
-        <a class="btn btn-secondary" href="{% url 'finance:accounting_review_queue' %}?tab={{ active_tab }}">Reset</a>
+        <div class="filter-section">
+            <div class="filter-section-title">Basic Filters</div>
+            <div class="filter-grid">
+                {% include "includes/form_field.html" with field=filter_form.q %}
+                {% include "includes/form_field.html" with field=filter_form.status %}
+                {% include "includes/form_field.html" with field=filter_form.reason %}
+                {% include "includes/form_field.html" with field=filter_form.source_type %}
+                {% include "includes/form_field.html" with field=filter_form.policy_action %}
+            </div>
+        </div>
+        <details class="filter-advanced" {% if advanced_filters_open %}open{% endif %}>
+            <summary>Show Advanced Filters</summary>
+            <div class="filter-grid">
+                {% include "includes/form_field.html" with field=filter_form.requester %}
+                {% include "includes/form_field.html" with field=filter_form.department %}
+                {% include "includes/form_field.html" with field=filter_form.project %}
+                {% include "includes/form_field.html" with field=filter_form.min_age_days %}
+            </div>
+        </details>
+        <div class="action-row filter-actions">
+            <button type="submit" class="btn-primary">Filter</button>
+            <a class="btn btn-secondary" href="{{ reset_url }}">Reset</a>
+        </div>
     </form>
 </div>
 
 <div class="card">
     <h2>Review Workbench</h2>
+    {% if page_obj.object_list %}
     <div class="table-wrap">
         <table class="data-table">
             <thead>
@@ -116,21 +130,31 @@
                         </div>
                     </td>
                 </tr>
-                {% empty %}
-                <tr><td colspan="10">No review items.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
+    {% else %}
+    <div class="empty-state">
+        {% if has_active_filters %}
+        <h3>No review items match the current filters.</h3>
+        <p class="muted">Try clearing filters or switching to another quick tab.</p>
+        <a class="btn btn-secondary" href="{{ reset_url }}">Clear Filters</a>
+        {% else %}
+        <h3>No pending review items for this tab.</h3>
+        <p class="muted">Try switching to another tab, clearing filters, or checking Resolved items.</p>
+        {% endif %}
+    </div>
+    {% endif %}
 
     {% if page_obj.has_other_pages %}
     <div class="pagination" style="margin-top: 16px;">
         {% if page_obj.has_previous %}
-        <a href="?tab={{ active_tab }}&page={{ page_obj.previous_page_number }}">Previous</a>
+        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
         {% endif %}
         <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
         {% if page_obj.has_next %}
-        <a href="?tab={{ active_tab }}&page={{ page_obj.next_page_number }}">Next</a>
+        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
         {% endif %}
     </div>
     {% endif %}

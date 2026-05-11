@@ -332,15 +332,20 @@ Use the quick tabs first:
 
 You can filter by:
 
+- Keyword.
 - Status.
 - Reason.
 - Source type.
 - Policy action.
+
+Advanced filters are collapsed by default. Open Show Advanced Filters when you need:
+
 - Requester.
 - Department.
 - Project.
-- Aging days.
-- Keyword.
+- Minimum aging days.
+
+Filter only applies the current filters. Reset clears filters while keeping the selected quick tab.
 
 Each review item shows:
 
@@ -462,6 +467,16 @@ Available reports include:
 - Accounting review aging report.
 
 These reports are operational tables for daily use and UAT, not advanced BI dashboards.
+
+Money values on Finance Reports always show:
+
+- Currency code.
+- Thousand separators.
+- Two decimal places.
+
+Example: USD 12,710.00.
+
+Current reports group totals by currency. The system does not yet perform exchange-rate conversion, so it does not silently combine USD, TWD, EUR, or other currencies into one total.
 
 ## 12. Finance Policy Setup
 

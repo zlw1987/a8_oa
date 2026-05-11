@@ -10,6 +10,8 @@ from common.choices import BudgetEntryType, DepartmentType, RequestStatus, Reque
 from projects.models import Project, ProjectBudgetEntry
 from purchase.models import PurchaseRequest
 
+from common.templatetags.money import money
+from .reporting import build_project_budget_summary, build_reserved_vs_consumed_summary
 from .models import (
     AccountingReviewItem,
     AccountingReviewReason,
@@ -215,3 +217,102 @@ class OverBudgetPolicyServiceTest(TestCase):
         self.assertIsNotNone(review_item)
         self.assertEqual(review_item.reason, AccountingReviewReason.DUPLICATE_CARD)
         self.assertEqual(review_item.card_transaction, duplicate)
+
+
+class FinanceReportCurrencyFormattingTest(TestCase):
+    def setUp(self):
+        self.department = Department.objects.create(
+            dept_code="D-FIN-RPT",
+            dept_name="Finance Report Dept",
+            dept_type=DepartmentType.FIN,
+        )
+
+    def test_money_filter_formats_currency_decimals_and_negative_amounts(self):
+        self.assertEqual(money(Decimal("12710"), "USD"), "USD 12,710.00")
+        self.assertEqual(money(Decimal("100000"), "TWD"), "TWD 100,000.00")
+        self.assertEqual(money(Decimal("-300"), "USD"), "USD -300.00")
+
+    def test_project_budget_summary_keeps_project_currency(self):
+        usd_project = Project.objects.create(
+            project_code="RPT-USD",
+            project_name="USD Project",
+            owning_department=self.department,
+            budget_amount=Decimal("10000.00"),
+            currency="USD",
+            is_active=True,
+        )
+        ProjectBudgetEntry.objects.create(
+            project=usd_project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PROJECT,
+            source_id=usd_project.id,
+            amount=Decimal("530.00"),
+        )
+        ProjectBudgetEntry.objects.create(
+            project=usd_project,
+            entry_type=BudgetEntryType.CONSUME,
+            source_type=RequestType.PROJECT,
+            source_id=usd_project.id,
+            amount=Decimal("520.00"),
+        )
+        twd_project = Project.objects.create(
+            project_code="RPT-TWD",
+            project_name="TWD Project",
+            owning_department=self.department,
+            budget_amount=Decimal("100000.00"),
+            currency="TWD",
+            is_active=True,
+        )
+        ProjectBudgetEntry.objects.create(
+            project=twd_project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PROJECT,
+            source_id=twd_project.id,
+            amount=Decimal("20000.00"),
+        )
+
+        rows = {row["project"].project_code: row for row in build_project_budget_summary()}
+
+        self.assertEqual(rows["RPT-USD"]["currency"], "USD")
+        self.assertEqual(money(rows["RPT-USD"]["reserved"], rows["RPT-USD"]["currency"]), "USD 530.00")
+        self.assertEqual(money(rows["RPT-USD"]["consumed"], rows["RPT-USD"]["currency"]), "USD 520.00")
+        self.assertEqual(money(rows["RPT-USD"]["available"], rows["RPT-USD"]["currency"]), "USD 8,950.00")
+        self.assertEqual(rows["RPT-TWD"]["currency"], "TWD")
+        self.assertEqual(money(rows["RPT-TWD"]["reserved"], rows["RPT-TWD"]["currency"]), "TWD 20,000.00")
+
+    def test_reserved_vs_consumed_summary_groups_mixed_currencies(self):
+        usd_project = Project.objects.create(
+            project_code="RPT-MIX-USD",
+            project_name="Mixed USD Project",
+            owning_department=self.department,
+            budget_amount=Decimal("10000.00"),
+            currency="USD",
+            is_active=True,
+        )
+        twd_project = Project.objects.create(
+            project_code="RPT-MIX-TWD",
+            project_name="Mixed TWD Project",
+            owning_department=self.department,
+            budget_amount=Decimal("100000.00"),
+            currency="TWD",
+            is_active=True,
+        )
+        ProjectBudgetEntry.objects.create(
+            project=usd_project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PROJECT,
+            source_id=usd_project.id,
+            amount=Decimal("1000.00"),
+        )
+        ProjectBudgetEntry.objects.create(
+            project=twd_project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PROJECT,
+            source_id=twd_project.id,
+            amount=Decimal("20000.00"),
+        )
+
+        rows = {row["currency"]: row for row in build_reserved_vs_consumed_summary()}
+
+        self.assertEqual(rows["USD"]["reserved"], Decimal("1000.00"))
+        self.assertEqual(rows["TWD"]["reserved"], Decimal("20000.00"))

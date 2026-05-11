@@ -168,6 +168,27 @@ Main behavior:
 - Decision handling moved to Accounting Review Detail.
 - Requester self-review prevention remains enforced in the view.
 
+## UI-3 Polish Completed: Accounting Queue Filter Cleanup
+
+The Accounting Review Queue filter panel was cleaned up after user review.
+
+Changed areas:
+
+- `finance/forms.py`
+- `finance/presentation.py`
+- `finance/views.py`
+- `finance/templates/finance/accounting_review_queue.html`
+- `static/css/app.css`
+
+Main behavior:
+
+- Basic filters are visible and labeled.
+- Advanced filters are collapsed by default.
+- Filter and Reset actions are visually grouped.
+- Reset clears filters while preserving the active quick tab.
+- Quick tabs show item counts.
+- Empty state explains whether no items exist for the tab or no items match current filters.
+
 ## UI-4 Completed: Card Transaction Reconciliation UI
 
 Card Transaction Detail was redesigned around reconciliation.
@@ -199,6 +220,24 @@ Main behavior:
 - Duplicate warning links to related review item when available.
 - Allocations clearly link to PR/TR/project.
 - Review items link to Accounting Review Detail.
+
+## Finance Reports Polish Completed: Currency-Safe Money Display
+
+Finance Reports now use consistent money formatting and do not silently combine different currencies.
+
+Changed areas:
+
+- `common/templatetags/money.py`
+- `finance/reporting.py`
+- `finance/templates/finance/reports.html`
+- `finance/tests.py`
+
+Main behavior:
+
+- Money values show currency code, thousand separators, and two decimal places.
+- Top Reserved / Released / Consumed totals are grouped by project currency.
+- Project, department, open reserve, over-budget, and card amount fields use the shared money formatter.
+- Mixed-currency totals are grouped by currency because exchange-rate conversion is not implemented yet.
 
 ## User Guide Maintenance Rule
 
@@ -232,6 +271,7 @@ Full test suite was not run because full test execution is reserved for the user
 - Screenshots were not captured in Codex because the local browser connection was blocked in this environment.
 - The UI is still not a full mobile-first redesign.
 - Finance reports are still table-oriented.
+- Finance reports are currency-grouped, not exchange-rate converted.
 - Accounting Review Detail does not yet show line-level receipt attachment matching because line-level receipt matching is not implemented as a business feature.
 - Card allocation front-end validation is convenience validation only. Server-side validation remains the source of truth.
 
