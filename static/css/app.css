@@ -141,7 +141,7 @@ main {
     gap: 4px;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (any-hover: hover) {
     .nav-menu:hover .nav-dropdown {
         display: grid;
         gap: 4px;

@@ -37,25 +37,17 @@ The Dashboard may show:
 - Recent travel requests.
 - Request statuses related to you.
 
-Top navigation may include:
+Top navigation is grouped into dropdown menus:
 
-- Dashboard
-- Purchase Requests
-- Travel Requests
-- Projects
-- My Tasks
-- My Approval History
-- Accounting Review Queue
-- Card Transactions
-- Finance Reports
-- Variance Report
-- Departments
-- Approval Rules
-- Over-Budget Policies
-- Receipt Policies
-- Admin
+- Dashboard.
+- Work: Purchase Requests, Travel Requests, My Tasks, My Approval History.
+- Finance: Accounting Review Queue, Card Transactions, Finance Reports, Variance Report.
+- Setup: Projects, Departments, Approval Rules, Over-Budget Policies, Receipt Policies.
+- Admin: Django Admin and system setup links.
 
-Visible menus depend on your permissions.
+Visible menus depend on your permissions. Empty menu groups are hidden.
+
+On desktop, hover over Work, Finance, Setup, or Admin to open the dropdown. You can also click the menu group. Click outside the menu or press Escape to close it.
 
 ## 4. Purchase Request Flow
 
@@ -150,6 +142,8 @@ A PR can close only when:
 
 Closing releases any remaining reserved budget.
 
+The PR detail page shows the closeout checklist near the top. If Close Request is disabled, read the disabled reason and the checklist before asking for help.
+
 ## 5. Travel Request Flow
 
 ### 5.1 Create A Travel Request
@@ -235,6 +229,8 @@ Before closeout, confirm:
 - No amendment remains open.
 
 Closing releases remaining reserved budget.
+
+The TR detail page uses the same layout as PR detail. Review the financial summary, closeout checklist, available actions, and open issues first.
 
 ## 6. Over-Budget Policy
 
@@ -324,6 +320,16 @@ Current version checks request-level attachments. It does not yet match receipts
 
 Open Accounting Review Queue.
 
+Use the quick tabs first:
+
+- All Pending.
+- Over-Budget.
+- Missing Receipt.
+- Amendment Required.
+- Duplicate Card.
+- Returned.
+- Resolved.
+
 You can filter by:
 
 - Status.
@@ -344,8 +350,10 @@ Each review item shows:
 - Amount.
 - Over-budget amount.
 - Policy action.
+- Aging badge.
+- Severity badge.
 - Required action.
-- Comments.
+- Status.
 
 Accounting can choose:
 
@@ -353,6 +361,8 @@ Accounting can choose:
 - Return.
 - Reject.
 - Resolve.
+
+Use View to open the Accounting Review Detail page before making complex decisions. The detail page shows the issue summary, source links, financial impact, receipt / attachment status, decision history, and action panel.
 
 Requesters cannot review their own accounting review items.
 
@@ -378,6 +388,17 @@ The system checks for possible duplicate transactions.
 
 On the card transaction detail page, add an allocation.
 
+The detail page is organized for reconciliation. Review the summary cards first:
+
+- Transaction Amount.
+- Allocated Amount.
+- Unallocated Amount.
+- Match Status.
+- Open Reviews.
+- Duplicate Warning.
+
+Unallocated Amount is the key number. It shows how much is still not allocated.
+
 Choose one target:
 
 - Purchase Request.
@@ -389,6 +410,7 @@ Enter the allocation amount.
 The system will:
 
 - Prevent allocation above the unallocated amount.
+- Show a front-end warning if the entered allocation amount exceeds the remaining unallocated amount.
 - Apply actual expense logic for PR or TR targets.
 - Apply company card finance policy.
 - Update match status.
@@ -415,11 +437,15 @@ Total allocations cannot exceed the transaction amount.
 
 A transaction can be marked Reviewed only when it is Matched and has no unresolved review items.
 
+The Mark Reviewed button remains visible. If it is disabled, the page shows the reason.
+
 ### 10.5 Duplicate Transactions
 
 If the system finds the same transaction date, merchant, amount, and reference, it creates a duplicate review item.
 
 The system does not automatically block the transaction because legitimate duplicate transactions can happen.
+
+If a duplicate warning exists, open the linked review item from the card transaction detail page.
 
 ## 11. Finance Reports
 

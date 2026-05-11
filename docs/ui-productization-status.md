@@ -200,6 +200,15 @@ Main behavior:
 - Allocations clearly link to PR/TR/project.
 - Review items link to Accounting Review Detail.
 
+## User Guide Maintenance Rule
+
+When UI or workflow behavior changes, update the formal user guides directly:
+
+- `docs/user-guide-zh.md`
+- `docs/user-guide-en.md`
+
+Do not create a separate temporary instruction-update document unless it is specifically requested. The user guides are the source of truth for end users.
+
 ## Current Verification
 
 Latest targeted checks run by Codex:

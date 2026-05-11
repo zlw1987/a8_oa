@@ -2,7 +2,6 @@
     var hoverOpenDelay = 75;
     var hoverCloseDelay = 200;
     var hoverTimers = new WeakMap();
-    var supportsDesktopHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 
     function getTimerState(menu) {
         if (!hoverTimers.has(menu)) {
@@ -75,14 +74,12 @@
         }
     });
 
-    if (supportsDesktopHover) {
-        document.querySelectorAll("[data-nav-menu]").forEach(function (menu) {
-            menu.addEventListener("mouseenter", function () {
-                scheduleOpen(menu);
-            });
-            menu.addEventListener("mouseleave", function () {
-                scheduleClose(menu);
-            });
+    document.querySelectorAll("[data-nav-menu]").forEach(function (menu) {
+        menu.addEventListener("mouseenter", function () {
+            scheduleOpen(menu);
         });
-    }
+        menu.addEventListener("mouseleave", function () {
+            scheduleClose(menu);
+        });
+    });
 })();

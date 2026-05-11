@@ -6,7 +6,8 @@ The current version includes V0.5 business-control completion on top of the V0.4
 
 ## Latest Fixes
 
-- Added UI productization status documentation and user instruction updates.
+- Updated English and Chinese user guides for the latest navigation, accounting workbench, and card reconciliation UI.
+- Added UI productization status documentation.
 - Added desktop hover fallback for dropdown navigation.
 - Productized PR/TR detail pages with financial summary cards, closeout checklist, available actions, and open issues.
 - Productized top navigation as permission-aware dropdown groups with active states.
