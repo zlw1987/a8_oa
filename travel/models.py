@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
 from common.choices import CurrencyCode, RequestType, BudgetEntryType
+from common.currency import COMPANY_BASE_CURRENCY
 from approvals.models import ApprovalTask, ApprovalTaskStatus
 from projects.models import ProjectBudgetEntry
 
@@ -57,7 +58,7 @@ class TravelPerDiemPolicy(models.Model):
     currency = models.CharField(
         max_length=10,
         choices=CurrencyCode,
-        default=CurrencyCode.USD,
+        default=COMPANY_BASE_CURRENCY,
     )
     daily_amount = models.DecimalField(max_digits=12, decimal_places=2)
     effective_from = models.DateField(null=True, blank=True)
@@ -205,10 +206,14 @@ class TravelRequest(models.Model):
     per_diem_daily_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     per_diem_allowed_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     per_diem_claim_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    per_diem_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    per_diem_transaction_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    per_diem_base_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    per_diem_exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
     currency = models.CharField(
         max_length=10,
         choices=CurrencyCode,
-        default=CurrencyCode.USD,
+        default=COMPANY_BASE_CURRENCY,
     )
     notes = models.TextField(blank=True, default="")
     supplemental_reason = models.TextField(blank=True, default="")
@@ -607,6 +612,13 @@ class TravelRequest(models.Model):
             reference_no="",
             expense_location="",
             notes="",
+            transaction_currency="",
+            transaction_amount=None,
+            base_amount=None,
+            exchange_rate=None,
+            exchange_rate_date=None,
+            exchange_rate_source="",
+            exchange_rate_override_reason="",
             skip_finance_policy=False,
             payment_method=None,
             card_transaction=None,
@@ -624,6 +636,20 @@ class TravelRequest(models.Model):
                 "Actual expenses can only be recorded when the travel request is "
                 "Approved, In Trip, Expense Pending, or Expense Submitted."
             )
+        from finance.services import build_money_snapshot
+
+        effective_currency = currency or self.currency
+        snapshot = build_money_snapshot(
+            transaction_amount=transaction_amount if transaction_amount is not None else actual_amount,
+            transaction_currency=transaction_currency or effective_currency,
+            base_amount=base_amount,
+            base_currency=COMPANY_BASE_CURRENCY,
+            exchange_rate=exchange_rate,
+            exchange_rate_date=exchange_rate_date or expense_date,
+            exchange_rate_source=exchange_rate_source,
+            override_reason=exchange_rate_override_reason,
+        )
+        base_actual_amount = snapshot["base_amount"]
         policy_result = None
         from finance.models import PaymentMethod
 
@@ -636,9 +662,17 @@ class TravelRequest(models.Model):
 
             policy_result = evaluate_actual_expense_policy(
                 self,
-                current_actual_amount=actual_amount,
+                current_actual_amount=base_actual_amount,
+                current_transaction_amount=snapshot["transaction_amount"],
+                transaction_currency=snapshot["transaction_currency"],
+                base_amount=snapshot["base_amount"],
+                base_currency=snapshot["base_currency"],
+                exchange_rate=snapshot["exchange_rate"],
+                exchange_rate_date=snapshot["exchange_rate_date"],
+                exchange_rate_source=snapshot["exchange_rate_source"],
+                exchange_rate_override_reason=snapshot["exchange_rate_override_reason"],
                 payment_method=effective_payment_method,
-                currency=currency or self.currency,
+                currency=snapshot["base_currency"],
             )
             if not policy_result.allows_recording:
                 apply_actual_expense_policy_result(policy_result, acting_user=acting_user)
@@ -652,8 +686,17 @@ class TravelRequest(models.Model):
             line_no=next_line_no,
             expense_type=expense_type,
             expense_date=expense_date,
-            actual_amount=actual_amount,
-            currency=currency or self.currency,
+            actual_amount=base_actual_amount,
+            currency=snapshot["base_currency"],
+            transaction_currency=snapshot["transaction_currency"],
+            transaction_amount=snapshot["transaction_amount"],
+            base_currency=snapshot["base_currency"],
+            base_amount=snapshot["base_amount"],
+            exchange_rate=snapshot["exchange_rate"],
+            exchange_rate_date=snapshot["exchange_rate_date"],
+            exchange_rate_source=snapshot["exchange_rate_source"],
+            exchange_rate_override_reason=snapshot["exchange_rate_override_reason"],
+            variance_type=getattr(policy_result, "variance_type", "") if policy_result else "",
             vendor_name=vendor_name,
             reference_no=reference_no,
             expense_location=expense_location,
@@ -663,7 +706,7 @@ class TravelRequest(models.Model):
         )
 
         reserved_remaining = self.get_reserved_remaining_amount()
-        extra_needed = actual_amount - reserved_remaining if actual_amount > reserved_remaining else Decimal("0.00")
+        extra_needed = base_actual_amount - reserved_remaining if base_actual_amount > reserved_remaining else Decimal("0.00")
 
         if extra_needed > 0:
             available_budget = self.project.get_available_amount()
@@ -678,12 +721,17 @@ class TravelRequest(models.Model):
             entry_type=BudgetEntryType.CONSUME,
             source_type=RequestType.TRAVEL,
             source_id=self.id,
-            amount=actual_amount,
+            amount=base_actual_amount,
+            currency=snapshot["base_currency"],
+            source_transaction_currency=snapshot["transaction_currency"],
+            source_transaction_amount=snapshot["transaction_amount"],
+            source_exchange_rate=snapshot["exchange_rate"],
+            source_exchange_rate_source=snapshot["exchange_rate_source"],
             notes=f"Budget consumed by actual expense of {self.travel_no}",
             created_by=acting_user,
         )
 
-        amount_to_release = min(actual_amount, reserved_remaining)
+        amount_to_release = min(base_actual_amount, reserved_remaining)
         if amount_to_release > 0:
             ProjectBudgetEntry.objects.create(
                 project=self.project,
@@ -691,6 +739,11 @@ class TravelRequest(models.Model):
                 source_type=RequestType.TRAVEL,
                 source_id=self.id,
                 amount=amount_to_release,
+                currency=snapshot["base_currency"],
+                source_transaction_currency=snapshot["transaction_currency"],
+                source_transaction_amount=snapshot["transaction_amount"],
+                source_exchange_rate=snapshot["exchange_rate"],
+                source_exchange_rate_source=snapshot["exchange_rate_source"],
                 notes=f"Reserved budget converted to actual expense for {self.travel_no}",
                 created_by=acting_user,
             )
@@ -736,10 +789,10 @@ class TravelRequest(models.Model):
         apply_receipt_policy_for_actual(
             self,
             actual_expense=actual_line,
-            amount=actual_amount,
+            amount=base_actual_amount,
             payment_method=effective_payment_method,
             expense_type=expense_type,
-            currency=currency or self.currency,
+            currency=snapshot["base_currency"],
             card_transaction=card_transaction,
             card_allocation=card_allocation,
             acting_user=acting_user,
@@ -757,7 +810,8 @@ class TravelRequest(models.Model):
             to_status=self.status,
             acting_user=acting_user,
             comment=(
-                f"Actual expense recorded: {currency} {actual_amount}. "
+                f"Actual expense recorded: {snapshot['transaction_currency']} {snapshot['transaction_amount']}. "
+                f"Base amount: {snapshot['base_currency']} {base_actual_amount}. "
                 f"Expense type: {expense_type}. "
                 f"Estimated link: {estimated_expense_line.line_no if estimated_expense_line else '-'}."
             ),
@@ -1247,8 +1301,15 @@ class TravelEstimatedExpenseLine(models.Model):
     currency = models.CharField(
     max_length=10,
     choices=CurrencyCode,
-    default=CurrencyCode.USD,
+    default=COMPANY_BASE_CURRENCY,
     )
+    estimate_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    estimate_transaction_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    estimated_exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    estimated_base_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    estimated_base_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    exchange_rate_date = models.DateField(null=True, blank=True)
+    exchange_rate_source = models.CharField(max_length=30, blank=True, default="")
 
     from_location = models.CharField(max_length=100, blank=True, default="")
     to_location = models.CharField(max_length=100, blank=True, default="")
@@ -1375,8 +1436,17 @@ class TravelActualExpenseLine(models.Model):
     currency = models.CharField(
         max_length=10,
         choices=CurrencyCode,
-        default=CurrencyCode.USD,
+        default=COMPANY_BASE_CURRENCY,
     )
+    transaction_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    transaction_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    base_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    base_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    exchange_rate_date = models.DateField(null=True, blank=True)
+    exchange_rate_source = models.CharField(max_length=30, blank=True, default="")
+    exchange_rate_override_reason = models.TextField(blank=True, default="")
+    variance_type = models.CharField(max_length=30, blank=True, default="")
     estimated_expense_line = models.ForeignKey(
         "travel.TravelEstimatedExpenseLine",
         null=True,

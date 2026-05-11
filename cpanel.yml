@@ -1,0 +1,10 @@
+---
+deployment:
+  tasks:
+    - export APPPATH=/home/rsnwvvl103hc/a8_oa
+    - /bin/rsync -a --delete --exclude='.git' --exclude='.env' --exclude='db.sqlite3' --exclude='media/' --exclude='staticfiles/' --exclude='sent_emails/' --exclude='passenger.log' --exclude='__pycache__/' --exclude='*.pyc' ./ $APPPATH/
+    - /home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python3.11_bin -m pip install -r $APPPATH/requirements.txt
+    - /home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python3.11_bin $APPPATH/manage.py migrate --noinput
+    - /home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python3.11_bin $APPPATH/manage.py collectstatic --noinput
+    - /bin/mkdir -p $APPPATH/tmp
+    - /usr/bin/touch $APPPATH/tmp/restart.txt

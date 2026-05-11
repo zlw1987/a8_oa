@@ -2,14 +2,17 @@
 
 ## Status
 
-The current version includes V0.5 business-control completion on top of the V0.4 finance controls milestone.
+The current version includes V0.5 business-control completion and the V0.6 multi-currency foundation on top of the V0.4 finance controls milestone.
 
 ## Latest Fixes
 
 - Cleaned up Accounting Review Queue filters with visible labels, Basic/Advanced sections, tab counts, preserved-tab reset behavior, and clearer empty states.
+- Added V0.6 multi-currency foundation: USD company base currency, transaction/base amount snapshots, exchange-rate snapshots, FX variance classification, and base-currency Finance Reports.
+- Added Currency, ExchangeRate, and FXVariancePolicy models for finance control setup.
+- Updated PR/TR actual expense recording and company card allocation paths to preserve original transaction currency while consuming budget in USD base currency.
 - Moved Approval Rules `Create Rule` out of the Filters panel into a page-level primary action area.
 - Added a reusable `money` template filter and updated Finance Reports to show currency code, thousand separators, and two decimal places.
-- Updated Finance Reports to group top financial totals by currency instead of silently combining mixed currencies.
+- Updated Finance Reports to show company base-currency totals and original transaction currency detail where relevant.
 - Standardized key list/setup pages so primary creation actions sit outside filter panels.
 - Added role-based Dashboard cards for requester, approver, accounting, finance admin, and system admin work.
 - Updated English and Chinese user guides for the latest navigation, accounting workbench, and card reconciliation UI.
@@ -73,3 +76,16 @@ V0.5 is implemented as a business-control milestone:
 - Accounting workbench and finance reports are available for UAT.
 
 See [V0.5 Business Control Completion](v0.5-business-control-complete.md).
+
+## V0.6 Progress
+
+V0.6 multi-currency foundation is implemented at model/service/UI-documentation level:
+
+- Company base currency is USD.
+- Actual expense records preserve transaction currency and base currency snapshots.
+- Exchange-rate-sensitive review data is snapshotted on accounting review items.
+- Budget ledger remains base-currency controlled.
+- Company card posted USD amount is the authoritative base amount when available.
+- Finance Reports are base-currency reports.
+
+See [V0.6 Multi-Currency Foundation](v0.6-multi-currency-foundation.md).

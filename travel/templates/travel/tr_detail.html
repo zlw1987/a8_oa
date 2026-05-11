@@ -1,5 +1,6 @@
 {% extends "purchase/base.html" %}
 
+{% load money %}
 {% block title %}Travel Request Detail{% endblock %}
 {% block page_title %}Travel Request Detail{% endblock %}
 
@@ -225,7 +226,9 @@
                 <th>Line No</th>
                 <th>Expense Type</th>
                 <th>Expense Date</th>
-                <th>Actual Amount</th>
+                <th>Base Amount</th>
+                <th>Original Amount</th>
+                <th>Variance Type</th>
                 <th>Estimated Link</th>
                 <th>Vendor</th>
                 <th>Reference No</th>
@@ -243,7 +246,9 @@
                 <td>{{ line.line_no }}</td>
                 <td>{{ line.get_expense_type_display }}</td>
                 <td>{{ line.expense_date }}</td>
-                <td class="amount">{{ line.currency }} {{ line.actual_amount }}</td>
+                <td class="amount">{{ line.base_amount|money:line.base_currency }}</td>
+                <td class="amount">{{ line.transaction_amount|money:line.transaction_currency }}</td>
+                <td>{{ line.get_variance_type_display|default:"-" }}</td>
                 <td>
                     {% if line.estimated_expense_line %}
                     Line {{ line.estimated_expense_line.line_no }} -
@@ -280,7 +285,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="13">No actual expense lines.</td>
+                <td colspan="15">No actual expense lines.</td>
             </tr>
             {% endfor %}
         </tbody>

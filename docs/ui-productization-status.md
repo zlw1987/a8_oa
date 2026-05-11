@@ -221,9 +221,9 @@ Main behavior:
 - Allocations clearly link to PR/TR/project.
 - Review items link to Accounting Review Detail.
 
-## Finance Reports Polish Completed: Currency-Safe Money Display
+## Finance Reports Polish Completed: Base-Currency Money Display
 
-Finance Reports now use consistent money formatting and do not silently combine different currencies.
+Finance Reports now use consistent money formatting and show USD company base-currency totals.
 
 Changed areas:
 
@@ -235,9 +235,9 @@ Changed areas:
 Main behavior:
 
 - Money values show currency code, thousand separators, and two decimal places.
-- Top Reserved / Released / Consumed totals are grouped by project currency.
+- Top Reserved / Released / Consumed totals are shown in company base currency.
 - Project, department, open reserve, over-budget, and card amount fields use the shared money formatter.
-- Mixed-currency totals are grouped by currency because exchange-rate conversion is not implemented yet.
+- Foreign-currency source amounts are preserved on source records and shown where relevant, while report totals use base currency.
 
 ## UI-5 Completed: List Page Pattern And Role-Based Dashboard
 

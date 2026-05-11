@@ -7,6 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from common.choices import BudgetEntryType, RequestType
+from common.currency import COMPANY_BASE_CURRENCY, quantize_money, quantize_rate
 from projects.models import ProjectBudgetEntry
 
 from .models import (
@@ -16,10 +17,15 @@ from .models import (
     AccountingReviewStatus,
     CardTransactionAllocation,
     CardTransactionMatchStatus,
+    ExchangeRate,
+    ExchangeRateSource,
+    FXVarianceAction,
+    FXVariancePolicy,
     OverBudgetAction,
     OverBudgetPolicy,
     PaymentMethod,
     ReceiptPolicy,
+    VarianceType,
 )
 
 
@@ -44,6 +50,15 @@ class ActualExpensePolicyResult:
     payment_method: str
     currency: str
     message: str
+    transaction_currency: str = ""
+    transaction_amount: Decimal = Decimal("0.00")
+    base_currency: str = COMPANY_BASE_CURRENCY
+    base_amount: Decimal = Decimal("0.00")
+    exchange_rate: Decimal | None = None
+    exchange_rate_date: object = None
+    exchange_rate_source: str = ""
+    variance_type: str = VarianceType.NONE
+    fx_policy: FXVariancePolicy | None = None
 
     @property
     def is_over_budget(self):
@@ -79,7 +94,7 @@ class ReceiptPolicyResult:
 
 
 def _money(value):
-    return (value or Decimal("0.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return quantize_money(value)
 
 
 def _percent(value):
@@ -129,6 +144,118 @@ def get_existing_actual_total(request_obj):
     if hasattr(request_obj, "get_actual_total"):
         return _money(request_obj.get_actual_total())
     return _money(getattr(request_obj, "actual_total", Decimal("0.00")))
+
+
+def resolve_exchange_rate(from_currency, to_currency=COMPANY_BASE_CURRENCY, rate_date=None, source=""):
+    if from_currency == to_currency:
+        return Decimal("1.00000000"), ExchangeRateSource.COMPANY_RATE
+    if not rate_date:
+        rate_date = timezone.localdate()
+    queryset = ExchangeRate.objects.filter(
+        from_currency=from_currency,
+        to_currency=to_currency,
+        effective_date__lte=rate_date,
+    )
+    if source:
+        queryset = queryset.filter(source=source)
+    rate = queryset.order_by("-effective_date", "-id").first()
+    if not rate:
+        raise ValidationError(f"No exchange rate found for {from_currency} to {to_currency} on or before {rate_date}.")
+    return quantize_rate(rate.rate), rate.source
+
+
+def build_money_snapshot(
+    *,
+    transaction_amount,
+    transaction_currency,
+    base_amount=None,
+    base_currency=COMPANY_BASE_CURRENCY,
+    exchange_rate=None,
+    exchange_rate_date=None,
+    exchange_rate_source="",
+    override_reason="",
+):
+    transaction_amount = _money(transaction_amount)
+    transaction_currency = transaction_currency or base_currency
+    base_currency = base_currency or COMPANY_BASE_CURRENCY
+    exchange_rate_date = exchange_rate_date or timezone.localdate()
+
+    if base_amount is not None:
+        base_amount = _money(base_amount)
+        effective_rate = quantize_rate(exchange_rate or (base_amount / transaction_amount if transaction_amount else Decimal("0")))
+        effective_source = (
+            exchange_rate_source
+            or (ExchangeRateSource.ACCOUNTING_OVERRIDE if override_reason else ExchangeRateSource.MANUAL)
+        )
+    elif transaction_currency == base_currency:
+        base_amount = transaction_amount
+        effective_rate = Decimal("1.00000000")
+        effective_source = exchange_rate_source or ExchangeRateSource.COMPANY_RATE
+    else:
+        effective_rate, effective_source = resolve_exchange_rate(
+            transaction_currency,
+            base_currency,
+            rate_date=exchange_rate_date,
+            source=exchange_rate_source if exchange_rate_source and exchange_rate_source != ExchangeRateSource.ACCOUNTING_OVERRIDE else "",
+        )
+        base_amount = _money(transaction_amount * effective_rate)
+
+    return {
+        "transaction_currency": transaction_currency,
+        "transaction_amount": transaction_amount,
+        "base_currency": base_currency,
+        "base_amount": base_amount,
+        "exchange_rate": effective_rate,
+        "exchange_rate_date": exchange_rate_date,
+        "exchange_rate_source": effective_source,
+        "exchange_rate_override_reason": override_reason or "",
+    }
+
+
+def classify_currency_variance(
+    *,
+    approved_transaction_amount,
+    approved_transaction_currency,
+    approved_base_amount,
+    actual_transaction_amount,
+    actual_transaction_currency,
+    actual_base_amount,
+):
+    approved_base_amount = _money(approved_base_amount)
+    actual_base_amount = _money(actual_base_amount)
+    if actual_base_amount <= approved_base_amount:
+        return VarianceType.NONE
+    if not approved_transaction_currency or approved_transaction_currency != actual_transaction_currency:
+        return VarianceType.BASE_CURRENCY_VARIANCE
+    if _money(actual_transaction_amount) <= _money(approved_transaction_amount):
+        return VarianceType.FX_VARIANCE
+    return VarianceType.SPENDING_OVERRUN
+
+
+def resolve_fx_variance_policy(*, variance_amount, variance_percent, currency=COMPANY_BASE_CURRENCY):
+    queryset = FXVariancePolicy.objects.filter(is_active=True).order_by("priority", "policy_code", "id")
+    queryset = queryset.filter(currency__in=["", currency or COMPANY_BASE_CURRENCY])
+    for policy in queryset:
+        if policy.fx_variance_amount_from is not None and variance_amount < policy.fx_variance_amount_from:
+            continue
+        if policy.fx_variance_amount_to is not None and variance_amount > policy.fx_variance_amount_to:
+            continue
+        if policy.fx_variance_percent_from is not None and variance_percent < policy.fx_variance_percent_from:
+            continue
+        if policy.fx_variance_percent_to is not None and variance_percent > policy.fx_variance_percent_to:
+            continue
+        return policy
+    return None
+
+
+def _map_fx_action_to_over_budget_action(fx_action):
+    return {
+        FXVarianceAction.ALLOW: OverBudgetAction.ALLOW,
+        FXVarianceAction.WARNING: OverBudgetAction.WARNING,
+        FXVarianceAction.REVIEW: OverBudgetAction.REVIEW,
+        FXVarianceAction.FINANCE_REVIEW_REQUIRED: OverBudgetAction.REVIEW,
+        FXVarianceAction.BLOCK: OverBudgetAction.BLOCK,
+    }.get(fx_action, OverBudgetAction.REVIEW)
 
 
 def _matches_threshold(policy, over_amount, over_percent):
@@ -257,10 +384,29 @@ def evaluate_actual_expense_policy(
     request_obj,
     *,
     current_actual_amount,
+    current_transaction_amount=None,
+    transaction_currency="",
+    base_amount=None,
+    base_currency=COMPANY_BASE_CURRENCY,
+    exchange_rate=None,
+    exchange_rate_date=None,
+    exchange_rate_source="",
+    exchange_rate_override_reason="",
     payment_method=PaymentMethod.REIMBURSEMENT,
     currency="",
 ):
-    current_actual_amount = _money(current_actual_amount)
+    effective_currency = currency or getattr(request_obj, "currency", "") or base_currency
+    snapshot = build_money_snapshot(
+        transaction_amount=current_transaction_amount if current_transaction_amount is not None else current_actual_amount,
+        transaction_currency=transaction_currency or effective_currency,
+        base_amount=base_amount,
+        base_currency=base_currency,
+        exchange_rate=exchange_rate,
+        exchange_rate_date=exchange_rate_date,
+        exchange_rate_source=exchange_rate_source,
+        override_reason=exchange_rate_override_reason,
+    )
+    current_actual_amount = snapshot["base_amount"]
     if current_actual_amount <= 0:
         raise ValidationError("Actual expense amount must be greater than 0.")
 
@@ -274,26 +420,47 @@ def evaluate_actual_expense_policy(
     else:
         over_percent = Decimal("1.0000") if over_amount > 0 else Decimal("0.0000")
 
-    effective_currency = currency or getattr(request_obj, "currency", "")
+    approved_transaction_amount = _money(getattr(request_obj, "transaction_amount", None) or approved_amount)
+    approved_transaction_currency = getattr(request_obj, "transaction_currency", "") or effective_currency
+    variance_type = classify_currency_variance(
+        approved_transaction_amount=approved_transaction_amount,
+        approved_transaction_currency=approved_transaction_currency,
+        approved_base_amount=approved_amount,
+        actual_transaction_amount=snapshot["transaction_amount"],
+        actual_transaction_currency=snapshot["transaction_currency"],
+        actual_base_amount=new_actual_total,
+    )
     policy = None
+    fx_policy = None
     action = OverBudgetAction.ALLOW
 
     if over_amount > 0:
-        policy = resolve_over_budget_policy(
-            request_obj=request_obj,
-            over_amount=over_amount,
-            over_percent=over_percent,
-            payment_method=payment_method,
-            currency=effective_currency,
-        )
-        action = policy.action if policy else OverBudgetAction.REVIEW
+        if variance_type == VarianceType.FX_VARIANCE:
+            fx_policy = resolve_fx_variance_policy(
+                variance_amount=over_amount,
+                variance_percent=over_percent,
+                currency=snapshot["base_currency"],
+            )
+            action = _map_fx_action_to_over_budget_action(fx_policy.action if fx_policy else FXVarianceAction.REVIEW)
+        else:
+            policy = resolve_over_budget_policy(
+                request_obj=request_obj,
+                over_amount=over_amount,
+                over_percent=over_percent,
+                payment_method=payment_method,
+                currency=snapshot["base_currency"],
+            )
+            action = policy.action if policy else OverBudgetAction.REVIEW
 
     if action == OverBudgetAction.ALLOW:
         message = "Actual expense is within approved amount."
     elif action == OverBudgetAction.WARNING:
         message = "Actual expense exceeds approved amount but is allowed with warning."
     elif action == OverBudgetAction.REVIEW:
-        message = "Actual expense exceeds approved amount and was routed to accounting review."
+        if variance_type == VarianceType.FX_VARIANCE:
+            message = "Actual expense exceeds approved base amount due to FX variance and was routed to accounting review."
+        else:
+            message = "Actual expense exceeds approved amount and was routed to accounting review."
     elif action == OverBudgetAction.AMENDMENT_REQUIRED:
         message = "Actual expense exceeds approved amount and requires a supplemental request or exception approval."
     else:
@@ -313,6 +480,15 @@ def evaluate_actual_expense_policy(
         payment_method=payment_method,
         currency=effective_currency,
         message=message,
+        transaction_currency=snapshot["transaction_currency"],
+        transaction_amount=snapshot["transaction_amount"],
+        base_currency=snapshot["base_currency"],
+        base_amount=snapshot["base_amount"],
+        exchange_rate=snapshot["exchange_rate"],
+        exchange_rate_date=snapshot["exchange_rate_date"],
+        exchange_rate_source=snapshot["exchange_rate_source"],
+        variance_type=variance_type,
+        fx_policy=fx_policy,
     )
 
 
@@ -476,6 +652,14 @@ def create_accounting_review_item(
         "amount": result.current_actual_amount,
         "over_amount": result.over_amount,
         "over_percent": result.over_percent,
+        "variance_type": result.variance_type,
+        "transaction_currency": result.transaction_currency,
+        "transaction_amount": result.transaction_amount,
+        "base_currency": result.base_currency,
+        "base_amount": result.base_amount,
+        "exchange_rate": result.exchange_rate,
+        "exchange_rate_date": result.exchange_rate_date,
+        "exchange_rate_source": result.exchange_rate_source,
         "title": f"{get_request_no(request_obj)} over-budget review",
         "description": description or result.message,
         "created_by": created_by,
@@ -578,8 +762,16 @@ def apply_actual_expense_policy_result(
 
     if result.action == OverBudgetAction.REVIEW:
         _set_request_pending_review_fields(result, note=result.message)
+        reason = (
+            AccountingReviewReason.FX_VARIANCE
+            if result.variance_type == VarianceType.FX_VARIANCE
+            else AccountingReviewReason.BASE_CURRENCY_VARIANCE
+            if result.variance_type == VarianceType.BASE_CURRENCY_VARIANCE
+            else AccountingReviewReason.OVER_BUDGET
+        )
         return create_accounting_review_item(
             result,
+            reason=reason,
             actual_expense=actual_expense,
             card_transaction=card_transaction,
             card_allocation=card_allocation,
@@ -707,12 +899,22 @@ def allocate_card_transaction(
 
     request_obj = purchase_request or travel_request
     result = None
+    allocated_transaction_amount = amount
+    if card_transaction.base_amount:
+        allocated_transaction_amount = _money(card_transaction.transaction_amount * amount / card_transaction.base_amount)
     if request_obj is not None:
         result = evaluate_actual_expense_policy(
             request_obj,
             current_actual_amount=amount,
+            current_transaction_amount=allocated_transaction_amount,
+            transaction_currency=card_transaction.transaction_currency,
+            base_amount=amount,
+            base_currency=card_transaction.base_currency,
+            exchange_rate=card_transaction.exchange_rate,
+            exchange_rate_date=card_transaction.exchange_rate_date,
+            exchange_rate_source=card_transaction.exchange_rate_source,
             payment_method=PaymentMethod.COMPANY_CARD,
-            currency=card_transaction.currency,
+            currency=card_transaction.base_currency,
         )
         if not result.allows_recording:
             apply_actual_expense_policy_result(
@@ -741,6 +943,12 @@ def allocate_card_transaction(
                 vendor_name=card_transaction.merchant_name,
                 reference_no=card_transaction.reference_no,
                 notes=notes or "Company card allocation.",
+                transaction_currency=card_transaction.transaction_currency,
+                transaction_amount=allocated_transaction_amount,
+                base_amount=amount,
+                exchange_rate=card_transaction.exchange_rate,
+                exchange_rate_date=card_transaction.exchange_rate_date,
+                exchange_rate_source=card_transaction.exchange_rate_source,
                 skip_finance_policy=True,
                 payment_method=PaymentMethod.COMPANY_CARD,
                 card_transaction=card_transaction,
@@ -753,6 +961,12 @@ def allocate_card_transaction(
                 actual_amount=amount,
                 acting_user=acting_user,
                 currency=card_transaction.currency,
+                transaction_currency=card_transaction.transaction_currency,
+                transaction_amount=allocated_transaction_amount,
+                base_amount=amount,
+                exchange_rate=card_transaction.exchange_rate,
+                exchange_rate_date=card_transaction.exchange_rate_date,
+                exchange_rate_source=card_transaction.exchange_rate_source,
                 vendor_name=card_transaction.merchant_name,
                 reference_no=card_transaction.reference_no,
                 notes=notes or "Company card allocation.",
@@ -762,12 +976,20 @@ def allocate_card_transaction(
                 card_allocation=allocation,
             )
     elif project is not None:
+        allocated_transaction_amount = amount
+        if card_transaction.base_amount:
+            allocated_transaction_amount = _money(card_transaction.transaction_amount * amount / card_transaction.base_amount)
         ProjectBudgetEntry.objects.create(
             project=project,
             entry_type=BudgetEntryType.CONSUME,
             source_type=RequestType.PROJECT,
             source_id=project.id,
             amount=amount,
+            currency=card_transaction.base_currency,
+            source_transaction_currency=card_transaction.transaction_currency,
+            source_transaction_amount=allocated_transaction_amount,
+            source_exchange_rate=card_transaction.exchange_rate,
+            source_exchange_rate_source=card_transaction.exchange_rate_source,
             notes=f"Company card transaction {card_transaction.reference_no} allocated directly to project.",
             created_by=acting_user,
         )

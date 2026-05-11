@@ -7,6 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from common.choices import BudgetEntryType, RequestType, CurrencyCode, ApproverType, DepartmentType, ApprovalTaskStatus
+from common.currency import COMPANY_BASE_CURRENCY
 
 from decimal import Decimal
 
@@ -350,6 +351,11 @@ class ProjectBudgetEntry(models.Model):
     source_type = models.CharField(max_length=20, choices=RequestType)
     source_id = models.PositiveIntegerField()
     amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    source_transaction_currency = models.CharField(max_length=10, choices=CurrencyCode, blank=True, default="")
+    source_transaction_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    source_exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    source_exchange_rate_source = models.CharField(max_length=30, blank=True, default="")
     notes = models.CharField(max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     created_by = models.ForeignKey(

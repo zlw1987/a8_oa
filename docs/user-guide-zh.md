@@ -223,7 +223,15 @@ Unallocated Amount 是最重要的数字，表示还未分配的金额。
 
 示例：USD 12,710.00。
 
-当前报表按币种分组展示总额。系统尚未实现汇率换算，因此不会把 USD、TWD、EUR 等不同币种静默相加成一个总数。
+当前 Finance Reports 是基准币报表。公司基准币为 USD。
+
+如果发生外币业务，系统会在来源记录、Accounting Review Item 和 Company Card Transaction 上保留原始交易币种与交易金额。预算控制、Consumed、Released 以及管理报表总额使用 USD 基准金额。
+
+公司卡外币交易如果有账单入账 USD 金额，则以账单入账 USD 金额作为权威基准金额。
+
+PR/TR 详情页的实际费用会显示基准金额，也会在有外币资料时显示原始交易金额。
+
+如果外币实际费用超过批准 USD 基准金额只是因为汇率变化，系统可以识别为 FX Variance，而不是普通超支。如果原始交易金额本身也增加，则按 Spending Overrun 处理。
 
 ## 12. 设置页面
 

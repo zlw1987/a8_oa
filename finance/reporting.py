@@ -4,6 +4,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from common.choices import BudgetEntryType, RequestStatus
+from common.currency import COMPANY_BASE_CURRENCY
 from projects.models import Project, ProjectBudgetEntry
 from purchase.models import PurchaseRequest
 from travel.models import TravelRequest, TravelRequestStatus
@@ -27,20 +28,8 @@ def _entry_total(project, entry_type):
     )
 
 
-def _request_currency(request_obj):
-    return getattr(request_obj, "currency", "") or getattr(getattr(request_obj, "project", None), "currency", "") or "USD"
-
-
-def _review_item_currency(item):
-    if item.purchase_request_id:
-        return _request_currency(item.purchase_request)
-    if item.travel_request_id:
-        return _request_currency(item.travel_request)
-    if item.card_transaction_id:
-        return item.card_transaction.currency
-    if item.card_allocation_id and item.card_allocation.card_transaction_id:
-        return item.card_allocation.card_transaction.currency
-    return "USD"
+def _review_item_base_currency(item):
+    return getattr(item, "base_currency", "") or COMPANY_BASE_CURRENCY
 
 
 def build_project_budget_summary():
@@ -58,7 +47,7 @@ def build_project_budget_summary():
                 "reserved": active_reserved,
                 "consumed": consumed,
                 "available": effective_budget - active_reserved - consumed,
-                "currency": project.currency,
+                "currency": COMPANY_BASE_CURRENCY,
             }
         )
     return rows
@@ -70,33 +59,27 @@ def build_department_spending_summary():
         entry_type=BudgetEntryType.CONSUME
     ):
         department = entry.project.owning_department
-        currency = entry.project.currency
-        key = (department.id, currency)
-        rows.setdefault(key, {"department": department, "currency": currency, "consumed": Decimal("0.00")})
+        key = department.id
+        rows.setdefault(key, {"department": department, "currency": COMPANY_BASE_CURRENCY, "consumed": Decimal("0.00")})
         rows[key]["consumed"] += entry.amount
-    return sorted(rows.values(), key=lambda row: (row["department"].dept_code, row["currency"]))
+    return sorted(rows.values(), key=lambda row: row["department"].dept_code)
 
 
 def build_reserved_vs_consumed_summary():
-    rows = {}
-    for entry in ProjectBudgetEntry.objects.select_related("project"):
-        currency = entry.project.currency
-        rows.setdefault(
-            currency,
-            {
-                "currency": currency,
-                "reserved": Decimal("0.00"),
-                "released": Decimal("0.00"),
-                "consumed": Decimal("0.00"),
-            },
-        )
+    row = {
+        "currency": COMPANY_BASE_CURRENCY,
+        "reserved": Decimal("0.00"),
+        "released": Decimal("0.00"),
+        "consumed": Decimal("0.00"),
+    }
+    for entry in ProjectBudgetEntry.objects.all():
         if entry.entry_type == BudgetEntryType.RESERVE:
-            rows[currency]["reserved"] += entry.amount
+            row["reserved"] += entry.amount
         elif entry.entry_type == BudgetEntryType.RELEASE:
-            rows[currency]["released"] += entry.amount
+            row["released"] += entry.amount
         elif entry.entry_type == BudgetEntryType.CONSUME:
-            rows[currency]["consumed"] += entry.amount
-    return sorted(rows.values(), key=lambda row: row["currency"])
+            row["consumed"] += entry.amount
+    return row
 
 
 def build_open_requests_with_remaining_reserve():
@@ -105,7 +88,7 @@ def build_open_requests_with_remaining_reserve():
     for request_obj in PurchaseRequest.objects.select_related("project", "requester").filter(status__in=purchase_statuses):
         remaining = request_obj.get_reserved_remaining_amount()
         if remaining > 0:
-            rows.append({"type": "Purchase", "request": request_obj, "remaining": remaining, "currency": _request_currency(request_obj)})
+            rows.append({"type": "Purchase", "request": request_obj, "remaining": remaining, "currency": COMPANY_BASE_CURRENCY})
     travel_statuses = [
         TravelRequestStatus.PENDING_APPROVAL,
         TravelRequestStatus.APPROVED,
@@ -117,7 +100,7 @@ def build_open_requests_with_remaining_reserve():
     for request_obj in TravelRequest.objects.select_related("project", "requester").filter(status__in=travel_statuses):
         remaining = request_obj.get_reserved_remaining_amount()
         if remaining > 0:
-            rows.append({"type": "Travel", "request": request_obj, "remaining": remaining, "currency": _request_currency(request_obj)})
+            rows.append({"type": "Travel", "request": request_obj, "remaining": remaining, "currency": COMPANY_BASE_CURRENCY})
     return rows
 
 
@@ -144,8 +127,10 @@ def build_finance_report_context():
         .order_by("-created_at")
     )
     for item in over_budget_items:
-        item.report_currency = _review_item_currency(item)
+        item.report_currency = _review_item_base_currency(item)
+        item.report_amount = item.base_amount if item.base_amount is not None else item.amount
     return {
+        "base_currency": COMPANY_BASE_CURRENCY,
         "project_budget_rows": build_project_budget_summary(),
         "department_spending_rows": build_department_spending_summary(),
         "reserved_vs_consumed": build_reserved_vs_consumed_summary(),

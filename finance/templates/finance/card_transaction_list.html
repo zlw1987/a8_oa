@@ -39,7 +39,8 @@
                 <th>Statement Date</th>
                 <th>Transaction Date</th>
                 <th>Merchant</th>
-                <th>Amount</th>
+                <th>Posted/Base Amount</th>
+                <th>Original Amount</th>
                 <th>Cardholder</th>
                 <th>Reference</th>
                 <th>Status</th>
@@ -52,14 +53,15 @@
                 <td>{{ transaction.statement_date }}</td>
                 <td>{{ transaction.transaction_date }}</td>
                 <td><a href="{% url 'finance:card_transaction_detail' transaction.id %}">{{ transaction.merchant_name }}</a></td>
-                <td>{{ transaction.amount|money:transaction.currency }}</td>
+                <td>{{ transaction.base_amount|money:transaction.base_currency }}</td>
+                <td>{{ transaction.transaction_amount|money:transaction.transaction_currency }}</td>
                 <td>{{ transaction.cardholder }}</td>
                 <td>{{ transaction.reference_no }}</td>
                 <td>{{ transaction.get_match_status_display }}</td>
-                <td>{{ transaction.get_allocated_amount|money:transaction.currency }}</td>
+                <td>{{ transaction.get_allocated_amount|money:transaction.base_currency }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="8">No card transactions.</td></tr>
+            <tr><td colspan="9">No card transactions.</td></tr>
             {% endfor %}
         </tbody>
     </table>

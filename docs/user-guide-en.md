@@ -490,7 +490,15 @@ Money values on Finance Reports always show:
 
 Example: USD 12,710.00.
 
-Current reports group totals by currency. The system does not yet perform exchange-rate conversion, so it does not silently combine USD, TWD, EUR, or other currencies into one total.
+Current Finance Reports are base-currency reports. The company base currency is USD.
+
+For foreign-currency activity, the system preserves the original transaction currency and amount on source records, accounting review items, and company card transactions. Budget control, consumed amount, released amount, and management report totals use the USD base amount.
+
+Company card foreign transactions use the card statement posted USD amount as the authoritative base amount when it is available.
+
+PR/TR detail pages show actual expenses with both base amount and original transaction amount when foreign-currency data is available.
+
+If a foreign-currency actual expense exceeds the approved USD base amount only because the exchange rate changed, the system can classify it as FX Variance instead of ordinary spending overrun. If the original transaction amount also increased, it is treated as spending overrun.
 
 ## 12. Finance Policy Setup
 

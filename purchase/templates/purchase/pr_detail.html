@@ -1,5 +1,6 @@
 ﻿{% extends "purchase/base.html" %}
 
+{% load money %}
 {% block title %}{{ purchase_request.pr_no }}{% endblock %}
 {% block page_title %}Purchase Request Detail{% endblock %}
 
@@ -170,7 +171,9 @@
         <thead>
             <tr>
                 <th>Spend Date</th>
-                <th>Amount</th>
+                <th>Base Amount</th>
+                <th>Original Amount</th>
+                <th>Variance Type</th>
                 <th>Vendor</th>
                 <th>Reference No</th>
                 <th>Policy / Review</th>
@@ -184,7 +187,9 @@
             {% for spend in actual_spend_entries %}
             <tr>
                 <td>{{ spend.spend_date }}</td>
-                <td class="amount">{{ spend.currency }} {{ spend.amount }}</td>
+                <td class="amount">{{ spend.base_amount|money:spend.base_currency }}</td>
+                <td class="amount">{{ spend.transaction_amount|money:spend.transaction_currency }}</td>
+                <td>{{ spend.get_variance_type_display|default:"-" }}</td>
                 <td>{{ spend.vendor_name }}</td>
                 <td>{{ spend.reference_no }}</td>
                 <td>
@@ -212,7 +217,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="9">No actual spend records.</td>
+                <td colspan="11">No actual spend records.</td>
             </tr>
             {% endfor %}
         </tbody>

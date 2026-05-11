@@ -4,6 +4,9 @@ from .models import (
     AccountingReviewItem,
     CardTransaction,
     CardTransactionAllocation,
+    Currency,
+    ExchangeRate,
+    FXVariancePolicy,
     OverBudgetPolicy,
     ReceiptPolicy,
 )
@@ -27,10 +30,31 @@ class OverBudgetPolicyAdmin(admin.ModelAdmin):
     search_fields = ("policy_code", "policy_name")
 
 
+@admin.register(Currency)
+class CurrencyAdmin(admin.ModelAdmin):
+    list_display = ("code", "name", "symbol", "decimal_places", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("code", "name")
+
+
+@admin.register(ExchangeRate)
+class ExchangeRateAdmin(admin.ModelAdmin):
+    list_display = ("from_currency", "to_currency", "rate", "effective_date", "source", "created_by")
+    list_filter = ("from_currency", "to_currency", "source", "effective_date")
+    search_fields = ("from_currency", "to_currency", "notes")
+
+
+@admin.register(FXVariancePolicy)
+class FXVariancePolicyAdmin(admin.ModelAdmin):
+    list_display = ("policy_code", "policy_name", "currency", "action", "priority", "is_active")
+    list_filter = ("currency", "action", "is_active")
+    search_fields = ("policy_code", "policy_name")
+
+
 @admin.register(AccountingReviewItem)
 class AccountingReviewItemAdmin(admin.ModelAdmin):
-    list_display = ("source_type", "reason", "status", "amount", "over_amount", "policy_action", "created_at")
-    list_filter = ("source_type", "reason", "status", "policy_action")
+    list_display = ("source_type", "reason", "status", "amount", "over_amount", "variance_type", "policy_action", "created_at")
+    list_filter = ("source_type", "reason", "status", "variance_type", "policy_action")
     search_fields = ("title", "description", "comment")
 
 
@@ -60,8 +84,18 @@ class CardTransactionAllocationInline(admin.TabularInline):
 
 @admin.register(CardTransaction)
 class CardTransactionAdmin(admin.ModelAdmin):
-    list_display = ("statement_date", "transaction_date", "merchant_name", "amount", "currency", "cardholder", "match_status")
-    list_filter = ("match_status", "currency", "statement_date")
+    list_display = (
+        "statement_date",
+        "transaction_date",
+        "merchant_name",
+        "base_amount",
+        "base_currency",
+        "transaction_amount",
+        "transaction_currency",
+        "cardholder",
+        "match_status",
+    )
+    list_filter = ("match_status", "base_currency", "transaction_currency", "statement_date")
     search_fields = ("merchant_name", "reference_no", "cardholder__username")
     inlines = [CardTransactionAllocationInline]
 

@@ -17,12 +17,22 @@ from .models import (
     AccountingReviewReason,
     CardTransaction,
     CardTransactionMatchStatus,
+    ExchangeRate,
+    ExchangeRateSource,
+    FXVarianceAction,
+    FXVariancePolicy,
     OverBudgetAction,
     OverBudgetPolicy,
     PaymentMethod,
     ReceiptPolicy,
+    VarianceType,
 )
-from .services import allocate_card_transaction, create_duplicate_card_review_item, evaluate_actual_expense_policy
+from .services import (
+    allocate_card_transaction,
+    build_money_snapshot,
+    create_duplicate_card_review_item,
+    evaluate_actual_expense_policy,
+)
 
 
 User = get_user_model()
@@ -232,7 +242,7 @@ class FinanceReportCurrencyFormattingTest(TestCase):
         self.assertEqual(money(Decimal("100000"), "TWD"), "TWD 100,000.00")
         self.assertEqual(money(Decimal("-300"), "USD"), "USD -300.00")
 
-    def test_project_budget_summary_keeps_project_currency(self):
+    def test_project_budget_summary_reports_company_base_currency(self):
         usd_project = Project.objects.create(
             project_code="RPT-USD",
             project_name="USD Project",
@@ -257,10 +267,10 @@ class FinanceReportCurrencyFormattingTest(TestCase):
         )
         twd_project = Project.objects.create(
             project_code="RPT-TWD",
-            project_name="TWD Project",
+            project_name="Converted TWD Project",
             owning_department=self.department,
-            budget_amount=Decimal("100000.00"),
-            currency="TWD",
+            budget_amount=Decimal("3000.00"),
+            currency="USD",
             is_active=True,
         )
         ProjectBudgetEntry.objects.create(
@@ -268,7 +278,12 @@ class FinanceReportCurrencyFormattingTest(TestCase):
             entry_type=BudgetEntryType.RESERVE,
             source_type=RequestType.PROJECT,
             source_id=twd_project.id,
-            amount=Decimal("20000.00"),
+            amount=Decimal("600.00"),
+            currency="USD",
+            source_transaction_currency="TWD",
+            source_transaction_amount=Decimal("20000.00"),
+            source_exchange_rate=Decimal("0.03000000"),
+            source_exchange_rate_source=ExchangeRateSource.COMPANY_RATE,
         )
 
         rows = {row["project"].project_code: row for row in build_project_budget_summary()}
@@ -277,10 +292,10 @@ class FinanceReportCurrencyFormattingTest(TestCase):
         self.assertEqual(money(rows["RPT-USD"]["reserved"], rows["RPT-USD"]["currency"]), "USD 530.00")
         self.assertEqual(money(rows["RPT-USD"]["consumed"], rows["RPT-USD"]["currency"]), "USD 520.00")
         self.assertEqual(money(rows["RPT-USD"]["available"], rows["RPT-USD"]["currency"]), "USD 8,950.00")
-        self.assertEqual(rows["RPT-TWD"]["currency"], "TWD")
-        self.assertEqual(money(rows["RPT-TWD"]["reserved"], rows["RPT-TWD"]["currency"]), "TWD 20,000.00")
+        self.assertEqual(rows["RPT-TWD"]["currency"], "USD")
+        self.assertEqual(money(rows["RPT-TWD"]["reserved"], rows["RPT-TWD"]["currency"]), "USD 600.00")
 
-    def test_reserved_vs_consumed_summary_groups_mixed_currencies(self):
+    def test_reserved_vs_consumed_summary_reports_base_currency_totals(self):
         usd_project = Project.objects.create(
             project_code="RPT-MIX-USD",
             project_name="Mixed USD Project",
@@ -291,10 +306,10 @@ class FinanceReportCurrencyFormattingTest(TestCase):
         )
         twd_project = Project.objects.create(
             project_code="RPT-MIX-TWD",
-            project_name="Mixed TWD Project",
+            project_name="Converted TWD Project",
             owning_department=self.department,
-            budget_amount=Decimal("100000.00"),
-            currency="TWD",
+            budget_amount=Decimal("3000.00"),
+            currency="USD",
             is_active=True,
         )
         ProjectBudgetEntry.objects.create(
@@ -309,10 +324,136 @@ class FinanceReportCurrencyFormattingTest(TestCase):
             entry_type=BudgetEntryType.RESERVE,
             source_type=RequestType.PROJECT,
             source_id=twd_project.id,
-            amount=Decimal("20000.00"),
+            amount=Decimal("600.00"),
+            currency="USD",
+            source_transaction_currency="TWD",
+            source_transaction_amount=Decimal("20000.00"),
+            source_exchange_rate=Decimal("0.03000000"),
+            source_exchange_rate_source=ExchangeRateSource.COMPANY_RATE,
         )
 
-        rows = {row["currency"]: row for row in build_reserved_vs_consumed_summary()}
+        row = build_reserved_vs_consumed_summary()
 
-        self.assertEqual(rows["USD"]["reserved"], Decimal("1000.00"))
-        self.assertEqual(rows["TWD"]["reserved"], Decimal("20000.00"))
+        self.assertEqual(row["currency"], "USD")
+        self.assertEqual(row["reserved"], Decimal("1600.00"))
+
+
+class MultiCurrencyServiceTest(TestCase):
+    def setUp(self):
+        self.requester = User.objects.create_user(username="mc_req", password="testpass123")
+        self.department = Department.objects.create(
+            dept_code="D-MC",
+            dept_name="Multi Currency Dept",
+            dept_type=DepartmentType.GENERAL,
+        )
+        self.project = Project.objects.create(
+            project_code="PJT-MC",
+            project_name="Multi Currency Project",
+            owning_department=self.department,
+            budget_amount=Decimal("10000.00"),
+            currency="USD",
+            is_active=True,
+        )
+        self.purchase_request = PurchaseRequest.objects.create(
+            title="TWD hotel estimate",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            status=RequestStatus.APPROVED,
+            request_date=date.today(),
+            currency="USD",
+            estimated_total=Decimal("930.00"),
+            transaction_currency="TWD",
+            transaction_amount=Decimal("30000.00"),
+            base_currency="USD",
+            base_amount=Decimal("930.00"),
+            justification="Multi-currency policy test",
+        )
+
+    def test_build_money_snapshot_uses_company_exchange_rate(self):
+        ExchangeRate.objects.create(
+            from_currency="TWD",
+            to_currency="USD",
+            rate=Decimal("0.03150000"),
+            effective_date=date.today(),
+            source=ExchangeRateSource.COMPANY_RATE,
+        )
+
+        snapshot = build_money_snapshot(transaction_amount=Decimal("3000.00"), transaction_currency="TWD")
+
+        self.assertEqual(snapshot["base_currency"], "USD")
+        self.assertEqual(snapshot["base_amount"], Decimal("94.50"))
+        self.assertEqual(snapshot["exchange_rate_source"], ExchangeRateSource.COMPANY_RATE)
+
+    def test_fx_variance_is_not_treated_as_spending_overrun(self):
+        FXVariancePolicy.objects.create(
+            policy_code="FX-WARN",
+            policy_name="FX Warning",
+            fx_variance_amount_to=Decimal("100.00"),
+            action=FXVarianceAction.WARNING,
+            priority=1,
+            is_active=True,
+        )
+
+        result = evaluate_actual_expense_policy(
+            self.purchase_request,
+            current_actual_amount=Decimal("960.00"),
+            current_transaction_amount=Decimal("30000.00"),
+            transaction_currency="TWD",
+            base_amount=Decimal("960.00"),
+            exchange_rate=Decimal("0.03200000"),
+            exchange_rate_source=ExchangeRateSource.COMPANY_RATE,
+        )
+
+        self.assertEqual(result.variance_type, VarianceType.FX_VARIANCE)
+        self.assertEqual(result.action, OverBudgetAction.WARNING)
+
+    def test_transaction_amount_increase_is_spending_overrun(self):
+        OverBudgetPolicy.objects.create(
+            policy_code="MC-OB-REV",
+            policy_name="MC Over Budget Review",
+            request_type=RequestType.PURCHASE,
+            over_amount_from=Decimal("0.01"),
+            action=OverBudgetAction.REVIEW,
+            priority=1,
+            is_active=True,
+        )
+
+        result = evaluate_actual_expense_policy(
+            self.purchase_request,
+            current_actual_amount=Decimal("1280.00"),
+            current_transaction_amount=Decimal("40000.00"),
+            transaction_currency="TWD",
+            base_amount=Decimal("1280.00"),
+            exchange_rate=Decimal("0.03200000"),
+            exchange_rate_source=ExchangeRateSource.COMPANY_RATE,
+        )
+
+        self.assertEqual(result.variance_type, VarianceType.SPENDING_OVERRUN)
+        self.assertEqual(result.action, OverBudgetAction.REVIEW)
+
+    def test_company_card_preserves_original_currency_and_posted_base_amount(self):
+        card_transaction = CardTransaction.objects.create(
+            statement_date=date.today(),
+            transaction_date=date.today(),
+            merchant_name="Taipei Hotel",
+            amount=Decimal("95.12"),
+            currency="USD",
+            transaction_currency="TWD",
+            transaction_amount=Decimal("3000.00"),
+            base_currency="USD",
+            base_amount=Decimal("95.12"),
+            exchange_rate_source=ExchangeRateSource.CARD_STATEMENT,
+            cardholder=self.requester,
+            reference_no="MC-CARD-001",
+        )
+
+        self.assertEqual(card_transaction.amount, Decimal("95.12"))
+        self.assertEqual(card_transaction.base_amount, Decimal("95.12"))
+        self.assertEqual(card_transaction.transaction_amount, Decimal("3000.00"))
+        self.assertEqual(card_transaction.transaction_currency, "TWD")
+        self.assertEqual(card_transaction.exchange_rate_source, ExchangeRateSource.CARD_STATEMENT)
+
+    def test_missing_exchange_rate_blocks_snapshot(self):
+        with self.assertRaisesMessage(ValidationError, "No exchange rate found for JPY to USD"):
+            build_money_snapshot(transaction_amount=Decimal("1000.00"), transaction_currency="JPY")

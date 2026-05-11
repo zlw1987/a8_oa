@@ -6,34 +6,22 @@
 
 {% block content %}
 <div class="alert alert-info">
-    Finance report totals are grouped by currency. The current system does not perform exchange-rate conversion, so USD,
-    TWD, EUR, and other currencies are not silently combined.
+    Finance Reports use the company base currency: {{ base_currency }}. Foreign-currency transaction details are preserved
+    on source records and review items, but management totals are reported in base currency.
 </div>
 
 <div class="summary-cards">
     <div class="summary-card">
         <div class="label">Reserved</div>
-        {% for row in reserved_vs_consumed %}
-        <div class="value">{{ row.reserved|money:row.currency }}</div>
-        {% empty %}
-        <div class="value">{{ 0|money:"USD" }}</div>
-        {% endfor %}
+        <div class="value">{{ reserved_vs_consumed.reserved|money:reserved_vs_consumed.currency }}</div>
     </div>
     <div class="summary-card">
         <div class="label">Released</div>
-        {% for row in reserved_vs_consumed %}
-        <div class="value">{{ row.released|money:row.currency }}</div>
-        {% empty %}
-        <div class="value">{{ 0|money:"USD" }}</div>
-        {% endfor %}
+        <div class="value">{{ reserved_vs_consumed.released|money:reserved_vs_consumed.currency }}</div>
     </div>
     <div class="summary-card">
         <div class="label">Consumed</div>
-        {% for row in reserved_vs_consumed %}
-        <div class="value">{{ row.consumed|money:row.currency }}</div>
-        {% empty %}
-        <div class="value">{{ 0|money:"USD" }}</div>
-        {% endfor %}
+        <div class="value">{{ reserved_vs_consumed.consumed|money:reserved_vs_consumed.currency }}</div>
     </div>
     <div class="summary-card"><div class="label">Open Reviews</div><div class="value">{{ review_aging_rows|length }}</div></div>
 </div>
@@ -99,19 +87,26 @@
 <div class="card">
     <h2>Over-Budget Exceptions</h2>
     <table>
-        <thead><tr><th>Created</th><th>Source</th><th>Status</th><th>Amount</th><th>Over</th><th>Policy Action</th></tr></thead>
+        <thead><tr><th>Created</th><th>Source</th><th>Status</th><th>Base Amount</th><th>Over</th><th>Transaction Amount</th><th>Policy Action</th></tr></thead>
         <tbody>
             {% for item in over_budget_items %}
             <tr>
                 <td>{{ item.created_at }}</td>
                 <td>{{ item.title }}</td>
                 <td>{{ item.get_status_display }}</td>
-                <td>{{ item.amount|money:item.report_currency }}</td>
+                <td>{{ item.report_amount|money:item.report_currency }}</td>
                 <td>{{ item.over_amount|money:item.report_currency }}</td>
+                <td>
+                    {% if item.transaction_currency and item.transaction_amount %}
+                    {{ item.transaction_amount|money:item.transaction_currency }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
                 <td>{{ item.policy_action }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="6">No over-budget exceptions.</td></tr>
+            <tr><td colspan="7">No over-budget exceptions.</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -120,18 +115,25 @@
 <div class="card">
     <h2>Company Card Unmatched Transactions</h2>
     <table>
-        <thead><tr><th>Date</th><th>Merchant</th><th>Amount</th><th>Status</th><th>Reference</th></tr></thead>
+        <thead><tr><th>Date</th><th>Merchant</th><th>Posted/Base Amount</th><th>Original Amount</th><th>Status</th><th>Reference</th></tr></thead>
         <tbody>
             {% for transaction in unmatched_card_transactions %}
             <tr>
                 <td>{{ transaction.transaction_date }}</td>
                 <td><a href="{% url 'finance:card_transaction_detail' transaction.id %}">{{ transaction.merchant_name }}</a></td>
-                <td>{{ transaction.amount|money:transaction.currency }}</td>
+                <td>{{ transaction.base_amount|money:transaction.base_currency }}</td>
+                <td>
+                    {% if transaction.transaction_currency and transaction.transaction_amount %}
+                    {{ transaction.transaction_amount|money:transaction.transaction_currency }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
                 <td>{{ transaction.get_match_status_display }}</td>
                 <td>{{ transaction.reference_no }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5">No unmatched transactions.</td></tr>
+            <tr><td colspan="6">No unmatched transactions.</td></tr>
             {% endfor %}
         </tbody>
     </table>

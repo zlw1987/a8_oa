@@ -22,6 +22,7 @@ from common.choices import (
 )
 from projects.models import ProjectBudgetEntry
 from accounts.models import UserDepartment
+from common.currency import COMPANY_BASE_CURRENCY
 
 class PurchaseRequestNumberSequence(models.Model):
     sequence_date = models.DateField(unique=True)
@@ -102,8 +103,16 @@ class PurchaseRequest(models.Model):
     currency = models.CharField(
     max_length=10,
     choices=CurrencyCode,
-    default=CurrencyCode.USD,
+    default=COMPANY_BASE_CURRENCY,
     )
+    transaction_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    transaction_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    base_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    base_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    exchange_rate_date = models.DateField(null=True, blank=True)
+    exchange_rate_source = models.CharField(max_length=30, blank=True, default="")
+    exchange_rate_override_reason = models.TextField(blank=True, default="")
     estimated_total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     justification = models.TextField(blank=True, default="")
     vendor_suggestion = models.CharField(max_length=100, blank=True, default="")
@@ -756,6 +765,13 @@ class PurchaseRequest(models.Model):
         vendor_name="",
         reference_no="",
         notes="",
+        transaction_currency="",
+        transaction_amount=None,
+        base_amount=None,
+        exchange_rate=None,
+        exchange_rate_date=None,
+        exchange_rate_source="",
+        exchange_rate_override_reason="",
         skip_finance_policy=False,
         payment_method=None,
         card_transaction=None,
@@ -767,6 +783,19 @@ class PurchaseRequest(models.Model):
         if amount <= 0:
             raise ValidationError("Actual spend amount must be greater than 0.")
 
+        from finance.services import build_money_snapshot
+
+        snapshot = build_money_snapshot(
+            transaction_amount=transaction_amount if transaction_amount is not None else amount,
+            transaction_currency=transaction_currency or self.currency,
+            base_amount=base_amount,
+            base_currency=COMPANY_BASE_CURRENCY,
+            exchange_rate=exchange_rate,
+            exchange_rate_date=exchange_rate_date or spend_date,
+            exchange_rate_source=exchange_rate_source,
+            override_reason=exchange_rate_override_reason,
+        )
+        base_actual_amount = snapshot["base_amount"]
         policy_result = None
         from finance.models import PaymentMethod
 
@@ -779,15 +808,23 @@ class PurchaseRequest(models.Model):
 
             policy_result = evaluate_actual_expense_policy(
                 self,
-                current_actual_amount=amount,
+                current_actual_amount=base_actual_amount,
+                current_transaction_amount=snapshot["transaction_amount"],
+                transaction_currency=snapshot["transaction_currency"],
+                base_amount=snapshot["base_amount"],
+                base_currency=snapshot["base_currency"],
+                exchange_rate=snapshot["exchange_rate"],
+                exchange_rate_date=snapshot["exchange_rate_date"],
+                exchange_rate_source=snapshot["exchange_rate_source"],
+                exchange_rate_override_reason=snapshot["exchange_rate_override_reason"],
                 payment_method=effective_payment_method,
-                currency=self.currency,
+                currency=snapshot["base_currency"],
             )
             if not policy_result.allows_recording:
                 apply_actual_expense_policy_result(policy_result, acting_user=acting_user)
 
         reserved_remaining = self.get_reserved_remaining_amount()
-        extra_needed = amount - reserved_remaining if amount > reserved_remaining else Decimal("0.00")
+        extra_needed = base_actual_amount - reserved_remaining if base_actual_amount > reserved_remaining else Decimal("0.00")
 
         if extra_needed > 0:
             available_budget = self.project.get_available_amount()
@@ -800,8 +837,17 @@ class PurchaseRequest(models.Model):
         actual_spend = PurchaseActualSpend.objects.create(
             purchase_request=self,
             spend_date=spend_date,
-            amount=amount,
-            currency=self.currency,
+            amount=base_actual_amount,
+            currency=snapshot["base_currency"],
+            transaction_currency=snapshot["transaction_currency"],
+            transaction_amount=snapshot["transaction_amount"],
+            base_currency=snapshot["base_currency"],
+            base_amount=snapshot["base_amount"],
+            exchange_rate=snapshot["exchange_rate"],
+            exchange_rate_date=snapshot["exchange_rate_date"],
+            exchange_rate_source=snapshot["exchange_rate_source"],
+            exchange_rate_override_reason=snapshot["exchange_rate_override_reason"],
+            variance_type=getattr(policy_result, "variance_type", "") if policy_result else "",
             vendor_name=vendor_name,
             reference_no=reference_no,
             notes=notes,
@@ -824,9 +870,9 @@ class PurchaseRequest(models.Model):
         apply_receipt_policy_for_actual(
             self,
             actual_expense=actual_spend,
-            amount=amount,
+            amount=base_actual_amount,
             payment_method=effective_payment_method,
-            currency=self.currency,
+            currency=snapshot["base_currency"],
             card_transaction=card_transaction,
             card_allocation=card_allocation,
             acting_user=acting_user,
@@ -837,12 +883,17 @@ class PurchaseRequest(models.Model):
             entry_type=BudgetEntryType.CONSUME,
             source_type=RequestType.PURCHASE,
             source_id=self.id,
-            amount=amount,
+            amount=base_actual_amount,
+            currency=snapshot["base_currency"],
+            source_transaction_currency=snapshot["transaction_currency"],
+            source_transaction_amount=snapshot["transaction_amount"],
+            source_exchange_rate=snapshot["exchange_rate"],
+            source_exchange_rate_source=snapshot["exchange_rate_source"],
             notes=f"Budget consumed by actual spend of {self.pr_no}",
             created_by=acting_user,
         )
 
-        amount_to_release = min(amount, reserved_remaining)
+        amount_to_release = min(base_actual_amount, reserved_remaining)
         if amount_to_release > 0:
             ProjectBudgetEntry.objects.create(
                 project=self.project,
@@ -850,6 +901,11 @@ class PurchaseRequest(models.Model):
                 source_type=RequestType.PURCHASE,
                 source_id=self.id,
                 amount=amount_to_release,
+                currency=snapshot["base_currency"],
+                source_transaction_currency=snapshot["transaction_currency"],
+                source_transaction_amount=snapshot["transaction_amount"],
+                source_exchange_rate=snapshot["exchange_rate"],
+                source_exchange_rate_source=snapshot["exchange_rate_source"],
                 notes=f"Reserved budget converted to actual spend for {self.pr_no}",
                 created_by=acting_user,
             )
@@ -878,6 +934,7 @@ class PurchaseRequest(models.Model):
             acting_user=acting_user,
             comment=(
                 f"Actual spend recorded: {self.currency} {amount}. "
+                f"Base amount: {snapshot['base_currency']} {base_actual_amount}. "
                 f"Vendor: {vendor_name or '-'}; Reference: {reference_no or '-'}."
             ),
         )
@@ -1041,6 +1098,13 @@ class PurchaseRequestLine(models.Model):
     )
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     line_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    estimate_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    estimate_transaction_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    estimated_exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    estimated_base_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    estimated_base_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    exchange_rate_date = models.DateField(null=True, blank=True)
+    exchange_rate_source = models.CharField(max_length=30, blank=True, default="")
     notes = models.CharField(max_length=200, blank=True, default="")
 
     class Meta:
@@ -1068,8 +1132,17 @@ class PurchaseActualSpend(models.Model):
     currency = models.CharField(
     max_length=10,
     choices=CurrencyCode,
-    default=CurrencyCode.USD,
+    default=COMPANY_BASE_CURRENCY,
     )
+    transaction_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    transaction_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    base_currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    base_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    exchange_rate_date = models.DateField(null=True, blank=True)
+    exchange_rate_source = models.CharField(max_length=30, blank=True, default="")
+    exchange_rate_override_reason = models.TextField(blank=True, default="")
+    variance_type = models.CharField(max_length=30, blank=True, default="")
     vendor_name = models.CharField(max_length=100, blank=True, default="")
     reference_no = models.CharField(max_length=100, blank=True, default="")
     notes = models.TextField(blank=True, default="")
