@@ -29,6 +29,9 @@ from .reporting import build_finance_report_context
 from .presentation import (
     apply_accounting_review_tab,
     build_accounting_review_tabs,
+    build_card_review_action,
+    build_card_transaction_summary,
+    enrich_card_review_items,
     enrich_review_item,
     enrich_review_items,
 )
@@ -350,8 +353,26 @@ def card_transaction_create(request):
 def card_transaction_detail(request, pk):
     _enforce_accounting_permission(request.user)
     transaction = get_object_or_404(CardTransaction.objects.select_related("cardholder"), pk=pk)
-    allocation_form = CardTransactionAllocationForm(initial={"amount": transaction.get_unallocated_amount()})
-    allocations = transaction.allocations.select_related("purchase_request", "travel_request", "project", "created_by")
+    unallocated_amount = transaction.get_unallocated_amount()
+    allocation_form = CardTransactionAllocationForm(initial={"amount": unallocated_amount})
+    allocation_form.fields["amount"].widget.attrs.update({
+        "max": unallocated_amount,
+        "data-unallocated-amount": unallocated_amount,
+    })
+    allocations = transaction.allocations.select_related("purchase_request", "travel_request", "project", "created_by", "policy")
+    review_items = list(
+        transaction.review_items.select_related(
+            "purchase_request",
+            "travel_request",
+            "card_transaction",
+            "card_allocation",
+            "card_allocation__card_transaction",
+            "policy",
+        )
+    )
+    enrich_card_review_items(review_items)
+    card_summary = build_card_transaction_summary(transaction)
+    review_action = build_card_review_action(transaction)
     return render(
         request,
         "finance/card_transaction_detail.html",
@@ -359,7 +380,11 @@ def card_transaction_detail(request, pk):
             "transaction": transaction,
             "allocation_form": allocation_form,
             "allocations": allocations,
+            "review_items": review_items,
             "possible_duplicate": transaction.has_possible_duplicate(),
+            "card_summary": card_summary,
+            "review_action": review_action,
+            "can_allocate": unallocated_amount > 0,
         },
     )
 

@@ -109,6 +109,9 @@
                             <a class="btn btn-secondary" href="{{ item.detail_url }}">View</a>
                             {% if item.is_unresolved %}
                             <a class="btn btn-primary" href="{{ item.detail_url }}?decision=RESOLVE">Resolve</a>
+                            <a class="btn btn-secondary" href="{{ item.detail_url }}?decision=APPROVE_EXCEPTION">Approve Exception</a>
+                            <a class="btn btn-secondary" href="{{ item.detail_url }}?decision=RETURN">Return</a>
+                            <a class="btn btn-danger" href="{{ item.detail_url }}?decision=REJECT">Reject</a>
                             {% endif %}
                         </div>
                     </td>

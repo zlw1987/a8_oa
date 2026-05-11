@@ -5,6 +5,7 @@ from common.presentation import get_status_badge_tone
 from .models import (
     AccountingReviewReason,
     AccountingReviewStatus,
+    CardTransactionMatchStatus,
     OverBudgetAction,
 )
 
@@ -127,3 +128,47 @@ def apply_accounting_review_tab(queryset, tab):
     if tab == "resolved":
         return queryset.exclude(status__in=OPEN_STATUS_FILTER)
     return queryset.filter(status__in=OPEN_STATUS_FILTER)
+
+
+def build_card_transaction_summary(transaction):
+    allocated_amount = transaction.get_allocated_amount()
+    unallocated_amount = transaction.get_unallocated_amount()
+    open_review_count = transaction.review_items.filter(status__in=OPEN_STATUS_FILTER).count()
+    possible_duplicate = transaction.has_possible_duplicate()
+    return {
+        "allocated_amount": allocated_amount,
+        "unallocated_amount": unallocated_amount,
+        "open_review_count": open_review_count,
+        "possible_duplicate": possible_duplicate,
+        "match_status_tone": get_status_badge_tone(transaction.match_status),
+        "cards": [
+            {"label": "Transaction Amount", "value": f"{transaction.currency} {transaction.amount}", "tone": "neutral"},
+            {"label": "Allocated Amount", "value": f"{transaction.currency} {allocated_amount}", "tone": "success" if allocated_amount else "neutral"},
+            {"label": "Unallocated Amount", "value": f"{transaction.currency} {unallocated_amount}", "tone": "danger" if unallocated_amount > 0 else "success"},
+            {"label": "Match Status", "value": transaction.get_match_status_display(), "tone": get_status_badge_tone(transaction.match_status)},
+            {"label": "Open Reviews", "value": open_review_count, "tone": "danger" if open_review_count else "success"},
+            {"label": "Duplicate Warning", "value": "Yes" if possible_duplicate else "No", "tone": "danger" if possible_duplicate else "success"},
+        ],
+    }
+
+
+def build_card_review_action(transaction):
+    open_review_count = transaction.review_items.filter(status__in=OPEN_STATUS_FILTER).count()
+    if transaction.match_status != CardTransactionMatchStatus.MATCHED:
+        return {
+            "enabled": False,
+            "reason": "Cannot mark reviewed until the transaction is fully matched.",
+        }
+    if open_review_count:
+        review_label = "item exists" if open_review_count == 1 else "items exist"
+        return {
+            "enabled": False,
+            "reason": f"Cannot mark reviewed because {open_review_count} unresolved Accounting Review {review_label}.",
+        }
+    return {"enabled": True, "reason": ""}
+
+
+def enrich_card_review_items(items):
+    for item in items:
+        enrich_review_item(item)
+    return items

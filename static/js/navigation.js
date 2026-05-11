@@ -1,15 +1,48 @@
 (function () {
+    var hoverOpenDelay = 75;
+    var hoverCloseDelay = 200;
+    var hoverTimers = new WeakMap();
+    var supportsDesktopHover = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+
+    function getTimerState(menu) {
+        if (!hoverTimers.has(menu)) {
+            hoverTimers.set(menu, {});
+        }
+        return hoverTimers.get(menu);
+    }
+
+    function setMenuOpen(menu, isOpen) {
+        menu.classList.toggle("is-open", isOpen);
+        var trigger = menu.querySelector("[data-nav-trigger]");
+        if (trigger) {
+            trigger.setAttribute("aria-expanded", String(isOpen));
+        }
+    }
+
     function closeAllMenus(exceptMenu) {
         document.querySelectorAll("[data-nav-menu]").forEach(function (menu) {
             if (menu === exceptMenu) {
                 return;
             }
-            menu.classList.remove("is-open");
-            var trigger = menu.querySelector("[data-nav-trigger]");
-            if (trigger) {
-                trigger.setAttribute("aria-expanded", "false");
-            }
+            setMenuOpen(menu, false);
         });
+    }
+
+    function scheduleOpen(menu) {
+        var timerState = getTimerState(menu);
+        window.clearTimeout(timerState.closeTimer);
+        timerState.openTimer = window.setTimeout(function () {
+            closeAllMenus(menu);
+            setMenuOpen(menu, true);
+        }, hoverOpenDelay);
+    }
+
+    function scheduleClose(menu) {
+        var timerState = getTimerState(menu);
+        window.clearTimeout(timerState.openTimer);
+        timerState.closeTimer = window.setTimeout(function () {
+            setMenuOpen(menu, false);
+        }, hoverCloseDelay);
     }
 
     document.addEventListener("click", function (event) {
@@ -18,8 +51,7 @@
             var menu = trigger.closest("[data-nav-menu]");
             var isOpen = menu.classList.contains("is-open");
             closeAllMenus(menu);
-            menu.classList.toggle("is-open", !isOpen);
-            trigger.setAttribute("aria-expanded", String(!isOpen));
+            setMenuOpen(menu, !isOpen);
             return;
         }
 
@@ -32,5 +64,25 @@
         if (event.key === "Escape") {
             closeAllMenus();
         }
+
+        var trigger = event.target.closest("[data-nav-trigger]");
+        if (trigger && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            var menu = trigger.closest("[data-nav-menu]");
+            var isOpen = menu.classList.contains("is-open");
+            closeAllMenus(menu);
+            setMenuOpen(menu, !isOpen);
+        }
     });
+
+    if (supportsDesktopHover) {
+        document.querySelectorAll("[data-nav-menu]").forEach(function (menu) {
+            menu.addEventListener("mouseenter", function () {
+                scheduleOpen(menu);
+            });
+            menu.addEventListener("mouseleave", function () {
+                scheduleClose(menu);
+            });
+        });
+    }
 })();

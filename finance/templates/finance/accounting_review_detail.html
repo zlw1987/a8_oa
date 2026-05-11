@@ -102,8 +102,35 @@
     </div>
 </div>
 
+<div class="detail-two-column">
+    <div class="card">
+        <h2>Financial Impact</h2>
+        <div class="summary-grid">
+            <div class="summary-label">Amount</div>
+            <div>{{ item.amount }}</div>
+            <div class="summary-label">Over Amount</div>
+            <div>{{ item.over_amount }}</div>
+            <div class="summary-label">Over Percent</div>
+            <div>{{ item.over_percent }}</div>
+            <div class="summary-label">Policy</div>
+            <div>{{ item.policy|default:"Default" }}</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Receipt / Attachment Status</h2>
+        {% if item.reason == "MISSING_RECEIPT" %}
+        <div class="alert alert-warning">
+            Receipt or invoice support is missing or has not been accepted. Review the source request attachments before resolving.
+        </div>
+        {% else %}
+        <p class="muted">No receipt-specific blocker is recorded for this review item.</p>
+        {% endif %}
+    </div>
+</div>
+
 <div class="card">
-    <h2>Audit Context</h2>
+    <h2>Decision History / Audit Context</h2>
     <div class="summary-grid">
         <div class="summary-label">Created By</div>
         <div>{{ item.created_by|default:"-" }}</div>
@@ -111,8 +138,14 @@
         <div>{{ item.created_at }}</div>
         <div class="summary-label">Assigned Reviewer</div>
         <div>{{ item.assigned_reviewer|default:"-" }}</div>
-        <div class="summary-label">Policy</div>
-        <div>{{ item.policy|default:"Default" }}</div>
+        <div class="summary-label">Decision</div>
+        <div>{{ item.get_decision_display|default:"-" }}</div>
+        <div class="summary-label">Reviewed By</div>
+        <div>{{ item.reviewed_by|default:"-" }}</div>
+        <div class="summary-label">Reviewed At</div>
+        <div>{{ item.reviewed_at|default:"-" }}</div>
+        <div class="summary-label">Comment</div>
+        <div>{{ item.comment|default:"-" }}</div>
     </div>
 </div>
 {% endblock %}
