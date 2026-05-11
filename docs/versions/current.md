@@ -6,6 +6,12 @@ The current version includes V0.5 business-control completion on top of the V0.4
 
 ## Latest Fixes
 
+- Added UI productization status documentation and user instruction updates.
+- Added desktop hover fallback for dropdown navigation.
+- Productized PR/TR detail pages with financial summary cards, closeout checklist, available actions, and open issues.
+- Productized top navigation as permission-aware dropdown groups with active states.
+- Productized Accounting Review Queue with quick tabs, aging badges, severity badges, required action, and a detail page.
+- Productized Card Transaction Detail as a reconciliation page with allocated/unallocated summary, disabled review reason, duplicate review link, and allocation guardrail.
 - Added V0.5 amendment / supplemental request baseline for PR and TR increases.
 - Added receipt and invoice policy setup.
 - Added missing receipt accounting review item creation and closeout blocking.

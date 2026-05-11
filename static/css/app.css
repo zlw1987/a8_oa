@@ -141,6 +141,17 @@ main {
     gap: 4px;
 }
 
+@media (hover: hover) and (pointer: fine) {
+    .nav-menu:hover .nav-dropdown {
+        display: grid;
+        gap: 4px;
+    }
+
+    .nav-menu:hover .nav-menu-trigger {
+        background: #eef1f5;
+    }
+}
+
 .nav-dropdown-item {
     display: block;
     padding: 9px 10px;
