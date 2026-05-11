@@ -1,12 +1,18 @@
 {% extends "purchase/base.html" %}
+{% load money %}
 
 {% block title %}Purchase Requests{% endblock %}
 {% block page_title %}Purchase Requests{% endblock %}
 
 {% block content %}
-<div class="card">
-    <p class="muted">This is the purchase request worklist for the current user.</p>
-    <p><a href="{% url 'purchase:pr_create' %}">Create Purchase Request</a></p>
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Purchase Requests</h2>
+            <p class="muted">This is the purchase request worklist for the current user.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'purchase:pr_create' %}">Create Purchase Request</a>
+    </div>
 </div>
 <div class="card">
     <h2>Filters</h2>
@@ -22,6 +28,8 @@
 </div>
 
 <div class="card">
+    <h2>Purchase Request List</h2>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -51,7 +59,7 @@
                 <td>{{ pr.current_step }}</td>
                 <td>{{ pr.current_approver }}</td>
                 <td>{{ pr.approval_progress }}</td>
-                <td>{{ pr.currency }} {{ pr.estimated_total }}</td>
+                <td>{{ pr.estimated_total|money:pr.currency }}</td>
                 <td>{{ pr.request_date }}</td>
                 <td>
                     {% if pr.can_edit %}
@@ -68,6 +76,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 
 {% if page_obj.has_other_pages %}

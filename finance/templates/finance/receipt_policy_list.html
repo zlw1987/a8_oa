@@ -4,13 +4,18 @@
 {% block page_title %}Receipt Policies{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="action-row">
-        <a href="{% url 'finance:receipt_policy_create' %}">Create Receipt Policy</a>
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Receipt Policies</h2>
+            <p class="muted">Maintain receipt and invoice requirements for actual expenses.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'finance:receipt_policy_create' %}">Create Receipt Policy</a>
     </div>
 </div>
 
 <div class="card">
+    <h2>Filters</h2>
     <form method="get" class="action-row">
         <input type="text" name="q" value="{{ q }}" placeholder="Search code or name">
         <button type="submit">Search</button>
@@ -19,6 +24,8 @@
 </div>
 
 <div class="card">
+    <h2>Receipt Policy List</h2>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -51,5 +58,6 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endblock %}

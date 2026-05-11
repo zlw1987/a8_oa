@@ -1,186 +1,94 @@
 {% extends "purchase/base.html" %}
+{% load money %}
 
 {% block title %}Dashboard{% endblock %}
 {% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="summary-cards">
-    <div class="summary-card">
-        <div class="label">My Editable Requests</div>
-        <div class="value">{{ editable_count }}</div>
-    </div>
-
-    <div class="summary-card">
-        <div class="label">My In-Progress Requests</div>
-        <div class="value">{{ in_progress_count }}</div>
-    </div>
-
-    <div class="summary-card">
-        <div class="label">My Overdue Tasks</div>
-        <div class="value">{{ approval_summary.assigned_overdue_count }}</div>
-    </div>
-
-    <div class="summary-card">
-        <div class="label">Pool Overdue Tasks</div>
-        <div class="value">{{ approval_summary.pool_overdue_count }}</div>
+{% for section in dashboard_sections %}
+<div class="card dashboard-section">
+    <h2>{{ section.title }}</h2>
+    <div class="dashboard-card-grid">
+        {% for card in section.cards %}
+        <a class="dashboard-card dashboard-card-{{ card.tone }}" href="{{ card.url }}">
+            <span class="dashboard-card-label">{{ card.label }}</span>
+            <span class="dashboard-card-value">{{ card.value }}</span>
+            {% if card.description %}
+            <span class="dashboard-card-description">{{ card.description }}</span>
+            {% endif %}
+        </a>
+        {% endfor %}
     </div>
 </div>
-<div class="card">
-    <h2>Approval Summary</h2>
-    <div class="summary-grid">
-        <div class="summary-label">My Open Tasks</div>
-        <div>{{ approval_summary.assigned_count }}</div>
-
-        <div class="summary-label">My Overdue Tasks</div>
-        <div>{{ approval_summary.assigned_overdue_count }}</div>
-
-        <div class="summary-label">Available Pool Tasks</div>
-        <div>{{ approval_summary.pool_count }}</div>
-
-        <div class="summary-label">Pool Overdue Tasks</div>
-        <div>{{ approval_summary.pool_overdue_count }}</div>
-    </div>
-
-    <div class="action-row" style="margin-top: 16px;">
-        <a href="{% url 'approvals:my_tasks' %}?due_state=overdue">View Overdue Tasks</a>
-    </div>
-</div>
-<div class="card">
-    <div class="action-row">
-        <a href="{% url 'purchase:pr_create' %}">Create Purchase Request</a>
-        <a href="{% url 'travel:tr_create' %}">Create Travel Request</a>
-        {% if can_create_project %}
-        <a href="{% url 'projects:project_create' %}">Create Project</a>
-        {% endif %}
-    </div>
-</div>
+{% endfor %}
 
 <div class="card">
     <h2>My Recent Requests</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Request Type</th>
-                <th>Request No</th>
-                <th>Title</th>
-                <th>Status</th>
-                <th>Project</th>
-                <th>Amount</th>
-                <th>Open</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for req in my_recent_requests %}
-            <tr>
-                <td>{{ req.request_type_label }}</td>
-                <td>{{ req.request_no }}</td>
-                <td>{{ req.title }}</td>
-                <td>{{ req.status_display }}</td>
-                <td>
-                    {% if req.project_budget_url %}
-                    <a href="{{ req.project_budget_url }}">{{ req.project }}</a>
-                    {% else %}
-                    {{ req.project }}
-                    {% endif %}
-                </td>
-                <td>{{ req.currency }} {{ req.amount }}</td>
-                <td><a href="{{ req.detail_url }}">Open</a></td>
-            </tr>
-            {% empty %}
-            <tr>
-                <td colspan="7">No recent requests.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Request Type</th>
+                    <th>Request No</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th>Project</th>
+                    <th>Amount</th>
+                    <th>Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for req in my_recent_requests %}
+                <tr>
+                    <td>{{ req.request_type_label }}</td>
+                    <td>{{ req.request_no }}</td>
+                    <td>{{ req.title }}</td>
+                    <td>{{ req.status_display }}</td>
+                    <td>
+                        {% if req.project_budget_url %}
+                        <a href="{{ req.project_budget_url }}">{{ req.project }}</a>
+                        {% else %}
+                        {{ req.project }}
+                        {% endif %}
+                    </td>
+                    <td>{{ req.amount|money:req.currency }}</td>
+                    <td><a href="{{ req.detail_url }}">Open</a></td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7">No recent requests.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <div class="card">
     <h2>Assigned to Me</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Request Type</th>
-                <th>Request No</th>
-                <th>Title</th>
-                <th>Step</th>
-                <th>Due At</th>
-                <th>Due Status</th>
-                <th>Request Status</th>
-                <th>Amount</th>
-                <th>Open</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for task in assigned_tasks %}
-            <tr{% if task.is_overdue %} style="background: #fff8f8;" {% endif %}>
-                <td>{{ task.request_type_label }}</td>
-                <td>{{ task.request_no_display }}</td>
-                <td>{{ task.request_title_display }}</td>
-                <td>{{ task.step_name }}</td>
-                <td>
-                    {% if task.due_at %}
-                    {{ task.due_at|date:"Y-m-d H:i" }}
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
-                <td>
-                    {% if task.is_overdue %}
-                    <span class="badge badge-danger">{{ task.due_status_label }}</span>
-                    {% else %}
-                    <span class="badge badge-neutral">{{ task.due_status_label }}</span>
-                    {% endif %}
-                </td>
-                <td>{{ task.request_status_display }}</td>
-                <td>{{ task.request_currency }} {{ task.request_amount }}</td>
-                <td>
-                    {% if task.request_detail_url %}
-                    <a href="{{ task.request_detail_url }}">Open</a>
-                    {% else %}
-                    <span class="muted">Unavailable</span>
-                    {% endif %}
-                </td>
-                </tr>
-                {% empty %}
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
                 <tr>
-                    <td colspan="9">No assigned tasks.</td>
+                    <th>Request Type</th>
+                    <th>Request No</th>
+                    <th>Title</th>
+                    <th>Step</th>
+                    <th>Due At</th>
+                    <th>Due Status</th>
+                    <th>Request Status</th>
+                    <th>Amount</th>
+                    <th>Open</th>
                 </tr>
-                {% endfor %}
-</tbody>
-    </table>
-</div>
-
-<div class="card">
-    <h2>Available Pool Tasks</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Request Type</th>
-                <th>Request No</th>
-                <th>Title</th>
-                <th>Step</th>
-                <th>Due At</th>
-                <th>Due Status</th>
-                <th>Request Status</th>
-                <th>Amount</th>
-                <th>Open</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for task in pool_tasks %}
-                <tr{% if task.is_overdue %} style="background: #fff8f8;" {% endif %}>
+            </thead>
+            <tbody>
+                {% for task in assigned_tasks %}
+                <tr{% if task.is_overdue %} class="row-warning"{% endif %}>
                     <td>{{ task.request_type_label }}</td>
                     <td>{{ task.request_no_display }}</td>
                     <td>{{ task.request_title_display }}</td>
                     <td>{{ task.step_name }}</td>
-                    <td>
-                        {% if task.due_at %}
-                        {{ task.due_at|date:"Y-m-d H:i" }}
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
+                    <td>{% if task.due_at %}{{ task.due_at|date:"Y-m-d H:i" }}{% else %}-{% endif %}</td>
                     <td>
                         {% if task.is_overdue %}
                         <span class="badge badge-danger">{{ task.due_status_label }}</span>
@@ -189,7 +97,59 @@
                         {% endif %}
                     </td>
                     <td>{{ task.request_status_display }}</td>
-                    <td>{{ task.request_currency }} {{ task.request_amount }}</td>
+                    <td>{{ task.request_amount|money:task.request_currency }}</td>
+                    <td>
+                        {% if task.request_detail_url %}
+                        <a href="{{ task.request_detail_url }}">Open</a>
+                        {% else %}
+                        <span class="muted">Unavailable</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9">No assigned tasks.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Available Pool Tasks</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Request Type</th>
+                    <th>Request No</th>
+                    <th>Title</th>
+                    <th>Step</th>
+                    <th>Due At</th>
+                    <th>Due Status</th>
+                    <th>Request Status</th>
+                    <th>Amount</th>
+                    <th>Open</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for task in pool_tasks %}
+                <tr{% if task.is_overdue %} class="row-warning"{% endif %}>
+                    <td>{{ task.request_type_label }}</td>
+                    <td>{{ task.request_no_display }}</td>
+                    <td>{{ task.request_title_display }}</td>
+                    <td>{{ task.step_name }}</td>
+                    <td>{% if task.due_at %}{{ task.due_at|date:"Y-m-d H:i" }}{% else %}-{% endif %}</td>
+                    <td>
+                        {% if task.is_overdue %}
+                        <span class="badge badge-danger">{{ task.due_status_label }}</span>
+                        {% else %}
+                        <span class="badge badge-neutral">{{ task.due_status_label }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ task.request_status_display }}</td>
+                    <td>{{ task.request_amount|money:task.request_currency }}</td>
                     <td>
                         {% if task.request_detail_url %}
                         <a href="{{ task.request_detail_url }}">Open</a>
@@ -202,9 +162,9 @@
                 <tr>
                     <td colspan="9">No available pool tasks.</td>
                 </tr>
-            {% endfor %}
-</tbody>
-    </table>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
-
 {% endblock %}

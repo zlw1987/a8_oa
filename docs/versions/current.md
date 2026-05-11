@@ -10,6 +10,8 @@ The current version includes V0.5 business-control completion on top of the V0.4
 - Moved Approval Rules `Create Rule` out of the Filters panel into a page-level primary action area.
 - Added a reusable `money` template filter and updated Finance Reports to show currency code, thousand separators, and two decimal places.
 - Updated Finance Reports to group top financial totals by currency instead of silently combining mixed currencies.
+- Standardized key list/setup pages so primary creation actions sit outside filter panels.
+- Added role-based Dashboard cards for requester, approver, accounting, finance admin, and system admin work.
 - Updated English and Chinese user guides for the latest navigation, accounting workbench, and card reconciliation UI.
 - Added UI productization status documentation.
 - Added desktop hover fallback for dropdown navigation.

@@ -4,13 +4,18 @@
 {% block page_title %}Over-Budget Policies{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="action-row">
-        <a href="{% url 'finance:over_budget_policy_create' %}">Create Policy</a>
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Over-Budget Policies</h2>
+            <p class="muted">Maintain finance controls for actual expenses over approved amount.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'finance:over_budget_policy_create' %}">Create Policy</a>
     </div>
 </div>
 
 <div class="card">
+    <h2>Filters</h2>
     <form method="get" class="action-row">
         <input type="text" name="q" value="{{ q }}" placeholder="Code or name">
         <button type="submit">Filter</button>
@@ -19,6 +24,8 @@
 </div>
 
 <div class="card">
+    <h2>Over-Budget Policy List</h2>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -58,5 +65,6 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endblock %}

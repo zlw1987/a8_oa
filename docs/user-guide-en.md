@@ -32,10 +32,14 @@ The main goals are:
 
 The Dashboard may show:
 
-- Your approval tasks.
-- Recent purchase requests.
-- Recent travel requests.
-- Request statuses related to you.
+- Requester work cards, such as drafts, returned requests, pending approval, approved but not closed, and missing receipt items.
+- Approver work cards, such as pending tasks, overdue tasks, pool tasks, recently approved items, and returned / rejected items.
+- Accounting work cards, such as pending reviews, missing receipt items, over-budget reviews, amendment-required items, unmatched card transactions, and duplicate card reviews.
+- Finance Admin cards, such as review aging, projects near budget limit, over-budget exceptions, unmatched card count, receipt policy issues, report shortcuts, and policy setup shortcuts.
+- System Admin shortcuts, such as user / department setup, approval rule setup, finance policy setup, and system notes.
+- Recent requests and current approval task tables.
+
+The Dashboard is permission-aware. Normal requesters do not see finance/admin work cards.
 
 Top navigation is grouped into dropdown menus:
 
@@ -48,6 +52,16 @@ Top navigation is grouped into dropdown menus:
 Visible menus depend on your permissions. Empty menu groups are hidden.
 
 On desktop, hover over Work, Finance, Setup, or Admin to open the dropdown. You can also click the menu group. Click outside the menu or press Escape to close it.
+
+List and setup pages follow a consistent layout:
+
+1. Page title and primary action, such as Create Rule or New Project.
+2. Optional summary cards.
+3. Filters with only filter-related controls.
+4. Data table.
+5. Pagination when needed.
+
+Create, New, Add, and Import actions are page-level actions. They are not part of the Filters panel.
 
 ## 4. Purchase Request Flow
 

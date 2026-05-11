@@ -239,6 +239,40 @@ Main behavior:
 - Project, department, open reserve, over-budget, and card amount fields use the shared money formatter.
 - Mixed-currency totals are grouped by currency because exchange-rate conversion is not implemented yet.
 
+## UI-5 Completed: List Page Pattern And Role-Based Dashboard
+
+UI-5 standardized key list/setup pages and turned the Dashboard into a role-aware operating screen.
+
+Changed areas:
+
+- `dashboard/views.py`
+- `dashboard/templates/dashboard/home.html`
+- `purchase/templates/purchase/pr_list.html`
+- `travel/templates/travel/tr_list.html`
+- `projects/templates/projects/project_list.html`
+- `accounts/templates/accounts/department_list.html`
+- `approvals/templates/approvals/rule_list.html`
+- `finance/templates/finance/over_budget_policy_list.html`
+- `finance/templates/finance/receipt_policy_list.html`
+- `finance/templates/finance/card_transaction_list.html`
+- `static/css/app.css`
+
+Main list-page behavior:
+
+- Page-level create actions are separated from filter panels.
+- Filter panels contain only filter-related controls.
+- Tables are wrapped for horizontal overflow.
+- Money values in key list pages use the shared money formatter where applicable.
+
+Main dashboard behavior:
+
+- Requesters see draft, returned, pending approval, approved-not-closed, missing receipt, and create request cards.
+- Approvers see pending tasks, overdue tasks, pool tasks, recently approved items, and returned/rejected items.
+- Accounting users see pending reviews, missing receipt, over-budget, amendment-required, unmatched card, duplicate card, and ready-to-close cards.
+- Finance admins see aging, budget risk, exceptions, unmatched card, receipt issue, finance report, and policy setup shortcuts.
+- System admins see setup shortcuts.
+- Dashboard cards link to the relevant worklist or filtered queue where the user has permission.
+
 ## User Guide Maintenance Rule
 
 When UI or workflow behavior changes, update the formal user guides directly:

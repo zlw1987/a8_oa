@@ -4,9 +4,13 @@
 {% block page_title %}Departments{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="action-row">
-        <a href="{{ department_create_url }}">New Department</a>
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Departments</h2>
+            <p class="muted">Maintain department structure, managers, and user links.</p>
+        </div>
+        <a class="btn btn-primary" href="{{ department_create_url }}">New Department</a>
     </div>
 </div>
 
@@ -45,6 +49,7 @@
 
 <div class="card">
     <h2>Department Directory</h2>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -91,5 +96,6 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endblock %}

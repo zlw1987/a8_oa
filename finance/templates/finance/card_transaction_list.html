@@ -1,16 +1,22 @@
 {% extends "purchase/base.html" %}
+{% load money %}
 
 {% block title %}Card Transactions{% endblock %}
 {% block page_title %}Card Transactions{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="action-row">
-        <a href="{% url 'finance:card_transaction_create' %}">Create Card Transaction</a>
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Card Transactions</h2>
+            <p class="muted">Review company card transactions, allocation status, and reconciliation progress.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'finance:card_transaction_create' %}">Create Card Transaction</a>
     </div>
 </div>
 
 <div class="card">
+    <h2>Filters</h2>
     <form method="get" class="action-row">
         <input type="text" name="q" value="{{ q }}" placeholder="Merchant, reference, cardholder">
         <select name="status">
@@ -25,6 +31,8 @@
 </div>
 
 <div class="card">
+    <h2>Card Transaction List</h2>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -44,16 +52,17 @@
                 <td>{{ transaction.statement_date }}</td>
                 <td>{{ transaction.transaction_date }}</td>
                 <td><a href="{% url 'finance:card_transaction_detail' transaction.id %}">{{ transaction.merchant_name }}</a></td>
-                <td>{{ transaction.currency }} {{ transaction.amount }}</td>
+                <td>{{ transaction.amount|money:transaction.currency }}</td>
                 <td>{{ transaction.cardholder }}</td>
                 <td>{{ transaction.reference_no }}</td>
                 <td>{{ transaction.get_match_status_display }}</td>
-                <td>{{ transaction.get_allocated_amount }}</td>
+                <td>{{ transaction.get_allocated_amount|money:transaction.currency }}</td>
             </tr>
             {% empty %}
             <tr><td colspan="8">No card transactions.</td></tr>
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endblock %}

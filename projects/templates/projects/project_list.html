@@ -1,19 +1,25 @@
 {% extends "purchase/base.html" %}
+{% load money %}
 
 {% block title %}Projects{% endblock %}
 {% block page_title %}Projects{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="action-row">
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Projects</h2>
+            <p class="muted">Review visible project budgets and ledgers.</p>
+        </div>
         {% if can_create_project %}
-        <a href="{{ project_create_url }}">New Project</a>
+        <a class="btn btn-primary" href="{{ project_create_url }}">New Project</a>
         {% endif %}
     </div>
 </div>
 
 <div class="card">
     <h2>Visible Projects</h2>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -33,10 +39,10 @@
                 <td><a href="{{ project.project_detail_url }}">{{ project.project_code }}</a></td>
                 <td>{{ project.project_name }}</td>
                 <td>{{ project.owning_department }}</td>
-                <td>{{ project.currency }} {{ project.budget_amount }}</td>
-                <td>{{ project.currency }} {{ project.get_reserved_amount }}</td>
-                <td>{{ project.currency }} {{ project.get_consumed_amount }}</td>
-                <td>{{ project.currency }} {{ project.get_available_amount }}</td>
+                <td>{{ project.budget_amount|money:project.currency }}</td>
+                <td>{{ project.get_reserved_amount|money:project.currency }}</td>
+                <td>{{ project.get_consumed_amount|money:project.currency }}</td>
+                <td>{{ project.get_available_amount|money:project.currency }}</td>
                 <td>
                     <a href="{{ project.project_detail_url }}">Open</a>
                     |
@@ -50,5 +56,6 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 {% endblock %}

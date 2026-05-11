@@ -1,12 +1,18 @@
 {% extends "purchase/base.html" %}
+{% load money %}
 
 {% block title %}Travel Requests{% endblock %}
 {% block page_title %}Travel Requests{% endblock %}
 
 {% block content %}
-<div class="card">
-    <p class="muted">This is the travel request worklist for the current user.</p>
-    <p><a href="{% url 'travel:tr_create' %}">Create Travel Request</a></p>
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Travel Requests</h2>
+            <p class="muted">This is the travel request worklist for the current user.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'travel:tr_create' %}">Create Travel Request</a>
+    </div>
 </div>
 
 <div class="card">
@@ -23,6 +29,8 @@
 </div>
 
 <div class="card">
+    <h2>Travel Request List</h2>
+    <div class="table-wrap">
     <table>
         <thead>
             <tr>
@@ -59,7 +67,7 @@
                 <td>{{ tr.destination_city }}</td>
                 <td>{{ tr.start_date }}</td>
                 <td>{{ tr.end_date }}</td>
-                <td>{{ tr.currency }} {{ tr.estimated_total }}</td>
+                <td>{{ tr.estimated_total|money:tr.currency }}</td>
                 <td>
                     {% if tr.can_edit %}
                     <a href="{% url 'travel:tr_edit' tr.id %}">Edit</a>
@@ -75,6 +83,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
 </div>
 
 {% if page_obj.has_other_pages %}
