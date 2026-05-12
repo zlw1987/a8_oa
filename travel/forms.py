@@ -3,7 +3,7 @@ from django.forms import BaseInlineFormSet, inlineformset_factory
 from django.db.models import Q
 
 from projects.access import get_usable_projects_queryset_for_user, user_can_use_project_for_request
-from projects.models import Project
+from projects.models import Project, ProjectType
 from .models import (
     TravelRequest,
     TravelItinerary,
@@ -62,6 +62,14 @@ class TravelRequestForm(forms.ModelForm):
 
         if not user_can_use_project_for_request(self.user, project):
             raise forms.ValidationError("You are not a member of this project.")
+
+        request_department = self.cleaned_data.get("request_department")
+        if (
+            project.project_type == ProjectType.DEPARTMENT_GENERAL
+            and request_department
+            and project.owning_department_id != request_department.id
+        ):
+            raise forms.ValidationError("Department general spending must use the general project for the request department.")
 
         return project
 

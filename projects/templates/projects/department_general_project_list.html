@@ -1,0 +1,55 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Department General Budget Setup{% endblock %}
+{% block page_title %}Department General Budget Setup{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Department General Budget Setup</h2>
+            <p class="muted">Map each department and fiscal year to the controlled general spending project.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'projects:department_general_project_create' %}">Create Setup</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Filters</h2>
+    <form method="get" class="action-row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Department or project">
+        <button type="submit">Filter</button>
+        <a href="{% url 'projects:department_general_project_list' %}">Reset</a>
+    </form>
+</div>
+
+<div class="card">
+    <h2>General Budget Setup List</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Fiscal Year</th>
+                    <th>Department</th>
+                    <th>General Project</th>
+                    <th>Budget Amount</th>
+                    <th>Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for setup in page_obj.object_list %}
+                <tr>
+                    <td><a href="{% url 'projects:department_general_project_edit' setup.id %}">{{ setup.fiscal_year }}</a></td>
+                    <td>{{ setup.department }}</td>
+                    <td><a href="{% url 'projects:project_detail' setup.project.id %}">{{ setup.project.project_code }}</a></td>
+                    <td>{{ setup.project.currency }} {{ setup.budget_amount }}</td>
+                    <td>{{ setup.is_active|yesno:"Yes,No" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5">No department general budget setup found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

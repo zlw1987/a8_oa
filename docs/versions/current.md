@@ -2,7 +2,7 @@
 
 ## Status
 
-The current version includes V1.1 Phase 1 completion on top of the V0.5 business-control milestone and V0.6 multi-currency foundation.
+The current version includes V1.1 Phase 2 completion on top of the V0.5 business-control milestone, V0.6 multi-currency foundation, and V1.1 Phase 1 financial-integrity workflows.
 
 ## Latest Fixes
 
@@ -15,6 +15,12 @@ The current version includes V1.1 Phase 1 completion on top of the V0.5 business
 - Closed V1.1 Phase 1 as completed after full test, UAT, and accounting validation.
 - Prepared V1.1 Phase 2 technical design for line-level receipt matching UI, direct project cost policy workflow, approval delegation UI, and overdue approval handling.
 - Implemented V1.1 Phase 2 expense-control and approval-operations workflows: line-level receipt/invoice linking on PR/TR actual expense lines, Direct Project Cost Policy setup and card allocation enforcement, approval delegation UI, admin task reassignment, and `process_approval_escalations` command alias.
+- Closed V1.1 Phase 2 as completed after required tests and business/accounting/manager validation.
+- Prepared V1.1 Phase 3 technical design for remaining go-live control closure: department general budget, approval rule snapshots, budget adjustment approval, duplicate reimbursement/invoice detection, attachment retention, and optional report drill-down.
+- Started V1.1 Phase 3 implementation with System Setup / Currency Setup hardening and Department General Budget Setup.
+- Added business UI pages for Currencies, Exchange Rates, and FX Variance Policies so normal finance setup no longer depends on Django Admin pages.
+- Added Department General Budget Setup with current-year System Setup warning for departments missing annual general projects.
+- Added PR/TR validation so Department General Budget projects must match the request department.
 - Added Finance Reports CSV export with base and transaction currency columns.
 - Converted Approval Rule Step Editor from a wide table into step cards/accordion sections.
 - Restored the Dashboard `Approval Summary` section title for regression compatibility.
@@ -51,13 +57,13 @@ The current version includes V1.1 Phase 1 completion on top of the V0.5 business
 
 ## Verification
 
-Latest targeted verification for the V1.1 Phase 2 workflow changes:
+Latest targeted verification for the V1.1 Phase 3 setup changes:
 
 ```text
 python manage.py check
 python manage.py makemigrations --check --dry-run
-python manage.py test finance.tests.OverBudgetPolicyServiceTest.test_line_level_receipt_link_resolves_missing_receipt_review finance.tests.OverBudgetPolicyServiceTest.test_direct_project_cost_policy_review_creates_review_item finance.tests.OverBudgetPolicyServiceTest.test_direct_project_cost_policy_requires_project_owner_review finance.tests.OverBudgetPolicyServiceTest.test_direct_project_cost_policy_block_prevents_allocation approvals.tests.ApprovalDelegationWorkflowTest --keepdb -v 1
-Ran 10 tests
+python manage.py test finance.tests.FinanceCurrencySetupViewTest projects.tests.DepartmentGeneralProjectSetupTest dashboard.tests.DashboardSmokeTest.test_system_setup_uses_business_currency_setup_urls --keepdb -v 1
+Ran 9 tests
 OK
 ```
 
@@ -107,7 +113,7 @@ See [V0.6 Multi-Currency Foundation](v0.6-multi-currency-foundation.md).
 
 ## V1.1 Roadmap Progress
 
-The selected production-control roadmap has started. V1.1 Phase 1 is completed and closed. Phase 2 is now the next controlled development phase.
+The selected production-control roadmap has started. V1.1 Phase 1 and Phase 2 are completed and closed. Phase 3 technical design is prepared as the next controlled development phase.
 
 See [V1.1 Production Control Roadmap](v1.1-production-control-roadmap.md).
 
@@ -126,3 +132,11 @@ Phase 2 technical design:
 Phase 2 implementation status:
 
 - [V1.1 Phase 2 Implementation Status](v1.1-phase2-implementation.md)
+
+Phase 2 completion checkpoint:
+
+- [V1.1 Phase 2 Completion Checkpoint](v1.1-phase2-completion.md)
+
+Phase 3 technical design:
+
+- [V1.1 Phase 3 Technical Design](v1.1-phase3-technical-design.md)

@@ -22,7 +22,7 @@ from finance.models import (
     OverBudgetAction,
 )
 from finance.presentation import OPEN_STATUS_FILTER
-from projects.models import Project
+from projects.models import DepartmentGeneralProject, Project
 from projects.access import user_can_create_project
 from common.currency import COMPANY_BASE_CURRENCY
 from common.permissions import ROLE_PERMISSION_MATRIX, can_view_system_setup
@@ -493,9 +493,23 @@ def system_setup(request):
         raise PermissionDenied("You do not have permission to view System Setup.")
 
     active_currencies = list(Currency.objects.filter(is_active=True).order_by("code").values_list("code", flat=True))
+    current_year = timezone.localdate().year
+    active_departments = Department.objects.filter(is_active=True)
+    configured_department_ids = DepartmentGeneralProject.objects.filter(
+        fiscal_year=current_year,
+        is_active=True,
+    ).values_list("department_id", flat=True)
+    missing_general_budget_count = active_departments.exclude(id__in=configured_department_ids).count()
     setup_cards = [
         _setup_card("Base Currency", COMPANY_BASE_CURRENCY, description="Used for budget control and finance reports."),
         _setup_card("Active Currencies", ", ".join(active_currencies) if active_currencies else "Not configured", tone="warning" if not active_currencies else "neutral"),
+        _setup_card(
+            "Dept General Budgets",
+            "Complete" if missing_general_budget_count == 0 else f"{missing_general_budget_count} missing",
+            reverse("projects:department_general_project_list"),
+            tone="warning" if missing_general_budget_count else "neutral",
+            description=f"Fiscal year {current_year} setup coverage.",
+        ),
         _setup_card("Departments", Department.objects.count(), reverse("accounts:department_list")),
         _setup_card("Projects", Project.objects.count(), reverse("projects:project_list")),
         _setup_card("Approval Rules", ApprovalRule.objects.filter(is_active=True).count(), reverse("approvals:rule_list")),
@@ -503,9 +517,9 @@ def system_setup(request):
         _setup_card("Receipt Policies", ReceiptPolicy.objects.filter(is_active=True).count(), reverse("finance:receipt_policy_list")),
         _setup_card("Direct Project Cost Policies", DirectProjectCostPolicy.objects.filter(is_active=True).count(), reverse("finance:direct_project_cost_policy_list")),
         _setup_card("Accounting Periods", "Month-End Close", reverse("finance:accounting_period_list")),
-        _setup_card("FX Variance Policies", FXVariancePolicy.objects.filter(is_active=True).count(), reverse("admin:finance_fxvariancepolicy_changelist")),
-        _setup_card("Exchange Rates", ExchangeRate.objects.count(), reverse("admin:finance_exchangerate_changelist")),
-        _setup_card("Current Version", "V0.6 / V1.1A foundation", reverse("dashboard:system_setup")),
+        _setup_card("FX Variance Policies", FXVariancePolicy.objects.filter(is_active=True).count(), reverse("finance:fx_variance_policy_list")),
+        _setup_card("Exchange Rates", ExchangeRate.objects.count(), reverse("finance:exchange_rate_list")),
+        _setup_card("Current Version", "V1.1 Phase 3", reverse("dashboard:system_setup")),
         _setup_card("Seed Finance Defaults", "Manual command", "", description="Run seed_finance_defaults from the server when setup data needs to be refreshed."),
         _setup_card("Static / Media Check", "Review deployment", "", description="Confirm static and media paths during deployment checklist."),
     ]
@@ -514,9 +528,10 @@ def system_setup(request):
         {
             "title": "User & Permission Setup",
             "links": [
-                {"label": "Departments", "url": reverse("accounts:department_list")},
-                {"label": "Projects", "url": reverse("projects:project_list")},
-                {"label": "Django Admin Users", "url": _admin_changelist_url(user_model)},
+                  {"label": "Departments", "url": reverse("accounts:department_list")},
+                  {"label": "Projects", "url": reverse("projects:project_list")},
+                  {"label": "Department General Budgets", "url": reverse("projects:department_general_project_list")},
+                  {"label": "Django Admin Users", "url": _admin_changelist_url(user_model)},
                 {"label": "Django Admin Groups", "url": reverse("admin:auth_group_changelist")},
             ],
         },
@@ -527,17 +542,17 @@ def system_setup(request):
                 {"label": "Over-Budget Policies", "url": reverse("finance:over_budget_policy_list")},
                 {"label": "Receipt Policies", "url": reverse("finance:receipt_policy_list")},
                 {"label": "Direct Project Cost Policies", "url": reverse("finance:direct_project_cost_policy_list")},
-                {"label": "FX Variance Policies", "url": reverse("admin:finance_fxvariancepolicy_changelist")},
-                {"label": "Accounting Periods", "url": reverse("finance:accounting_period_list")},
-            ],
-        },
-        {
-            "title": "Currency And Exchange Rates",
-            "links": [
-                {"label": "Currencies", "url": reverse("admin:finance_currency_changelist")},
-                {"label": "Exchange Rates", "url": reverse("admin:finance_exchangerate_changelist")},
-            ],
-        },
+                  {"label": "FX Variance Policies", "url": reverse("finance:fx_variance_policy_list")},
+                  {"label": "Accounting Periods", "url": reverse("finance:accounting_period_list")},
+              ],
+          },
+          {
+              "title": "Currency And Exchange Rates",
+              "links": [
+                  {"label": "Currencies", "url": reverse("finance:currency_list")},
+                  {"label": "Exchange Rates", "url": reverse("finance:exchange_rate_list")},
+              ],
+          },
         {
             "title": "System Health",
             "links": [

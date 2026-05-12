@@ -7,6 +7,8 @@ This folder contains project documentation for A8 OA.
 - [Version Index](versions/README.md)
 - [Current Version](versions/current.md)
 - [V1.1 Phase 2 Implementation Status](versions/v1.1-phase2-implementation.md)
+- [V1.1 Phase 2 Completion Checkpoint](versions/v1.1-phase2-completion.md)
+- [V1.1 Phase 3 Technical Design](versions/v1.1-phase3-technical-design.md)
 - [用户使用手册 中文](user-guide-zh.md)
 - [User Guide English](user-guide-en.md)
 - [UI Productization Status](ui-productization-status.md)

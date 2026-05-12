@@ -4,7 +4,7 @@ from django import forms
 from django.contrib.auth import get_user_model
 
 from accounts.models import Department
-from .models import Project, ProjectBudgetApprovalStatus, ProjectType
+from .models import DepartmentGeneralProject, Project, ProjectBudgetApprovalStatus, ProjectType
 from common.choices import CurrencyCode
 
 User = get_user_model()
@@ -123,3 +123,31 @@ class ProjectBudgetAdjustmentForm(forms.Form):
         if amount == Decimal("0.00"):
             raise forms.ValidationError("Adjustment amount cannot be 0.")
         return amount
+
+
+class DepartmentGeneralProjectForm(forms.ModelForm):
+    class Meta:
+        model = DepartmentGeneralProject
+        fields = ["department", "fiscal_year", "project", "budget_amount", "is_active"]
+        help_texts = {
+            "department": "Department that owns this annual general spending budget.",
+            "fiscal_year": "Use the calendar/fiscal year such as 2026.",
+            "project": "Must be an active Department General Budget project owned by the selected department.",
+            "budget_amount": "Reference budget amount for setup review. Project budget remains the budget control source.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["department"].queryset = Department.objects.filter(is_active=True).order_by("dept_code")
+        self.fields["project"].queryset = Project.objects.filter(
+            is_active=True,
+            project_type=ProjectType.DEPARTMENT_GENERAL,
+        ).order_by("owning_department__dept_code", "project_code")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        project = cleaned_data.get("project")
+        department = cleaned_data.get("department")
+        if project and department and project.owning_department_id != department.id:
+            self.add_error("project", "General project must belong to the selected department.")
+        return cleaned_data

@@ -1,0 +1,31 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Department General Budget Setup{% endblock %}
+{% block page_title %}{% if page_mode == "create" %}Create{% else %}Edit{% endif %} Department General Budget Setup{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>{% if page_mode == "create" %}Create{% else %}Edit{% endif %} Department General Budget Setup</h2>
+            <p class="muted">General department spending should use one controlled Department General Budget project per fiscal year.</p>
+        </div>
+        <a class="btn btn-secondary" href="{% url 'projects:department_general_project_list' %}">Back to Setup</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="post">
+        {% csrf_token %}
+        <div class="form-grid">
+            {% for field in form %}
+            {% include "includes/form_field.html" with field=field %}
+            {% endfor %}
+        </div>
+        <div class="action-row">
+            <button class="btn btn-primary" type="submit">Save Setup</button>
+            <a class="btn btn-secondary" href="{% url 'projects:department_general_project_list' %}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

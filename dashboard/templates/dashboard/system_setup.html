@@ -4,30 +4,40 @@
 {% block page_title %}System Setup{% endblock %}
 
 {% block content %}
-<div class="card page-action-card">
-    <div class="section-header">
-        <div>
-            <h2>System Setup</h2>
-            <p class="muted">Business setup hub for permissions, policies, currencies, and readiness checks.</p>
-        </div>
+<div class="page-header">
+    <div>
+        <h1>System Setup</h1>
+        <p class="muted">Business setup hub for permissions, policies, currencies, and production readiness.</p>
+    </div>
+    <div class="page-actions">
         <a class="btn btn-secondary" href="{% url 'admin:index' %}">Open Django Admin</a>
     </div>
 </div>
 
-<div class="summary-cards">
-    {% for card in setup_cards %}
-    <a class="summary-card summary-card-{{ card.tone|default:'neutral' }}" {% if card.url %}href="{{ card.url }}"{% endif %}>
-        <div class="label">{{ card.label }}</div>
-        <div class="value">{{ card.value }}</div>
-        {% if card.description %}<div class="muted">{{ card.description }}</div>{% endif %}
-    </a>
-    {% endfor %}
+<div class="card">
+    <div class="section-header">
+        <div>
+            <h2>Setup Health</h2>
+            <p class="muted">Review the configuration areas that affect finance controls and go-live readiness.</p>
+        </div>
+    </div>
+    <div class="summary-cards">
+        {% for card in setup_cards %}
+        <a class="summary-card summary-card-{{ card.tone|default:'neutral' }}" {% if card.url %}href="{{ card.url }}"{% endif %}>
+            <div class="label">{{ card.label }}</div>
+            <div class="value">{{ card.value }}</div>
+            {% if card.description %}<div class="muted">{{ card.description }}</div>{% endif %}
+        </a>
+        {% endfor %}
+    </div>
 </div>
 
 <div class="detail-two-column">
     {% for section in setup_sections %}
     <div class="card">
-        <h2>{{ section.title }}</h2>
+        <div class="section-header">
+            <h2>{{ section.title }}</h2>
+        </div>
         <div class="setup-link-list">
             {% for link in section.links %}
             <a class="setup-link" href="{{ link.url }}">{{ link.label }}</a>

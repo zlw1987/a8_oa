@@ -341,6 +341,57 @@ class Project(models.Model):
     def get_available_amount(self):
         return self.get_effective_budget_amount() - self.get_reserved_amount() - self.get_consumed_amount()
 
+
+class DepartmentGeneralProject(models.Model):
+    department = models.ForeignKey(
+        "accounts.Department",
+        on_delete=models.CASCADE,
+        related_name="general_project_setups",
+    )
+    fiscal_year = models.PositiveIntegerField()
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.PROTECT,
+        related_name="department_general_setups",
+    )
+    budget_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_department_general_project_setups",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "PS_A8_DEPT_GEN_PROJ"
+        verbose_name = "Department General Project"
+        verbose_name_plural = "Department General Projects"
+        ordering = ["-fiscal_year", "department__dept_code"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["department", "fiscal_year"],
+                condition=models.Q(is_active=True),
+                name="uq_active_dept_general_project_year",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.department} / {self.fiscal_year} / {self.project}"
+
+    def clean(self):
+        super().clean()
+        if self.project_id and self.department_id:
+            if self.project.owning_department_id != self.department_id:
+                raise ValidationError("General project must belong to the selected department.")
+            if self.project.project_type != ProjectType.DEPARTMENT_GENERAL:
+                raise ValidationError("General project must use Department General Budget project type.")
+        if self.budget_amount < Decimal("0.00"):
+            raise ValidationError("Budget amount cannot be negative.")
+
 class ProjectBudgetEntry(models.Model):
     project = models.ForeignKey(
         Project,

@@ -28,6 +28,8 @@ The core business-control foundation currently includes:
 - Direct Project Cost Policy setup and card allocation policy display.
 - Approval Delegation and active delegation screens.
 - Approval task reassignment screen for finance/admin users.
+- Business setup pages for Currencies, Exchange Rates, and FX Variance Policies.
+- Department General Budget Setup and System Setup missing-setup warning.
 - GoDaddy/cPanel Git deployment helper files.
 
 The main remaining risk is no longer basic workflow coverage. The main risk is pilot usability: users need clearer navigation, clearer next actions, and safer accounting/card reconciliation screens.

@@ -1,0 +1,61 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}FX Variance Policies{% endblock %}
+{% block page_title %}FX Variance Policies{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>FX Variance Policies</h2>
+            <p class="muted">Control exchange-rate-driven variance separately from true spending overrun.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'finance:fx_variance_policy_create' %}">Create Policy</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Filters</h2>
+    <form method="get" class="action-row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Code or name">
+        <button type="submit">Filter</button>
+        <a href="{% url 'finance:fx_variance_policy_list' %}">Reset</a>
+    </form>
+</div>
+
+<div class="card">
+    <h2>FX Variance Policy List</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Priority</th>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Currency</th>
+                    <th>Amount Range</th>
+                    <th>Percent Range</th>
+                    <th>Action</th>
+                    <th>Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for policy in page_obj.object_list %}
+                <tr>
+                    <td>{{ policy.priority }}</td>
+                    <td><a href="{% url 'finance:fx_variance_policy_edit' policy.id %}">{{ policy.policy_code }}</a></td>
+                    <td>{{ policy.policy_name }}</td>
+                    <td>{{ policy.currency|default:"All" }}</td>
+                    <td>{{ policy.fx_variance_amount_from|default:"0" }} - {{ policy.fx_variance_amount_to|default:"*" }}</td>
+                    <td>{{ policy.fx_variance_percent_from|default:"0" }} - {{ policy.fx_variance_percent_to|default:"*" }}</td>
+                    <td>{{ policy.get_action_display }}</td>
+                    <td>{{ policy.is_active|yesno:"Yes,No" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8">No FX variance policies configured.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

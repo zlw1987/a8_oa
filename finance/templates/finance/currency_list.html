@@ -1,0 +1,55 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Currencies{% endblock %}
+{% block page_title %}Currencies{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Currency Setup</h2>
+            <p class="muted">Company base currency is {{ base_currency }}. Active currencies control available transaction currency setup.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'finance:currency_create' %}">Create Currency</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Filters</h2>
+    <form method="get" class="action-row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Code or name">
+        <button type="submit">Filter</button>
+        <a href="{% url 'finance:currency_list' %}">Reset</a>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Currency List</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Symbol</th>
+                    <th>Decimals</th>
+                    <th>Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for currency in page_obj.object_list %}
+                <tr>
+                    <td><a href="{% url 'finance:currency_edit' currency.id %}">{{ currency.code }}</a></td>
+                    <td>{{ currency.name }}</td>
+                    <td>{{ currency.symbol|default:"-" }}</td>
+                    <td>{{ currency.decimal_places }}</td>
+                    <td>{{ currency.is_active|yesno:"Yes,No" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5">No currencies configured.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

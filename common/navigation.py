@@ -97,11 +97,15 @@ def build_navigation_for_user(user, request=None):
             [
                 _item("Projects", "projects:project_list", permission=_can_work, active_names=["projects:project_list", "projects:project_detail", "projects:project_budget_ledger", "projects:project_members"]),
                 _item("Create Project", "projects:project_create", permission=_can_create_project, active_names=["projects:project_create"]),
+                _item("Department General Budgets", "projects:department_general_project_list", permission=_can_setup, active_names=["projects:department_general_project_list", "projects:department_general_project_create", "projects:department_general_project_edit"]),
                 _item("Departments", "accounts:department_list", permission=_can_setup),
                 _item("Approval Rules", "approvals:rule_list", permission=_can_setup),
                 _item("Over-Budget Policies", "finance:over_budget_policy_list", permission=_can_setup),
                 _item("Receipt Policies", "finance:receipt_policy_list", permission=_can_setup),
                 _item("Direct Project Cost Policies", "finance:direct_project_cost_policy_list", permission=_can_setup),
+                _item("FX Variance Policies", "finance:fx_variance_policy_list", permission=_can_setup),
+                _item("Currencies", "finance:currency_list", permission=_can_setup),
+                _item("Exchange Rates", "finance:exchange_rate_list", permission=_can_setup),
             ],
         ),
         _group(

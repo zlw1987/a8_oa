@@ -20,10 +20,14 @@ from .forms import (
     AccountingReviewFilterForm,
     CardTransactionAllocationForm,
     CardTransactionForm,
+    CurrencyForm,
     DirectProjectCostPolicyForm,
+    ExchangeRateForm,
+    FXVariancePolicyForm,
     OverBudgetPolicyForm,
     ReceiptPolicyForm,
 )
+from common.currency import COMPANY_BASE_CURRENCY
 from common.permissions import can_manage_finance_setup, can_perform_accounting_work
 from .models import (
     AccountingPeriod,
@@ -31,7 +35,10 @@ from .models import (
     AccountingReviewItem,
     AccountingReviewStatus,
     CardTransaction,
+    Currency,
     DirectProjectCostPolicy,
+    ExchangeRate,
+    FXVariancePolicy,
     OverBudgetPolicy,
     ReceiptPolicy,
 )
@@ -211,6 +218,148 @@ def direct_project_cost_policy_edit(request, pk):
     return render(
         request,
         "finance/direct_project_cost_policy_form.html",
+        {"form": form, "policy": policy, "page_mode": "edit"},
+    )
+
+
+@login_required
+def currency_list(request):
+    _enforce_finance_setup_permission(request.user)
+    queryset = Currency.objects.order_by("code")
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        queryset = queryset.filter(Q(code__icontains=q) | Q(name__icontains=q))
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "finance/currency_list.html",
+        {
+            "page_obj": page_obj,
+            "q": q,
+            "base_currency": COMPANY_BASE_CURRENCY,
+        },
+    )
+
+
+@login_required
+def currency_create(request):
+    _enforce_finance_setup_permission(request.user)
+    if request.method == "POST":
+        form = CurrencyForm(request.POST)
+        if form.is_valid():
+            currency = form.save()
+            messages.success(request, f"Currency {currency.code} created.")
+            return redirect("finance:currency_edit", pk=currency.pk)
+    else:
+        form = CurrencyForm()
+    return render(request, "finance/currency_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def currency_edit(request, pk):
+    _enforce_finance_setup_permission(request.user)
+    currency = get_object_or_404(Currency, pk=pk)
+    if request.method == "POST":
+        form = CurrencyForm(request.POST, instance=currency)
+        if form.is_valid():
+            currency = form.save()
+            messages.success(request, f"Currency {currency.code} updated.")
+            return redirect("finance:currency_edit", pk=currency.pk)
+    else:
+        form = CurrencyForm(instance=currency)
+    return render(request, "finance/currency_form.html", {"form": form, "currency": currency, "page_mode": "edit"})
+
+
+@login_required
+def exchange_rate_list(request):
+    _enforce_finance_setup_permission(request.user)
+    queryset = ExchangeRate.objects.order_by("-effective_date", "from_currency", "to_currency")
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        queryset = queryset.filter(Q(from_currency__icontains=q) | Q(to_currency__icontains=q) | Q(source__icontains=q))
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "finance/exchange_rate_list.html",
+        {"page_obj": page_obj, "q": q, "base_currency": COMPANY_BASE_CURRENCY},
+    )
+
+
+@login_required
+def exchange_rate_create(request):
+    _enforce_finance_setup_permission(request.user)
+    if request.method == "POST":
+        form = ExchangeRateForm(request.POST)
+        if form.is_valid():
+            rate = form.save(commit=False)
+            rate.created_by = request.user
+            rate.save()
+            messages.success(request, "Exchange rate created.")
+            return redirect("finance:exchange_rate_edit", pk=rate.pk)
+    else:
+        form = ExchangeRateForm(initial={"to_currency": COMPANY_BASE_CURRENCY})
+    return render(request, "finance/exchange_rate_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def exchange_rate_edit(request, pk):
+    _enforce_finance_setup_permission(request.user)
+    rate = get_object_or_404(ExchangeRate, pk=pk)
+    if request.method == "POST":
+        form = ExchangeRateForm(request.POST, instance=rate)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Exchange rate updated.")
+            return redirect("finance:exchange_rate_edit", pk=rate.pk)
+    else:
+        form = ExchangeRateForm(instance=rate)
+    return render(request, "finance/exchange_rate_form.html", {"form": form, "rate": rate, "page_mode": "edit"})
+
+
+@login_required
+def fx_variance_policy_list(request):
+    _enforce_finance_setup_permission(request.user)
+    queryset = FXVariancePolicy.objects.order_by("priority", "policy_code")
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        queryset = queryset.filter(Q(policy_code__icontains=q) | Q(policy_name__icontains=q))
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "finance/fx_variance_policy_list.html",
+        {"page_obj": page_obj, "q": q, "base_currency": COMPANY_BASE_CURRENCY},
+    )
+
+
+@login_required
+def fx_variance_policy_create(request):
+    _enforce_finance_setup_permission(request.user)
+    if request.method == "POST":
+        form = FXVariancePolicyForm(request.POST)
+        if form.is_valid():
+            policy = form.save()
+            messages.success(request, f"FX variance policy '{policy.policy_code}' created.")
+            return redirect("finance:fx_variance_policy_edit", pk=policy.pk)
+    else:
+        form = FXVariancePolicyForm()
+    return render(request, "finance/fx_variance_policy_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def fx_variance_policy_edit(request, pk):
+    _enforce_finance_setup_permission(request.user)
+    policy = get_object_or_404(FXVariancePolicy, pk=pk)
+    if request.method == "POST":
+        form = FXVariancePolicyForm(request.POST, instance=policy)
+        if form.is_valid():
+            policy = form.save()
+            messages.success(request, f"FX variance policy '{policy.policy_code}' updated.")
+            return redirect("finance:fx_variance_policy_edit", pk=policy.pk)
+    else:
+        form = FXVariancePolicyForm(instance=policy)
+    return render(
+        request,
+        "finance/fx_variance_policy_form.html",
         {"form": form, "policy": policy, "page_mode": "edit"},
     )
 

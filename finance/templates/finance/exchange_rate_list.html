@@ -1,0 +1,57 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Exchange Rates{% endblock %}
+{% block page_title %}Exchange Rates{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Exchange Rates</h2>
+            <p class="muted">Rates convert transaction currency to company base currency {{ base_currency }} for budget control.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'finance:exchange_rate_create' %}">Create Rate</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Filters</h2>
+    <form method="get" class="action-row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Currency or source">
+        <button type="submit">Filter</button>
+        <a href="{% url 'finance:exchange_rate_list' %}">Reset</a>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Exchange Rate List</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Rate</th>
+                    <th>Effective Date</th>
+                    <th>Source</th>
+                    <th>Created By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rate in page_obj.object_list %}
+                <tr>
+                    <td><a href="{% url 'finance:exchange_rate_edit' rate.id %}">{{ rate.from_currency }}</a></td>
+                    <td>{{ rate.to_currency }}</td>
+                    <td>{{ rate.rate }}</td>
+                    <td>{{ rate.effective_date }}</td>
+                    <td>{{ rate.get_source_display }}</td>
+                    <td>{{ rate.created_by|default:"-" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6">No exchange rates configured.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

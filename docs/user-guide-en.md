@@ -543,6 +543,18 @@ Approval delegation can be configured from Work > My Delegations. Approvers can 
 
 ## 12. Finance Policy Setup
 
+System Setup is the recommended business setup hub for Finance/Admin users. It now links to business UI pages for currencies, exchange rates, FX variance policies, accounting periods, and finance policies instead of requiring normal setup work in Django Admin.
+
+Company base currency is currently USD. This is shown in System Setup and Finance Reports. It is not freely editable in the UI because changing base currency would require a controlled conversion and migration plan for budget ledger, actual expense, company card, and reporting history.
+
+### 12.0 Currency And Exchange Rate Setup
+
+Open Currencies to maintain active transaction currencies such as USD, TWD, EUR, and JPY.
+
+Open Exchange Rates to maintain company exchange rates by effective date. Exchange rates are snapshotted when actual expenses are posted, so historical transactions are not silently recalculated when later rates change.
+
+Open FX Variance Policies to control exchange-rate-driven variance separately from true spending overrun.
+
 ### 12.1 Over-Budget Policies
 
 Open Over-Budget Policies.
@@ -582,6 +594,21 @@ You can configure:
 Lower priority numbers match first.
 
 ## 13. Project Budget
+
+### 13.1 Department General Budget Setup
+
+Finance/Admin users can open Department General Budget Setup from System Setup or Setup > Department General Budgets.
+
+Use this page to map each department and fiscal year to one Department General Budget project, such as `MIS-GENERAL-2026`.
+
+Rules:
+
+- The general project must belong to the selected department.
+- The project type must be Department General Budget.
+- System Setup shows a missing setup warning for active departments that do not have a current fiscal-year general project.
+- General PR/TR spending should use the correct department general project.
+
+If a Department General Budget project is selected for a PR/TR, the request department must match the project's owning department.
 
 Project budget is affected by:
 

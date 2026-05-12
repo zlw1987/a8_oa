@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -11,8 +12,9 @@ from django.urls import reverse
 from common.choices import BudgetEntryType, RequestType
 from purchase.models import PurchaseRequest
 from travel.models import TravelRequest
-from .forms import ProjectBudgetAdjustmentForm, ProjectCreateForm, ProjectMemberAddForm
-from .models import Project, ProjectBudgetEntry, ProjectMember
+from .forms import DepartmentGeneralProjectForm, ProjectBudgetAdjustmentForm, ProjectCreateForm, ProjectMemberAddForm
+from .models import DepartmentGeneralProject, Project, ProjectBudgetEntry, ProjectMember
+from common.permissions import can_manage_finance_setup
 from .access import (
     get_visible_projects_queryset_for_user,
     get_manageable_departments_queryset_for_user,
@@ -155,6 +157,72 @@ def project_create(request):
         "form": form,
     }
     return render(request, "projects/project_create.html", context)
+
+
+def _enforce_department_general_setup_permission(user):
+    if not can_manage_finance_setup(user):
+        raise PermissionDenied("You do not have permission to manage department general budget setup.")
+
+
+@login_required
+def department_general_project_list(request):
+    _enforce_department_general_setup_permission(request.user)
+    queryset = DepartmentGeneralProject.objects.select_related("department", "project").order_by(
+        "-fiscal_year",
+        "department__dept_code",
+    )
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        queryset = queryset.filter(
+            Q(department__dept_code__icontains=q)
+            | Q(department__dept_name__icontains=q)
+            | Q(project__project_code__icontains=q)
+            | Q(project__project_name__icontains=q)
+        )
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "projects/department_general_project_list.html",
+        {"page_obj": page_obj, "q": q},
+    )
+
+
+@login_required
+def department_general_project_create(request):
+    _enforce_department_general_setup_permission(request.user)
+    if request.method == "POST":
+        form = DepartmentGeneralProjectForm(request.POST)
+        if form.is_valid():
+            setup = form.save(commit=False)
+            setup.created_by = request.user
+            setup.full_clean()
+            setup.save()
+            messages.success(request, "Department general budget setup created.")
+            return redirect("projects:department_general_project_edit", pk=setup.pk)
+    else:
+        form = DepartmentGeneralProjectForm()
+    return render(request, "projects/department_general_project_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def department_general_project_edit(request, pk):
+    _enforce_department_general_setup_permission(request.user)
+    setup = get_object_or_404(DepartmentGeneralProject, pk=pk)
+    if request.method == "POST":
+        form = DepartmentGeneralProjectForm(request.POST, instance=setup)
+        if form.is_valid():
+            setup = form.save(commit=False)
+            setup.full_clean()
+            setup.save()
+            messages.success(request, "Department general budget setup updated.")
+            return redirect("projects:department_general_project_edit", pk=setup.pk)
+    else:
+        form = DepartmentGeneralProjectForm(instance=setup)
+    return render(
+        request,
+        "projects/department_general_project_form.html",
+        {"form": form, "setup": setup, "page_mode": "edit"},
+    )
 
 @login_required
 def project_add_member(request, pk):

@@ -411,6 +411,62 @@ class FinanceReportCurrencyFormattingTest(TestCase):
         self.assertEqual(money(Decimal("100000"), "TWD"), "TWD 100,000.00")
         self.assertEqual(money(Decimal("-300"), "USD"), "USD -300.00")
 
+
+class FinanceCurrencySetupViewTest(TestCase):
+    def setUp(self):
+        self.finance_admin = User.objects.create_user(
+            username="currency_fin",
+            password="testpass123",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.requester = User.objects.create_user(username="currency_req", password="testpass123")
+        self.department = Department.objects.create(
+            dept_code="D-FIN-CUR",
+            dept_name="Finance Currency Dept",
+            dept_type=DepartmentType.FIN,
+        )
+
+    def test_currency_exchange_rate_and_fx_policy_pages_render(self):
+        self.client.force_login(self.finance_admin)
+        urls = [
+            reverse("finance:currency_list"),
+            reverse("finance:currency_create"),
+            reverse("finance:exchange_rate_list"),
+            reverse("finance:exchange_rate_create"),
+            reverse("finance:fx_variance_policy_list"),
+            reverse("finance:fx_variance_policy_create"),
+        ]
+
+        for url in urls:
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, url)
+
+    def test_requester_cannot_access_currency_setup(self):
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("finance:currency_list"))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_exchange_rate_create_sets_created_by(self):
+        self.client.force_login(self.finance_admin)
+        response = self.client.post(
+            reverse("finance:exchange_rate_create"),
+            {
+                "from_currency": "TWD",
+                "to_currency": "USD",
+                "rate": "0.03150000",
+                "effective_date": date.today().isoformat(),
+                "source": ExchangeRateSource.COMPANY_RATE,
+                "notes": "Company test rate.",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rate = ExchangeRate.objects.get(from_currency="TWD", to_currency="USD")
+        self.assertEqual(rate.created_by, self.finance_admin)
+
     def test_project_budget_summary_reports_company_base_currency(self):
         usd_project = Project.objects.create(
             project_code="RPT-USD",

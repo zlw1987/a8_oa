@@ -16,6 +16,8 @@ This directory tracks major functional versions of A8 OA.
 - [V1.1 Phase 1 Technical Design](v1.1-phase1-technical-design.md): technical design for Phase 1 financial integrity operations.
 - [V1.1 Phase 2 Technical Design](v1.1-phase2-technical-design.md): technical design for line-level receipt matching, direct project cost policy, delegation, and overdue handling.
 - [V1.1 Phase 2 Implementation Status](v1.1-phase2-implementation.md): implemented Phase 2 expense-control and approval-operations workflows.
+- [V1.1 Phase 2 Completion Checkpoint](v1.1-phase2-completion.md): formal Phase 2 closure checklist and validation summary.
+- [V1.1 Phase 3 Technical Design](v1.1-phase3-technical-design.md): technical design for remaining go-live control closure.
 - [Current Version](current.md): latest implemented state and verification snapshot.
 
 ## Update Rule

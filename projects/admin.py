@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Project, ProjectBudgetEntry
+from .models import DepartmentGeneralProject, Project, ProjectBudgetEntry
 
 
 class ProjectBudgetEntryInline(admin.TabularInline):
@@ -61,3 +61,10 @@ class ProjectBudgetEntryAdmin(admin.ModelAdmin):
         "source_type",
         "project",
     )
+
+
+@admin.register(DepartmentGeneralProject)
+class DepartmentGeneralProjectAdmin(admin.ModelAdmin):
+    list_display = ("department", "fiscal_year", "project", "budget_amount", "is_active")
+    search_fields = ("department__dept_code", "department__dept_name", "project__project_code", "project__project_name")
+    list_filter = ("fiscal_year", "is_active", "department")

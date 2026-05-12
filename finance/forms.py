@@ -8,9 +8,12 @@ from .models import (
     AccountingPeriod,
     AccountingReviewDecision,
     AccountingReviewItem,
+    Currency,
     DirectProjectCostPolicy,
     CardTransaction,
     CardTransactionAllocation,
+    ExchangeRate,
+    FXVariancePolicy,
     OverBudgetAction,
     OverBudgetPolicy,
     ReceiptPolicy,
@@ -155,6 +158,76 @@ class DirectProjectCostPolicyForm(forms.ModelForm):
         amount_to = cleaned_data.get("amount_to")
         if amount_from is not None and amount_to is not None and amount_from > amount_to:
             self.add_error("amount_to", "Amount to must be greater than or equal to amount from.")
+        return cleaned_data
+
+
+class CurrencyForm(forms.ModelForm):
+    class Meta:
+        model = Currency
+        fields = ["code", "name", "symbol", "decimal_places", "is_active"]
+        help_texts = {
+            "code": "Use ISO-style currency code such as USD, TWD, EUR, or JPY.",
+            "decimal_places": "Controls display precision for transaction currency amounts.",
+            "is_active": "Inactive currencies should not be used for new setup or transactions.",
+        }
+
+
+class ExchangeRateForm(forms.ModelForm):
+    class Meta:
+        model = ExchangeRate
+        fields = ["from_currency", "to_currency", "rate", "effective_date", "source", "notes"]
+        widgets = {
+            "effective_date": forms.DateInput(attrs={"type": "date"}),
+        }
+        help_texts = {
+            "from_currency": "Transaction currency being converted.",
+            "to_currency": "Company base/reporting currency. Current base currency is USD.",
+            "rate": "Store enough precision for currency conversion. Use Decimal, not floating point.",
+            "effective_date": "Rate applies on or before this date until a newer rate exists.",
+            "source": "Use COMPANY_RATE for official finance rates, CARD_STATEMENT for card posted amounts, or ACCOUNTING_OVERRIDE with notes.",
+        }
+
+    def clean_rate(self):
+        rate = self.cleaned_data["rate"]
+        if rate <= 0:
+            raise forms.ValidationError("Exchange rate must be greater than 0.")
+        return rate
+
+
+class FXVariancePolicyForm(forms.ModelForm):
+    class Meta:
+        model = FXVariancePolicy
+        fields = [
+            "policy_code",
+            "policy_name",
+            "currency",
+            "fx_variance_amount_from",
+            "fx_variance_amount_to",
+            "fx_variance_percent_from",
+            "fx_variance_percent_to",
+            "action",
+            "requires_comment",
+            "requires_finance_review",
+            "priority",
+            "is_active",
+        ]
+        help_texts = {
+            "priority": "Lower number matches first.",
+            "currency": "Leave blank for a general fallback. FX variance is evaluated in base currency.",
+            "fx_variance_percent_from": "Use decimal form, for example 0.0500 for 5%.",
+            "action": "Controls exchange-rate-driven variance, separately from true spending overrun.",
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        amount_from = cleaned_data.get("fx_variance_amount_from")
+        amount_to = cleaned_data.get("fx_variance_amount_to")
+        percent_from = cleaned_data.get("fx_variance_percent_from")
+        percent_to = cleaned_data.get("fx_variance_percent_to")
+        if amount_from is not None and amount_to is not None and amount_from > amount_to:
+            self.add_error("fx_variance_amount_to", "Amount to must be greater than or equal to amount from.")
+        if percent_from is not None and percent_to is not None and percent_from > percent_to:
+            self.add_error("fx_variance_percent_to", "Percent to must be greater than or equal to percent from.")
         return cleaned_data
 
 

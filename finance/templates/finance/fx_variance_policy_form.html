@@ -1,0 +1,31 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}FX Variance Policy{% endblock %}
+{% block page_title %}{% if page_mode == "create" %}Create{% else %}Edit{% endif %} FX Variance Policy{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>{% if page_mode == "create" %}Create{% else %}Edit{% endif %} FX Variance Policy</h2>
+            <p class="muted">Use this to route exchange-rate variance without treating every FX movement as ordinary overspending.</p>
+        </div>
+        <a class="btn btn-secondary" href="{% url 'finance:fx_variance_policy_list' %}">Back to Policies</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="post">
+        {% csrf_token %}
+        <div class="form-grid">
+            {% for field in form %}
+            {% include "includes/form_field.html" with field=field %}
+            {% endfor %}
+        </div>
+        <div class="action-row">
+            <button class="btn btn-primary" type="submit">Save Policy</button>
+            <a class="btn btn-secondary" href="{% url 'finance:fx_variance_policy_list' %}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

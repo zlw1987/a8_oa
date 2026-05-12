@@ -72,6 +72,24 @@ class DashboardSmokeTest(TestCase):
         self.assertContains(response, reverse("admin:accounts_user_changelist"))
         self.assertContains(response, reverse("admin:auth_group_changelist"))
 
+    def test_system_setup_uses_business_currency_setup_urls(self):
+        admin_user = User.objects.create_superuser(
+            username="dashboard_currency_admin",
+            password="testpass123",
+            email="dashboard_currency_admin@example.com",
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(reverse("dashboard:system_setup"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("finance:currency_list"))
+        self.assertContains(response, reverse("finance:exchange_rate_list"))
+        self.assertContains(response, reverse("finance:fx_variance_policy_list"))
+        self.assertNotContains(response, reverse("admin:finance_currency_changelist"))
+        self.assertNotContains(response, reverse("admin:finance_exchangerate_changelist"))
+        self.assertNotContains(response, reverse("admin:finance_fxvariancepolicy_changelist"))
+
 
 class DashboardCrossRequestRegressionTest(TestCase):
     def setUp(self):

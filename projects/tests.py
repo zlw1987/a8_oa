@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
 from common.choices import ApproverType, RequestType, DepartmentType, BudgetEntryType
-from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus
+from projects.models import DepartmentGeneralProject, Project, ProjectBudgetEntry, ProjectMember, ProjectStatus, ProjectType
 from purchase.models import PurchaseRequest, PurchaseRequestLine
 from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpenseLine
 
@@ -17,6 +17,87 @@ from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpense
 
 
 User = get_user_model()
+
+
+class DepartmentGeneralProjectSetupTest(TestCase):
+    def setUp(self):
+        self.finance_admin = User.objects.create_user(
+            username="dept_gen_fin",
+            password="testpass123",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.requester = User.objects.create_user(username="dept_gen_req", password="testpass123")
+        self.department = Department.objects.create(
+            dept_code="D-GEN",
+            dept_name="General Budget Dept",
+            dept_type=DepartmentType.GENERAL,
+        )
+        self.other_department = Department.objects.create(
+            dept_code="D-OTHER",
+            dept_name="Other Dept",
+            dept_type=DepartmentType.GENERAL,
+        )
+        UserDepartment.objects.create(user=self.requester, department=self.department, is_active=True)
+        self.general_project = Project.objects.create(
+            project_code="D-GEN-GENERAL-2026",
+            project_name="General Budget 2026",
+            owning_department=self.department,
+            project_type=ProjectType.DEPARTMENT_GENERAL,
+            budget_amount=Decimal("10000.00"),
+            is_active=True,
+        )
+
+    def test_department_general_project_list_page_loads(self):
+        self.client.force_login(self.finance_admin)
+        response = self.client.get(reverse("projects:department_general_project_list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Department General Budget Setup")
+
+    def test_department_general_project_setup_can_be_created(self):
+        self.client.force_login(self.finance_admin)
+        response = self.client.post(
+            reverse("projects:department_general_project_create"),
+            {
+                "department": self.department.id,
+                "fiscal_year": "2026",
+                "project": self.general_project.id,
+                "budget_amount": "10000.00",
+                "is_active": "on",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            DepartmentGeneralProject.objects.filter(
+                department=self.department,
+                fiscal_year=2026,
+                project=self.general_project,
+                is_active=True,
+            ).exists()
+        )
+
+    def test_department_general_project_must_belong_to_department(self):
+        other_project = Project.objects.create(
+            project_code="D-OTHER-GENERAL-2026",
+            project_name="Other General Budget 2026",
+            owning_department=self.other_department,
+            project_type=ProjectType.DEPARTMENT_GENERAL,
+            budget_amount=Decimal("10000.00"),
+            is_active=True,
+        )
+
+        setup = DepartmentGeneralProject(
+            department=self.department,
+            fiscal_year=2026,
+            project=other_project,
+            budget_amount=Decimal("10000.00"),
+        )
+
+        with self.assertRaisesMessage(ValidationError, "General project must belong to the selected department."):
+            setup.full_clean()
 
 
 class ProjectBudgetLedgerRegressionTest(TestCase):
