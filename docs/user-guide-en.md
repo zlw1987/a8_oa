@@ -640,11 +640,23 @@ If the approval rule is changed later, old request approval history still shows 
 
 When accounting records an actual expense, the system checks for possible duplicate actual expenses using vendor/merchant, expense date, amount, and reference number.
 
+When receipts or invoices are linked to actual expense lines, the system also compares attachment file hashes. This helps detect the same receipt or invoice being reused on another actual expense line.
+
 If a possible duplicate is found:
 
 - The actual expense is not deleted automatically.
 - An Accounting Review Item is created.
 - Accounting can review and approve the exception or resolve the duplicate.
+
+### 13.6 Finance Report Drill-Down
+
+Finance Reports include drill-down links:
+
+- Project Budget Summary opens the project budget ledger.
+- Over-Budget Exceptions open Accounting Review Detail.
+- Accounting Review Aging opens Accounting Review Detail.
+- Open Reserve rows open the source PR/TR.
+- Unmatched Card rows open the card transaction detail.
 
 ### 13.5 Attachment Retention
 

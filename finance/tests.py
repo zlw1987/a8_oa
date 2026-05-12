@@ -2,6 +2,8 @@ from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
@@ -460,6 +462,59 @@ class DuplicateActualExpenseReviewTest(TestCase):
             ).exists()
         )
 
+    def test_same_receipt_hash_creates_duplicate_actual_review(self):
+        first = self.purchase.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("110.00"),
+            acting_user=self.accounting,
+            vendor_name="Vendor A",
+            reference_no="INV-A",
+        )
+        second = self.purchase.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("120.00"),
+            acting_user=self.accounting,
+            vendor_name="Vendor B",
+            reference_no="INV-B",
+        )
+        first_attachment = PurchaseRequestAttachment.objects.create(
+            purchase_request=self.purchase,
+            document_type=PurchaseRequestAttachmentType.SUPPORT,
+            title="Receipt A",
+            file=SimpleUploadedFile("receipt-a.txt", b"same receipt bytes"),
+            uploaded_by=self.accounting,
+        )
+        second_attachment = PurchaseRequestAttachment.objects.create(
+            purchase_request=self.purchase,
+            document_type=PurchaseRequestAttachmentType.SUPPORT,
+            title="Receipt B",
+            file=SimpleUploadedFile("receipt-b.txt", b"same receipt bytes"),
+            uploaded_by=self.accounting,
+        )
+
+        link_purchase_attachment_to_actual(
+            actual_expense=first,
+            purchase_attachment=first_attachment,
+            attachment_type=ActualExpenseAttachmentType.RECEIPT,
+            acting_user=self.accounting,
+        )
+        link_purchase_attachment_to_actual(
+            actual_expense=second,
+            purchase_attachment=second_attachment,
+            attachment_type=ActualExpenseAttachmentType.RECEIPT,
+            acting_user=self.accounting,
+        )
+
+        self.assertEqual(first_attachment.file_hash, second_attachment.file_hash)
+        self.assertTrue(
+            AccountingReviewItem.objects.filter(
+                purchase_actual_spend=second,
+                reason=AccountingReviewReason.DUPLICATE_EXPENSE,
+                status="PENDING_REVIEW",
+                description__icontains="hash",
+            ).exists()
+        )
+
 
 class FinanceReportCurrencyFormattingTest(TestCase):
     def setUp(self):
@@ -510,6 +565,16 @@ class FinanceCurrencySetupViewTest(TestCase):
         response = self.client.get(reverse("finance:currency_list"))
 
         self.assertEqual(response.status_code, 403)
+
+    def test_finance_admin_group_user_can_access_currency_setup_without_staff_flag(self):
+        group = Group.objects.create(name="Finance Admin")
+        group_user = User.objects.create_user(username="currency_group_fin", password="testpass123")
+        group_user.groups.add(group)
+        self.client.force_login(group_user)
+
+        response = self.client.get(reverse("finance:currency_list"))
+
+        self.assertEqual(response.status_code, 200)
 
     def test_exchange_rate_create_sets_created_by(self):
         self.client.force_login(self.finance_admin)

@@ -43,7 +43,10 @@
         <tbody>
             {% for row in project_budget_rows %}
             <tr>
-                <td><a href="{% url 'projects:project_detail' row.project.id %}">{{ row.project.project_code }}</a></td>
+                <td>
+                    <a href="{% url 'projects:project_budget_ledger' row.project.id %}">{{ row.project.project_code }}</a>
+                    <br><span class="muted">Open budget ledger</span>
+                </td>
                 <td>{{ row.project.owning_department }}</td>
                 <td>{{ row.budget|money:row.currency }}</td>
                 <td>{{ row.reserved|money:row.currency }}</td>
@@ -102,7 +105,7 @@
             {% for item in over_budget_items %}
             <tr>
                 <td>{{ item.created_at }}</td>
-                <td>{{ item.title }}</td>
+                <td><a href="{% url 'finance:accounting_review_detail' item.id %}">{{ item.title }}</a></td>
                 <td>{{ item.get_status_display }}</td>
                 <td>{{ item.report_amount|money:item.report_currency }}</td>
                 <td>{{ item.over_amount|money:item.report_currency }}</td>
@@ -158,7 +161,7 @@
             <tr>
                 <td>{{ row.item.created_at }}</td>
                 <td>{{ row.aging_days }}</td>
-                <td>{{ row.item.get_reason_display }}</td>
+                <td><a href="{% url 'finance:accounting_review_detail' row.item.id %}">{{ row.item.get_reason_display }}</a></td>
                 <td>{{ row.item.get_status_display }}</td>
                 <td>{{ row.item.description }}</td>
             </tr>

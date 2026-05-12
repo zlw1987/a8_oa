@@ -24,7 +24,10 @@ The current version includes V1.1 Phase 2 completion on top of the V0.5 business
 - Added approval rule snapshot fields on approval tasks so historical request approval context remains visible after approval rules change.
 - Changed manual project budget adjustment into a controlled Budget Adjustment Request workflow; budget ledger `ADJUST` entries are posted only after Finance approval.
 - Added duplicate actual expense / invoice review detection based on vendor, date, amount, and reference matching.
+- Extended duplicate actual expense detection to compare linked receipt/invoice file hashes.
 - Added attachment retention controls: request attachments are soft-deleted for audit visibility, linked receipt/invoice evidence cannot be removed by normal requesters after posting/approval, and closed request attachments are retained.
+- Added Finance Reports drill-down links from project summaries to budget ledgers and review rows to Accounting Review Detail.
+- Hardened GoDaddy cPanel Git deployment script so deploy logs initialize correctly, Python virtualenv path is auto-detected, same-path rsync is skipped, migrations run during Deploy HEAD Commit, and Passenger is restarted.
 - Added Finance Reports CSV export with base and transaction currency columns.
 - Converted Approval Rule Step Editor from a wide table into step cards/accordion sections.
 - Restored the Dashboard `Approval Summary` section title for regression compatibility.
@@ -66,8 +69,8 @@ Latest targeted verification for the V1.1 Phase 3 setup and control changes:
 ```text
 python manage.py check
 python manage.py makemigrations --check --dry-run
-python manage.py test approvals.tests.ApprovalSnapshotRegressionTest finance.tests.DuplicateActualExpenseReviewTest purchase.tests.PurchaseSmokeTest.test_purchase_attachment_upload_and_delete_regression travel.tests.TravelSmokeTest.test_travel_attachment_upload_and_delete_regression --keepdb -v 1
-Ran 4 tests
+python manage.py test finance.tests.DuplicateActualExpenseReviewTest finance.tests.FinanceCurrencySetupViewTest projects.tests.ProjectBudgetLedgerRegressionTest approvals.tests.ApprovalSnapshotRegressionTest --keepdb -v 1
+Ran 34 tests
 OK
 ```
 

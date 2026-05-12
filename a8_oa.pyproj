@@ -148,6 +148,7 @@
     <Content Include="approvals\templates\approvals\variance_exception_report.html" />
     <Content Include="dashboard\templates\dashboard\home.html" />
     <Content Include="dashboard\templates\registration\login.html" />
+    <Content Include="deploy\godaddy_deploy.sh" />
     <Content Include="projects\templates\projects\project_budget_adjustment.html" />
     <Content Include="projects\templates\projects\project_budget_ledger.html" />
     <Content Include="projects\templates\projects\project_create.html" />
@@ -193,6 +194,7 @@
     <Folder Include="dashboard\templates\" />
     <Folder Include="dashboard\templates\dashboard" />
     <Folder Include="dashboard\templates\registration" />
+    <Folder Include="deploy\" />
     <Folder Include="templates\" />
     <Folder Include="projects" />
     <Folder Include="projects\migrations" />

@@ -1,3 +1,4 @@
+import hashlib
 import os
 from pathlib import Path
 from decimal import Decimal
@@ -1134,6 +1135,7 @@ class PurchaseRequestAttachment(models.Model):
     )
     title = models.CharField(max_length=200, blank=True, default="")
     file = models.FileField(upload_to=purchase_attachment_upload_to)
+    file_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -1169,7 +1171,30 @@ class PurchaseRequestAttachment(models.Model):
     def save(self, *args, **kwargs):
         if not self.title and self.file:
             self.title = Path(self.file.name).name
+        if self.file and not self.file_hash:
+            self.file_hash = self._calculate_file_hash()
         super().save(*args, **kwargs)
+
+    def _calculate_file_hash(self):
+        if not self.file:
+            return ""
+        hasher = hashlib.sha256()
+        position = None
+        try:
+            position = self.file.tell()
+        except Exception:
+            position = None
+        try:
+            self.file.seek(0)
+            for chunk in self.file.chunks():
+                hasher.update(chunk)
+        finally:
+            if position is not None:
+                try:
+                    self.file.seek(position)
+                except Exception:
+                    pass
+        return hasher.hexdigest()
 
     def delete(self, *args, **kwargs):
         if kwargs.pop("hard", False):

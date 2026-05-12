@@ -1,32 +1,55 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 DEPLOYPATH=/home/rsnwvvl103hc/a8_oa
-PYTHON=/home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python3.11_bin
 LOGFILE=$DEPLOYPATH/deploy.log
+REPOPATH="$(pwd)"
+PYTHON_CANDIDATES=(
+  "/home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python"
+  "/home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python3.11"
+  "/home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python3"
+)
 
+mkdir -p "$DEPLOYPATH"
 echo "===== DEPLOY START $(date) =====" | tee -a $LOGFILE
 
-echo "Current repo path: $(pwd)" | tee -a $LOGFILE
+echo "Current repo path: $REPOPATH" | tee -a $LOGFILE
 echo "Deploy path: $DEPLOYPATH" | tee -a $LOGFILE
 
-mkdir -p $DEPLOYPATH
+PYTHON=""
+for candidate in "${PYTHON_CANDIDATES[@]}"; do
+  if [ -x "$candidate" ]; then
+    PYTHON="$candidate"
+    break
+  fi
+done
 
-echo "Rsync files..." | tee -a $LOGFILE
-/bin/rsync -av --delete \
-  --exclude='.git' \
-  --exclude='.venv' \
-  --exclude='.env' \
-  --exclude='db.sqlite3' \
-  --exclude='media/' \
-  --exclude='staticfiles/' \
-  --exclude='sent_emails/' \
-  --exclude='passenger.log' \
-  --exclude='deploy.log' \
-  --exclude='tmp/' \
-  --exclude='__pycache__/' \
-  --exclude='*.pyc' \
-  ./ $DEPLOYPATH/ | tee -a $LOGFILE
+if [ -z "$PYTHON" ]; then
+  echo "ERROR: Could not find cPanel Python virtualenv executable." | tee -a "$LOGFILE"
+  exit 1
+fi
+
+echo "Python executable: $PYTHON" | tee -a "$LOGFILE"
+
+if [ "$(readlink -f "$REPOPATH")" != "$(readlink -f "$DEPLOYPATH")" ]; then
+  echo "Rsync files..." | tee -a $LOGFILE
+  /bin/rsync -av --delete \
+    --exclude='.git' \
+    --exclude='.venv' \
+    --exclude='.env' \
+    --exclude='db.sqlite3' \
+    --exclude='media/' \
+    --exclude='staticfiles/' \
+    --exclude='sent_emails/' \
+    --exclude='passenger.log' \
+    --exclude='deploy.log' \
+    --exclude='tmp/' \
+    --exclude='__pycache__/' \
+    --exclude='*.pyc' \
+    ./ $DEPLOYPATH/ | tee -a $LOGFILE
+else
+  echo "Repository path is deploy path; skip rsync." | tee -a "$LOGFILE"
+fi
 
 cd $DEPLOYPATH
 
