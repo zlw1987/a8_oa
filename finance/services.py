@@ -4,6 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from common.choices import BudgetEntryType, RequestType
@@ -20,6 +21,8 @@ from .models import (
     CardTransactionMatchStatus,
     AccountingPeriod,
     AccountingPeriodStatus,
+    ActualExpenseAttachment,
+    ActualExpenseAttachmentType,
     DirectProjectCostAction,
     DirectProjectCostPolicy,
     ExchangeRate,
@@ -209,11 +212,13 @@ def resolve_direct_project_cost_policy(*, project, amount, payment_method=Paymen
     queryset = DirectProjectCostPolicy.objects.filter(is_active=True).order_by("priority", "policy_code", "id")
     department = getattr(project, "owning_department", None)
     project_type = getattr(project, "project_type", "")
-    queryset = queryset.filter(payment_method__in=[PaymentMethod.ALL, payment_method])
-    queryset = queryset.filter(department__isnull=True) | queryset.filter(department=department)
-    queryset = queryset.filter(project__isnull=True) | queryset.filter(project=project)
-    queryset = queryset.filter(project_type__in=["", project_type])
-    queryset = queryset.filter(currency__in=["", currency or COMPANY_BASE_CURRENCY])
+    queryset = queryset.filter(
+        Q(payment_method=PaymentMethod.ALL) | Q(payment_method=payment_method),
+        Q(department__isnull=True) | Q(department=department),
+        Q(project__isnull=True) | Q(project=project),
+        Q(project_type="") | Q(project_type=project_type),
+        Q(currency="") | Q(currency=currency or COMPANY_BASE_CURRENCY),
+    )
     amount = _money(amount)
     for policy in queryset:
         if policy.amount_from is not None and amount < policy.amount_from:
@@ -631,6 +636,86 @@ def _actual_expense_has_line_attachment(actual_expense, *, requires_invoice=Fals
     if requires_invoice:
         return links.filter(attachment_type="INVOICE").exists()
     return links.filter(attachment_type__in=["RECEIPT", "INVOICE"]).exists()
+
+
+def actual_expense_has_attachment(actual_expense, attachment_type):
+    links = getattr(actual_expense, "line_attachments", None)
+    if actual_expense is None or links is None:
+        return False
+    return links.filter(attachment_type=attachment_type).exists()
+
+
+def build_actual_expense_evidence_status(actual_expense):
+    manager = getattr(actual_expense, "line_attachments", None) if actual_expense else None
+    links = list(manager.all()) if manager is not None else []
+    receipt_links = [link for link in links if link.attachment_type == ActualExpenseAttachmentType.RECEIPT]
+    invoice_links = [link for link in links if link.attachment_type == ActualExpenseAttachmentType.INVOICE]
+    support_links = [link for link in links if link.attachment_type not in [ActualExpenseAttachmentType.RECEIPT, ActualExpenseAttachmentType.INVOICE]]
+    return {
+        "receipt_status": "Linked" if receipt_links else "Missing",
+        "invoice_status": "Linked" if invoice_links else "Not linked",
+        "receipt_links": receipt_links,
+        "invoice_links": invoice_links,
+        "support_links": support_links,
+        "all_links": links,
+    }
+
+
+def link_purchase_attachment_to_actual(*, actual_expense, purchase_attachment, attachment_type, acting_user=None):
+    link, _created = ActualExpenseAttachment.objects.get_or_create(
+        purchase_actual_spend=actual_expense,
+        purchase_attachment=purchase_attachment,
+        defaults={
+            "attachment_type": attachment_type,
+            "uploaded_by": acting_user,
+        },
+    )
+    if not _created and link.attachment_type != attachment_type:
+        link.attachment_type = attachment_type
+        link.uploaded_by = acting_user
+        link.save(update_fields=["attachment_type", "uploaded_by"])
+    resolve_missing_receipt_review_for_actual(actual_expense, acting_user=acting_user)
+    return link
+
+
+def link_travel_attachment_to_actual(*, actual_expense, travel_attachment, attachment_type, acting_user=None):
+    link, _created = ActualExpenseAttachment.objects.get_or_create(
+        travel_actual_expense=actual_expense,
+        travel_attachment=travel_attachment,
+        defaults={
+            "attachment_type": attachment_type,
+            "uploaded_by": acting_user,
+        },
+    )
+    if not _created and link.attachment_type != attachment_type:
+        link.attachment_type = attachment_type
+        link.uploaded_by = acting_user
+        link.save(update_fields=["attachment_type", "uploaded_by"])
+    resolve_missing_receipt_review_for_actual(actual_expense, acting_user=acting_user)
+    return link
+
+
+def resolve_missing_receipt_review_for_actual(actual_expense, acting_user=None):
+    if actual_expense is None:
+        return 0
+    queryset = AccountingReviewItem.objects.filter(
+        reason=AccountingReviewReason.MISSING_RECEIPT,
+        status__in=OPEN_REVIEW_STATUSES,
+    )
+    if hasattr(actual_expense, "purchase_request_id"):
+        queryset = queryset.filter(purchase_actual_spend=actual_expense)
+    elif hasattr(actual_expense, "travel_request_id"):
+        queryset = queryset.filter(travel_actual_expense=actual_expense)
+    else:
+        return 0
+    now = timezone.now()
+    return queryset.update(
+        status=AccountingReviewStatus.RESOLVED,
+        decision=AccountingReviewDecision.RESOLVE,
+        comment="Resolved automatically after line-level receipt/invoice support was linked.",
+        reviewed_by=acting_user,
+        reviewed_at=now,
+    )
 
 
 def _receipt_review_exists(result, actual_expense=None, card_transaction=None, card_allocation=None):

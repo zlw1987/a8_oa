@@ -418,7 +418,7 @@ class AccountingReviewItem(models.Model):
         on_delete=models.SET_NULL,
         related_name="review_items",
     )
-    policy_action = models.CharField(max_length=30, choices=OverBudgetAction, blank=True, default="")
+    policy_action = models.CharField(max_length=40, blank=True, default="")
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     over_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     over_percent = models.DecimalField(max_digits=7, decimal_places=4, default=Decimal("0.0000"))

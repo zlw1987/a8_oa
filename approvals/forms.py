@@ -1,9 +1,14 @@
 from django import forms
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.forms import BaseInlineFormSet, inlineformset_factory
 
 from common.choices import ApproverType
-from .models import ApprovalRule, ApprovalRuleStep
+from accounts.models import Department
+from .models import ApprovalDelegation, ApprovalRule, ApprovalRuleStep
+
+
+User = get_user_model()
 
 
 class ApprovalRuleForm(forms.ModelForm):
@@ -158,3 +163,50 @@ ApprovalRuleStepFormSet = inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+
+class ApprovalDelegationForm(forms.ModelForm):
+    class Meta:
+        model = ApprovalDelegation
+        fields = [
+            "delegate_user",
+            "start_date",
+            "end_date",
+            "department",
+            "request_type",
+            "is_active",
+        ]
+        widgets = {
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+        }
+        help_texts = {
+            "delegate_user": "The delegate may act only during the active date range and cannot approve their own request.",
+            "department": "Optional. Leave blank to delegate all departments.",
+            "request_type": "Optional. Leave blank to delegate all request types.",
+        }
+
+    def __init__(self, *args, original_approver=None, **kwargs):
+        self.original_approver = original_approver
+        super().__init__(*args, **kwargs)
+        self.fields["delegate_user"].queryset = User.objects.filter(is_active=True).order_by("username")
+        self.fields["department"].queryset = Department.objects.filter(is_active=True).order_by("dept_code")
+
+    def clean_delegate_user(self):
+        delegate = self.cleaned_data.get("delegate_user")
+        if delegate and self.original_approver and delegate.pk == self.original_approver.pk:
+            raise ValidationError("Delegate user must be different from original approver.")
+        return delegate
+
+    def save(self, commit=True):
+        obj = super().save(commit=False)
+        if self.original_approver:
+            obj.original_approver = self.original_approver
+        if commit:
+            obj.save()
+        return obj
+
+
+class ApprovalTaskReassignForm(forms.Form):
+    new_assignee = forms.ModelChoiceField(queryset=User.objects.filter(is_active=True).order_by("username"))
+    reason = forms.CharField(widget=forms.Textarea(attrs={"rows": 3}), help_text="Reassignment reason is required for audit.")

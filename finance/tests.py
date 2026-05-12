@@ -10,6 +10,7 @@ from accounts.models import Department
 from common.choices import BudgetEntryType, DepartmentType, RequestStatus, RequestType
 from projects.models import Project, ProjectBudgetEntry
 from purchase.models import PurchaseRequest
+from purchase.models import PurchaseRequestAttachment, PurchaseRequestAttachmentType
 
 from common.templatetags.money import money
 from .reporting import build_project_budget_summary, build_reserved_vs_consumed_summary
@@ -18,8 +19,12 @@ from .models import (
     AccountingReviewReason,
     AccountingPeriod,
     AccountingPeriodStatus,
+    ActualExpenseAttachment,
+    ActualExpenseAttachmentType,
     CardTransaction,
     CardTransactionMatchStatus,
+    DirectProjectCostAction,
+    DirectProjectCostPolicy,
     ExchangeRate,
     ExchangeRateSource,
     FXVarianceAction,
@@ -35,6 +40,7 @@ from .services import (
     build_money_snapshot,
     create_duplicate_card_review_item,
     evaluate_actual_expense_policy,
+    link_purchase_attachment_to_actual,
 )
 
 
@@ -174,6 +180,54 @@ class OverBudgetPolicyServiceTest(TestCase):
         with self.assertRaisesMessage(ValidationError, "Cannot close request while accounting review items are unresolved."):
             self.purchase_request.close_purchase(acting_user=self.accounting)
 
+    def test_line_level_receipt_link_resolves_missing_receipt_review(self):
+        ReceiptPolicy.objects.create(
+            policy_code="RCPT-LINE",
+            policy_name="Line Receipt Required",
+            request_type=RequestType.PURCHASE,
+            payment_method=PaymentMethod.REIMBURSEMENT,
+            amount_from=Decimal("0.01"),
+            requires_receipt=True,
+            priority=1,
+            is_active=True,
+        )
+        actual_spend = self.purchase_request.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("50.00"),
+            acting_user=self.accounting,
+            vendor_name="Receipt Vendor",
+            reference_no="INV-LINE",
+        )
+        review_item = AccountingReviewItem.objects.get(
+            purchase_request=self.purchase_request,
+            purchase_actual_spend=actual_spend,
+            reason=AccountingReviewReason.MISSING_RECEIPT,
+        )
+        attachment = PurchaseRequestAttachment.objects.create(
+            purchase_request=self.purchase_request,
+            document_type=PurchaseRequestAttachmentType.SUPPORT,
+            file="purchase_attachments/receipt.pdf",
+            title="receipt.pdf",
+            uploaded_by=self.accounting,
+        )
+
+        link_purchase_attachment_to_actual(
+            actual_expense=actual_spend,
+            purchase_attachment=attachment,
+            attachment_type=ActualExpenseAttachmentType.RECEIPT,
+            acting_user=self.accounting,
+        )
+
+        self.assertTrue(
+            ActualExpenseAttachment.objects.filter(
+                purchase_actual_spend=actual_spend,
+                purchase_attachment=attachment,
+                attachment_type=ActualExpenseAttachmentType.RECEIPT,
+            ).exists()
+        )
+        review_item.refresh_from_db()
+        self.assertEqual(review_item.status, "RESOLVED")
+
     def test_card_allocation_cannot_exceed_unallocated_amount(self):
         card_transaction = CardTransaction.objects.create(
             statement_date=date.today(),
@@ -200,6 +254,118 @@ class OverBudgetPolicyServiceTest(TestCase):
                 card_transaction=card_transaction,
                 amount=Decimal("30.00"),
                 purchase_request=self.purchase_request,
+                acting_user=self.accounting,
+            )
+
+    def test_direct_project_cost_policy_review_creates_review_item(self):
+        policy = DirectProjectCostPolicy.objects.create(
+            policy_code="DPC-REV",
+            policy_name="Direct Project Cost Review",
+            project=self.project,
+            payment_method=PaymentMethod.COMPANY_CARD,
+            amount_from=Decimal("0.01"),
+            action=DirectProjectCostAction.REVIEW,
+            priority=1,
+            is_active=True,
+        )
+        card_transaction = CardTransaction.objects.create(
+            statement_date=date.today(),
+            transaction_date=date.today(),
+            merchant_name="Direct Cost Vendor",
+            amount=Decimal("75.00"),
+            currency="USD",
+            cardholder=self.requester,
+            reference_no="DPC-001",
+            imported_by=self.accounting,
+        )
+
+        allocation = allocate_card_transaction(
+            card_transaction=card_transaction,
+            amount=Decimal("75.00"),
+            project=self.project,
+            acting_user=self.accounting,
+        )
+
+        self.assertEqual(allocation.direct_project_cost_policy, policy)
+        self.assertEqual(allocation.direct_project_cost_action, DirectProjectCostAction.REVIEW)
+        self.assertTrue(
+            AccountingReviewItem.objects.filter(
+                card_transaction=card_transaction,
+                card_allocation=allocation,
+                reason=AccountingReviewReason.DIRECT_PROJECT_COST,
+                direct_project_cost_policy=policy,
+                policy_action=DirectProjectCostAction.REVIEW,
+            ).exists()
+        )
+
+    def test_direct_project_cost_policy_requires_project_owner_review(self):
+        policy = DirectProjectCostPolicy.objects.create(
+            policy_code="DPC-OWNER",
+            policy_name="Direct Project Cost Owner Review",
+            project=self.project,
+            payment_method=PaymentMethod.COMPANY_CARD,
+            amount_from=Decimal("0.01"),
+            action=DirectProjectCostAction.REQUIRE_PROJECT_OWNER_APPROVAL,
+            priority=1,
+            is_active=True,
+        )
+        card_transaction = CardTransaction.objects.create(
+            statement_date=date.today(),
+            transaction_date=date.today(),
+            merchant_name="Owner Review Direct Cost",
+            amount=Decimal("85.00"),
+            currency="USD",
+            cardholder=self.requester,
+            reference_no="DPC-OWN-001",
+            imported_by=self.accounting,
+        )
+
+        allocation = allocate_card_transaction(
+            card_transaction=card_transaction,
+            amount=Decimal("85.00"),
+            project=self.project,
+            acting_user=self.accounting,
+        )
+
+        self.assertEqual(allocation.direct_project_cost_policy, policy)
+        self.assertEqual(allocation.direct_project_cost_action, DirectProjectCostAction.REQUIRE_PROJECT_OWNER_APPROVAL)
+        self.assertEqual(allocation.project_owner_review_status, "PENDING_REVIEW")
+        self.assertTrue(
+            AccountingReviewItem.objects.filter(
+                card_transaction=card_transaction,
+                card_allocation=allocation,
+                reason=AccountingReviewReason.DIRECT_PROJECT_COST,
+                policy_action=DirectProjectCostAction.REQUIRE_PROJECT_OWNER_APPROVAL,
+            ).exists()
+        )
+
+    def test_direct_project_cost_policy_block_prevents_allocation(self):
+        DirectProjectCostPolicy.objects.create(
+            policy_code="DPC-BLOCK",
+            policy_name="Direct Project Cost Block",
+            project=self.project,
+            payment_method=PaymentMethod.COMPANY_CARD,
+            amount_from=Decimal("0.01"),
+            action=DirectProjectCostAction.BLOCK,
+            priority=1,
+            is_active=True,
+        )
+        card_transaction = CardTransaction.objects.create(
+            statement_date=date.today(),
+            transaction_date=date.today(),
+            merchant_name="Blocked Direct Cost",
+            amount=Decimal("75.00"),
+            currency="USD",
+            cardholder=self.requester,
+            reference_no="DPC-002",
+            imported_by=self.accounting,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "Direct project cost is blocked"):
+            allocate_card_transaction(
+                card_transaction=card_transaction,
+                amount=Decimal("75.00"),
+                project=self.project,
                 acting_user=self.accounting,
             )
 

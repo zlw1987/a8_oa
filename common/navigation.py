@@ -79,6 +79,7 @@ def build_navigation_for_user(user, request=None):
                 _item("Travel Requests", "travel:tr_list", active_names=["travel:tr_list", "travel:tr_detail", "travel:tr_create", "travel:tr_edit"]),
                 _item("My Tasks", "approvals:my_tasks"),
                 _item("My Approval History", "approvals:my_history"),
+                _item("My Delegations", "approvals:my_delegations", active_names=["approvals:my_delegations", "approvals:delegation_create", "approvals:delegation_edit"]),
             ],
         ),
         _group(
@@ -100,6 +101,7 @@ def build_navigation_for_user(user, request=None):
                 _item("Approval Rules", "approvals:rule_list", permission=_can_setup),
                 _item("Over-Budget Policies", "finance:over_budget_policy_list", permission=_can_setup),
                 _item("Receipt Policies", "finance:receipt_policy_list", permission=_can_setup),
+                _item("Direct Project Cost Policies", "finance:direct_project_cost_policy_list", permission=_can_setup),
             ],
         ),
         _group(

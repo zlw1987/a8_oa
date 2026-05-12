@@ -1,0 +1,71 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Direct Project Cost Policies{% endblock %}
+{% block page_title %}Direct Project Cost Policies{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Direct Project Cost Policies</h2>
+            <p class="muted">Control when company card transactions can be posted directly to project cost.</p>
+        </div>
+        <a class="btn btn-primary" href="{% url 'finance:direct_project_cost_policy_create' %}">Create Policy</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2>Filters</h2>
+    <form method="get" class="action-row">
+        <input type="text" name="q" value="{{ q }}" placeholder="Code or name" aria-label="Code or name">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a class="btn btn-secondary" href="{% url 'finance:direct_project_cost_policy_list' %}">Reset</a>
+    </form>
+</div>
+
+<div class="card">
+    <h2>Policy List</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Priority</th>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Project</th>
+                    <th>Project Type</th>
+                    <th>Payment</th>
+                    <th>Currency</th>
+                    <th>Threshold</th>
+                    <th>Action</th>
+                    <th>Receipt</th>
+                    <th>Owner Review</th>
+                    <th>Active</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for policy in page_obj.object_list %}
+                <tr>
+                    <td>{{ policy.priority }}</td>
+                    <td><a href="{% url 'finance:direct_project_cost_policy_edit' policy.id %}">{{ policy.policy_code }}</a></td>
+                    <td>{{ policy.policy_name }}</td>
+                    <td>{{ policy.department|default:"All" }}</td>
+                    <td>{{ policy.project|default:"All" }}</td>
+                    <td>{{ policy.get_project_type_display|default:"All" }}</td>
+                    <td>{{ policy.get_payment_method_display }}</td>
+                    <td>{{ policy.currency|default:"All" }}</td>
+                    <td>{{ policy.amount_from|default:"0" }} - {{ policy.amount_to|default:"*" }}</td>
+                    <td>{% include "includes/status_badge.html" with label=policy.get_action_display tone="attention" %}</td>
+                    <td>{{ policy.requires_receipt|yesno:"Required,Optional" }}</td>
+                    <td>{{ policy.requires_project_owner_review|yesno:"Required,No" }}</td>
+                    <td>{{ policy.is_active|yesno:"Yes,No" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="13">No direct project cost policies found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

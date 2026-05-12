@@ -17,15 +17,17 @@ from django.views.decorators.http import require_POST
 from django.urls import reverse
 from django.db import transaction
 
-from .forms import ApprovalRuleForm, ApprovalRuleStepFormSet
-from .models import ApprovalRule
+from .forms import ApprovalDelegationForm, ApprovalRuleForm, ApprovalRuleStepFormSet, ApprovalTaskReassignForm
+from .models import ApprovalDelegation, ApprovalRule
 
 
 from common.choices import ApprovalTaskStatus, RequestStatus
-from .models import ApprovalTask
+from .models import ApprovalTask, ApprovalTaskHistory
 from .filters import ApprovalTaskListFilterForm, ApprovalTaskHistoryFilterForm,AccountingReviewQueueFilterForm,VarianceExceptionReportFilterForm
 from travel.models import TravelRequest, TravelActualReviewStatus
 from django.contrib.contenttypes.models import ContentType
+from common.permissions import can_manage_finance_setup
+from .access import get_active_delegation_for_task
 
 def _build_querystring(request_get, exclude_keys=None):
     params = request_get.copy()
@@ -144,6 +146,9 @@ def _decorate_task(task):
     task.due_status_display = task.due_status_label
     task.is_overdue_flag = task.is_overdue
     task.due_status_badge_class = "badge-danger" if task.is_overdue else "badge-neutral"
+    task.delegation_context = getattr(task, "delegation_context", None)
+    if task.delegation_context:
+        task.ownership_label = f"Delegated from {task.assigned_user}"
 
 def _build_requester_choices(tasks):
     requester_map = {}
@@ -530,11 +535,21 @@ def accounting_review_queue(request):
 
 @login_required
 def my_tasks(request):
+    today = timezone.localdate()
+    active_delegations = list(
+        ApprovalDelegation.objects.filter(
+            delegate_user=request.user,
+            start_date__lte=today,
+            end_date__gte=today,
+            is_active=True,
+        ).select_related("original_approver")
+    )
+    delegated_approver_ids = [delegation.original_approver_id for delegation in active_delegations]
     assigned_qs = (
         ApprovalTask.objects.filter(
             status=ApprovalTaskStatus.PENDING,
-            assigned_user=request.user,
         )
+        .filter(Q(assigned_user=request.user) | Q(assigned_user_id__in=delegated_approver_ids))
         .select_related(
             "purchase_request",
             "request_content_type",
@@ -543,6 +558,7 @@ def my_tasks(request):
             "assigned_user",
         )
         .prefetch_related("candidates")
+        .distinct()
         .order_by("created_at", "id")
     )
 
@@ -566,8 +582,16 @@ def my_tasks(request):
     assigned_tasks = list(assigned_qs)
     pool_tasks = list(pool_qs)
 
+    visible_assigned_tasks = []
     for task in assigned_tasks:
+        if task.assigned_user_id != request.user.id:
+            delegation = get_active_delegation_for_task(request.user, task)
+            if not delegation:
+                continue
+            task.delegation_context = delegation
         _decorate_task(task)
+        visible_assigned_tasks.append(task)
+    assigned_tasks = visible_assigned_tasks
 
     for task in pool_tasks:
         _decorate_task(task)
@@ -615,6 +639,7 @@ def my_tasks(request):
         "filter_form": filter_form,
         "assigned_overdue_count": assigned_overdue_count,
         "pool_overdue_count": pool_overdue_count,
+        "can_reassign_tasks": can_manage_finance_setup(request.user) or request.user.is_staff,
     }
     return render(request, "approvals/my_tasks.html", context)
 
@@ -694,6 +719,94 @@ def task_reject(request, task_id):
             messages.error(request, message)
 
     return redirect("approvals:my_tasks")
+
+
+@login_required
+def my_delegations(request):
+    delegations_from_me = ApprovalDelegation.objects.filter(original_approver=request.user).select_related(
+        "delegate_user", "department", "created_by"
+    )
+    delegations_to_me = ApprovalDelegation.objects.filter(delegate_user=request.user).select_related(
+        "original_approver", "department", "created_by"
+    )
+    return render(
+        request,
+        "approvals/my_delegations.html",
+        {
+            "delegations_from_me": delegations_from_me,
+            "delegations_to_me": delegations_to_me,
+            "can_manage_all_delegations": can_manage_finance_setup(request.user) or request.user.is_staff,
+        },
+    )
+
+
+@login_required
+def delegation_create(request):
+    if request.method == "POST":
+        form = ApprovalDelegationForm(request.POST, original_approver=request.user)
+        if form.is_valid():
+            delegation = form.save(commit=False)
+            delegation.created_by = request.user
+            delegation.save()
+            messages.success(request, "Approval delegation created.")
+            return redirect("approvals:my_delegations")
+    else:
+        form = ApprovalDelegationForm(original_approver=request.user)
+    return render(request, "approvals/delegation_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def delegation_edit(request, pk):
+    delegation = get_object_or_404(ApprovalDelegation, pk=pk)
+    if delegation.original_approver_id != request.user.id and not (can_manage_finance_setup(request.user) or request.user.is_staff):
+        raise PermissionDenied("You do not have permission to edit this delegation.")
+    if request.method == "POST":
+        form = ApprovalDelegationForm(request.POST, instance=delegation, original_approver=delegation.original_approver)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Approval delegation updated.")
+            return redirect("approvals:my_delegations")
+    else:
+        form = ApprovalDelegationForm(instance=delegation, original_approver=delegation.original_approver)
+    return render(request, "approvals/delegation_form.html", {"form": form, "delegation": delegation, "page_mode": "edit"})
+
+
+@login_required
+def active_delegations(request):
+    if not (can_manage_finance_setup(request.user) or request.user.is_staff):
+        raise PermissionDenied("You do not have permission to view active delegations.")
+    today = timezone.localdate()
+    delegations = ApprovalDelegation.objects.filter(
+        is_active=True,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).select_related("original_approver", "delegate_user", "department", "created_by")
+    return render(request, "approvals/active_delegations.html", {"delegations": delegations})
+
+
+@login_required
+def task_reassign(request, task_id):
+    task = get_object_or_404(ApprovalTask, pk=task_id)
+    if not (can_manage_finance_setup(request.user) or request.user.is_staff):
+        raise PermissionDenied("You do not have permission to reassign approval tasks.")
+    if request.method == "POST":
+        form = ApprovalTaskReassignForm(request.POST)
+        if form.is_valid():
+            try:
+                task.reassign(
+                    acting_user=request.user,
+                    new_assignee=form.cleaned_data["new_assignee"],
+                    reason=form.cleaned_data["reason"],
+                )
+                messages.success(request, "Approval task reassigned.")
+                return redirect("approvals:my_tasks")
+            except ValidationError as exc:
+                for message in exc.messages:
+                    form.add_error(None, message)
+    else:
+        form = ApprovalTaskReassignForm()
+    _decorate_task(task)
+    return render(request, "approvals/task_reassign.html", {"task": task, "form": form})
 
 def _matches_variance_report_filters(row, cleaned_data):
     q = (cleaned_data.get("q") or "").strip().lower()

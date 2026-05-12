@@ -549,6 +549,12 @@ class ApprovalTask(models.Model):
             comment=comment,
         )
 
+    def _build_delegated_action_comment(self, *, action_label, acting_user, current_assignee, delegation, comment=""):
+        base_comment = comment or f"Task {action_label} by {acting_user}."
+        if not delegation:
+            return base_comment
+        return f"{base_comment} Delegated approval on behalf of {current_assignee}."
+
     @transaction.atomic
     def activate(self):
         if self.status != ApprovalTaskStatus.WAITING:
@@ -647,10 +653,15 @@ class ApprovalTask(models.Model):
 
     @transaction.atomic
     def approve(self, user, comment=""):
+        from approvals.access import get_active_delegation_for_task
+
         if self.status != ApprovalTaskStatus.PENDING:
             raise ValidationError("Only pending tasks can be approved.")
 
+        delegation = None
         if self.assigned_user_id != user.id:
+            delegation = get_active_delegation_for_task(user, self)
+        if self.assigned_user_id != user.id and not delegation:
             raise ValidationError("Only the current assignee can approve this task.")
 
         from_status = self.status
@@ -670,7 +681,13 @@ class ApprovalTask(models.Model):
             to_status=self.status,
             from_assignee=current_assignee,
             to_assignee=current_assignee,
-            comment=comment or f"Task approved by {user}.",
+            comment=self._build_delegated_action_comment(
+                action_label="approved",
+                acting_user=user,
+                current_assignee=current_assignee,
+                delegation=delegation,
+                comment=comment,
+            ),
         )
         request_obj = self.get_request_object()
         self._add_request_history_if_supported(
@@ -699,10 +716,15 @@ class ApprovalTask(models.Model):
 
     @transaction.atomic
     def reject(self, user, comment=""):
+        from approvals.access import get_active_delegation_for_task
+
         if self.status != ApprovalTaskStatus.PENDING:
             raise ValidationError("Only pending tasks can be rejected.")
 
+        delegation = None
         if self.assigned_user_id != user.id:
+            delegation = get_active_delegation_for_task(user, self)
+        if self.assigned_user_id != user.id and not delegation:
             raise ValidationError("Only the current assignee can reject this task.")
 
         from_status = self.status
@@ -722,7 +744,13 @@ class ApprovalTask(models.Model):
             to_status=self.status,
             from_assignee=current_assignee,
             to_assignee=current_assignee,
-            comment=comment or f"Task rejected by {user}.",
+            comment=self._build_delegated_action_comment(
+                action_label="rejected",
+                acting_user=user,
+                current_assignee=current_assignee,
+                delegation=delegation,
+                comment=comment,
+            ),
         )
 
         request_obj = self.get_request_object()
@@ -741,10 +769,15 @@ class ApprovalTask(models.Model):
 
     @transaction.atomic
     def return_to_requester(self, user, comment=""):
+        from approvals.access import get_active_delegation_for_task
+
         if self.status != ApprovalTaskStatus.PENDING:
             raise ValidationError("Only pending tasks can be returned to requester.")
 
+        delegation = None
         if self.assigned_user_id != user.id:
+            delegation = get_active_delegation_for_task(user, self)
+        if self.assigned_user_id != user.id and not delegation:
             raise ValidationError("Only the current assignee can return this task to requester.")
 
         from_status = self.status
@@ -764,7 +797,13 @@ class ApprovalTask(models.Model):
             to_status=self.status,
             from_assignee=current_assignee,
             to_assignee=current_assignee,
-            comment=comment or f"Task returned to requester by {user}.",
+            comment=self._build_delegated_action_comment(
+                action_label="returned to requester",
+                acting_user=user,
+                current_assignee=current_assignee,
+                delegation=delegation,
+                comment=comment,
+            ),
         )
 
         request_obj = self.get_request_object()

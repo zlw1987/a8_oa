@@ -531,11 +531,15 @@ Accounting users can record Refund / Credit / Reversal entries from the PR/TR de
 
 Closed PR/TR records can only be reopened for correction by Finance/Admin users. Reopen requires a reason, writes history, and reclose runs the normal closeout validation again.
 
-Line-level receipt matching is supported at the data-control level. Receipt and invoice support can be linked to the actual expense line instead of relying only on request-level attachments.
+Line-level receipt matching is available on PR/TR detail pages. In the Actual Expenses section, users with permission can upload a receipt/invoice directly to a specific actual expense line or link an existing request-level attachment to that line.
+
+Missing receipt review items now point accounting users to the specific actual expense line that needs support. Linking the required receipt or invoice can resolve the missing receipt review path instead of relying on a generic request-level attachment.
 
 Direct project cost allocation from company card transactions is policy controlled. Finance can configure whether direct project cost is allowed, reviewed, requires project owner approval, or blocked.
 
-Approval delegation can be configured for approvers by date range. Delegation does not allow requester self-approval.
+Direct Project Cost Policies are available under Setup > Direct Project Cost Policies and System Setup. When accounting allocates a company card transaction directly to a project, the card detail page shows the policy result and project owner review status when applicable.
+
+Approval delegation can be configured from Work > My Delegations. Approvers can create date-range delegations, and finance/admin users can view active delegations or reassign stuck approval tasks with a reason. Delegation does not allow requester self-approval.
 
 ## 12. Finance Policy Setup
 
@@ -620,7 +624,15 @@ Common reasons:
 
 ### I uploaded an attachment. Why is there still a missing receipt review?
 
-The current version checks request-level attachments. If the review item already exists, accounting still needs to Resolve it or Approve Exception in the Accounting Review Queue.
+Receipt support should be linked to the exact actual expense line. Open the PR/TR detail page, find the actual expense line, then use Upload or Link Existing Attachment. If a review item already exists, the line-level receipt link can clear the missing receipt path; otherwise accounting can Resolve or Approve Exception from the Accounting Review Detail page.
+
+### How do I delegate approvals while I am away?
+
+Open Work > My Delegations, create a delegation, choose the delegate user, and set the start/end dates. The delegate can see delegated tasks in My Tasks during the active date range. They still cannot approve their own request.
+
+### Why can a direct project cost allocation be blocked?
+
+Finance can configure Direct Project Cost Policies. A policy may allow the allocation, create an accounting review, require project owner review, or block direct posting entirely. If blocked, allocate the card transaction to an approved PR/TR or ask Finance to review the policy.
 
 ### What should I do when a request is returned?
 

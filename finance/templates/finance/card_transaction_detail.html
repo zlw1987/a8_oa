@@ -116,6 +116,8 @@
                     <th>Target</th>
                     <th>Amount</th>
                     <th>Policy Action</th>
+                    <th>Direct Cost Policy</th>
+                    <th>Owner Review</th>
                     <th>Created By</th>
                     <th>Created At</th>
                     <th>Notes</th>
@@ -133,16 +135,28 @@
                     <td>
                         {% if allocation.policy_action %}
                         {% include "includes/status_badge.html" with label=allocation.get_policy_action_display tone="attention" %}
+                        {% elif allocation.direct_project_cost_action %}
+                        {% include "includes/status_badge.html" with label=allocation.get_direct_project_cost_action_display tone="attention" %}
                         {% else %}
                         -
                         {% endif %}
                     </td>
+                    <td>
+                        {% if allocation.direct_project_cost_policy %}
+                        {{ allocation.direct_project_cost_policy.policy_code }}
+                        {% elif allocation.project %}
+                        Default Review
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>{{ allocation.project_owner_review_status|default:"-" }}</td>
                     <td>{{ allocation.created_by|default:"-" }}</td>
                     <td>{{ allocation.created_at }}</td>
                     <td>{{ allocation.notes|default:"-" }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6">No allocations.</td></tr>
+                <tr><td colspan="8">No allocations.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

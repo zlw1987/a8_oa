@@ -27,6 +27,7 @@ from projects.access import user_can_create_project
 from common.currency import COMPANY_BASE_CURRENCY
 from common.permissions import ROLE_PERMISSION_MATRIX, can_view_system_setup
 from finance.models import Currency, ExchangeRate, FXVariancePolicy, OverBudgetPolicy, ReceiptPolicy
+from finance.models import DirectProjectCostPolicy
 from approvals.models import ApprovalRule
 
 def _get_request_detail_url(task):
@@ -500,6 +501,7 @@ def system_setup(request):
         _setup_card("Approval Rules", ApprovalRule.objects.filter(is_active=True).count(), reverse("approvals:rule_list")),
         _setup_card("Over-Budget Policies", OverBudgetPolicy.objects.filter(is_active=True).count(), reverse("finance:over_budget_policy_list")),
         _setup_card("Receipt Policies", ReceiptPolicy.objects.filter(is_active=True).count(), reverse("finance:receipt_policy_list")),
+        _setup_card("Direct Project Cost Policies", DirectProjectCostPolicy.objects.filter(is_active=True).count(), reverse("finance:direct_project_cost_policy_list")),
         _setup_card("Accounting Periods", "Month-End Close", reverse("finance:accounting_period_list")),
         _setup_card("FX Variance Policies", FXVariancePolicy.objects.filter(is_active=True).count(), reverse("admin:finance_fxvariancepolicy_changelist")),
         _setup_card("Exchange Rates", ExchangeRate.objects.count(), reverse("admin:finance_exchangerate_changelist")),
@@ -524,6 +526,7 @@ def system_setup(request):
                 {"label": "Approval Rules", "url": reverse("approvals:rule_list")},
                 {"label": "Over-Budget Policies", "url": reverse("finance:over_budget_policy_list")},
                 {"label": "Receipt Policies", "url": reverse("finance:receipt_policy_list")},
+                {"label": "Direct Project Cost Policies", "url": reverse("finance:direct_project_cost_policy_list")},
                 {"label": "FX Variance Policies", "url": reverse("admin:finance_fxvariancepolicy_changelist")},
                 {"label": "Accounting Periods", "url": reverse("finance:accounting_period_list")},
             ],

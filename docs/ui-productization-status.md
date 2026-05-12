@@ -24,6 +24,10 @@ The core business-control foundation currently includes:
 - Accounting Period close/reopen screens.
 - Refund / credit / reversal entry actions.
 - Reopen / correction workflow panels.
+- Line-level receipt/invoice matching on PR/TR actual expense lines.
+- Direct Project Cost Policy setup and card allocation policy display.
+- Approval Delegation and active delegation screens.
+- Approval task reassignment screen for finance/admin users.
 - GoDaddy/cPanel Git deployment helper files.
 
 The main remaining risk is no longer basic workflow coverage. The main risk is pilot usability: users need clearer navigation, clearer next actions, and safer accounting/card reconciliation screens.

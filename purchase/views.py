@@ -26,10 +26,13 @@ from .forms import (
     PurchaseActualReviewAttachmentForm,
     PurchaseRefundForm,
     PurchaseReopenCorrectionForm,
+    PurchaseActualExpenseAttachmentUploadForm,
+    PurchaseActualExpenseAttachmentLinkForm,
 )
 from .models import (
     PurchaseRequest,
     PurchaseRequestAttachment,
+    PurchaseActualSpend,
     PurchaseActualReviewStatus,
     PurchaseRequestAttachmentType,
     PurchaseRequestLine,
@@ -64,6 +67,7 @@ from .presentation import (
 )
 from approvals.presentation import build_request_workflow_context
 from common.permissions import can_manage_finance_setup, can_perform_accounting_work
+from finance.services import build_actual_expense_evidence_status, link_purchase_attachment_to_actual
 from .audit import (
     snapshot_request_header,
     snapshot_request_lines,
@@ -211,6 +215,7 @@ def pr_detail(request, pk):
     actual_spend_entries = purchase_request.actual_spend_entries.all()
     for spend in actual_spend_entries:
         spend.review_items_ui = list(spend.accounting_review_items.all())
+        spend.evidence_ui = build_actual_expense_evidence_status(spend)
     content_audits = purchase_request.content_audits.all()
     approval_tasks = purchase_request.approval_tasks.all().order_by("step_no")
     histories = purchase_request.history_entries.all()
@@ -403,6 +408,12 @@ def pr_detail(request, pk):
     can_reopen_correction = can_manage_finance_setup(request.user) and purchase_request.status == RequestStatus.CLOSED
     refund_form = PurchaseRefundForm(purchase_request=purchase_request) if can_record_refund else None
     reopen_correction_form = PurchaseReopenCorrectionForm() if can_reopen_correction else None
+    actual_attachment_upload_form = PurchaseActualExpenseAttachmentUploadForm() if can_record_refund or ui_flags["can_manage_attachments"] else None
+    actual_attachment_link_form = (
+        PurchaseActualExpenseAttachmentLinkForm(purchase_request=purchase_request)
+        if can_record_refund or ui_flags["can_manage_attachments"]
+        else None
+    )
     detail_actions = {
         "back_url": reverse("purchase:pr_list"),
         "project_budget_url": (
@@ -473,6 +484,8 @@ def pr_detail(request, pk):
         "refund_form": refund_form,
         "can_reopen_correction": can_reopen_correction,
         "reopen_correction_form": reopen_correction_form,
+        "actual_attachment_upload_form": actual_attachment_upload_form,
+        "actual_attachment_link_form": actual_attachment_link_form,
     }
     return render(request, "purchase/pr_detail.html", context)
 
@@ -812,6 +825,69 @@ def pr_reopen_correction(request, pk):
             for error in errors:
                 messages.error(request, f"{label}: {error}")
 
+    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+
+
+@login_required
+@require_POST
+def pr_actual_attachment_upload(request, pk):
+    purchase_request = get_object_or_404(PurchaseRequest.get_visible_queryset(request.user), pk=pk)
+    ui_flags = build_purchase_detail_ui_flags(purchase_request, request.user, None)
+    enforce_purchase_permission(ui_flags["can_manage_attachments"] or can_perform_accounting_work(request.user))
+    form = PurchaseActualExpenseAttachmentUploadForm(request.POST, request.FILES)
+    if form.is_valid():
+        actual_spend = get_object_or_404(
+            PurchaseActualSpend,
+            pk=form.cleaned_data["actual_spend_id"],
+            purchase_request=purchase_request,
+        )
+        attachment = PurchaseRequestAttachment.objects.create(
+            purchase_request=purchase_request,
+            document_type=PurchaseRequestAttachmentType.SUPPORT,
+            title=form.cleaned_data.get("title") or "",
+            file=form.cleaned_data["file"],
+            uploaded_by=request.user,
+        )
+        link_purchase_attachment_to_actual(
+            actual_expense=actual_spend,
+            purchase_attachment=attachment,
+            attachment_type=form.cleaned_data["attachment_type"],
+            acting_user=request.user,
+        )
+        messages.success(request, "Attachment uploaded and linked to actual spend line.")
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+
+
+@login_required
+@require_POST
+def pr_actual_attachment_link(request, pk):
+    purchase_request = get_object_or_404(PurchaseRequest.get_visible_queryset(request.user), pk=pk)
+    ui_flags = build_purchase_detail_ui_flags(purchase_request, request.user, None)
+    enforce_purchase_permission(ui_flags["can_manage_attachments"] or can_perform_accounting_work(request.user))
+    form = PurchaseActualExpenseAttachmentLinkForm(request.POST, purchase_request=purchase_request)
+    if form.is_valid():
+        actual_spend = get_object_or_404(
+            PurchaseActualSpend,
+            pk=form.cleaned_data["actual_spend_id"],
+            purchase_request=purchase_request,
+        )
+        link_purchase_attachment_to_actual(
+            actual_expense=actual_spend,
+            purchase_attachment=form.cleaned_data["purchase_attachment"],
+            attachment_type=form.cleaned_data["attachment_type"],
+            acting_user=request.user,
+        )
+        messages.success(request, "Existing attachment linked to actual spend line.")
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
     return redirect("purchase:pr_detail", pk=purchase_request.pk)
 
 @login_required

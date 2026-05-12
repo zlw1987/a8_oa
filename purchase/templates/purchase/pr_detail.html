@@ -190,6 +190,9 @@
                 <th>Base Amount</th>
                 <th>Original Amount</th>
                 <th>Linked Original</th>
+                <th>Receipt</th>
+                <th>Invoice</th>
+                <th>Evidence Actions</th>
                 <th>Variance Type</th>
                 <th>Vendor</th>
                 <th>Reference No</th>
@@ -213,6 +216,50 @@
                     {% else %}
                     -
                     {% endif %}
+                </td>
+                <td>{% include "includes/status_badge.html" with label=spend.evidence_ui.receipt_status tone="neutral" %}</td>
+                <td>{% include "includes/status_badge.html" with label=spend.evidence_ui.invoice_status tone="neutral" %}</td>
+                <td>
+                    {% if actual_attachment_upload_form %}
+                    <details>
+                        <summary>Upload</summary>
+                        <form method="post" action="{% url 'purchase:pr_actual_attachment_upload' purchase_request.id %}" enctype="multipart/form-data">
+                            {% csrf_token %}
+                            <input type="hidden" name="actual_spend_id" value="{{ spend.id }}">
+                            <select name="attachment_type">
+                                <option value="RECEIPT">Receipt</option>
+                                <option value="INVOICE">Invoice</option>
+                                <option value="QUOTE">Quote</option>
+                                <option value="OTHER">Other</option>
+                            </select>
+                            <input type="text" name="title" placeholder="Title">
+                            <input type="file" name="file" required>
+                            <button type="submit">Upload</button>
+                        </form>
+                    </details>
+                    {% endif %}
+                    {% if actual_attachment_link_form %}
+                    <details>
+                        <summary>Link Existing</summary>
+                        <form method="post" action="{% url 'purchase:pr_actual_attachment_link' purchase_request.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="actual_spend_id" value="{{ spend.id }}">
+                            <select name="attachment_type">
+                                <option value="RECEIPT">Receipt</option>
+                                <option value="INVOICE">Invoice</option>
+                                <option value="QUOTE">Quote</option>
+                                <option value="OTHER">Other</option>
+                            </select>
+                            {{ actual_attachment_link_form.purchase_attachment }}
+                            <button type="submit">Link</button>
+                        </form>
+                    </details>
+                    {% endif %}
+                    {% for link in spend.evidence_ui.all_links %}
+                    <div class="muted">{{ link.get_attachment_type_display }}</div>
+                    {% empty %}
+                    <div class="muted">No linked evidence.</div>
+                    {% endfor %}
                 </td>
                 <td>{{ spend.get_variance_type_display|default:"-" }}</td>
                 <td>{{ spend.vendor_name }}</td>
@@ -242,7 +289,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="13">No actual spend records.</td>
+                <td colspan="16">No actual spend records.</td>
             </tr>
             {% endfor %}
         </tbody>

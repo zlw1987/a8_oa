@@ -1,0 +1,31 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}{% if page_mode == "create" %}Create Delegation{% else %}Edit Delegation{% endif %}{% endblock %}
+{% block page_title %}{% if page_mode == "create" %}Create Delegation{% else %}Edit Delegation{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{% if page_mode == "create" %}Create Delegation{% else %}Edit Delegation{% endif %}</h1>
+        <p class="muted">Delegation allows another approver to act during the selected active period. Requester self-approval remains blocked.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-secondary" href="{% url 'approvals:my_delegations' %}">Back to Delegations</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="post">
+        {% csrf_token %}
+        <div class="form-grid">
+            {% for field in form %}
+            {% include "includes/form_field.html" with field=field %}
+            {% endfor %}
+        </div>
+        <div class="action-row">
+            <button class="btn btn-primary" type="submit">Save Delegation</button>
+            <a class="btn btn-secondary" href="{% url 'approvals:my_delegations' %}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

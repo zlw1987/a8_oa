@@ -121,8 +121,30 @@
         <h2>Receipt / Attachment Status</h2>
         {% if item.reason == "MISSING_RECEIPT" %}
         <div class="alert alert-warning">
-            Receipt or invoice support is missing or has not been accepted. Review the source request attachments before resolving.
+            Receipt or invoice support is missing or has not been accepted for the exact actual expense line below.
         </div>
+        {% if actual_expense %}
+        <div class="summary-grid">
+            <div class="summary-label">Actual Date</div>
+            <div>{{ actual_expense.spend_date|default:actual_expense.expense_date }}</div>
+            <div class="summary-label">Actual Amount</div>
+            <div>{{ actual_expense.base_amount }} {{ actual_expense.base_currency }}</div>
+            <div class="summary-label">Reference</div>
+            <div>{{ actual_expense.reference_no|default:"-" }}</div>
+            <div class="summary-label">Receipt Status</div>
+            <div>{{ evidence_status.receipt_status }}</div>
+            <div class="summary-label">Invoice Status</div>
+            <div>{{ evidence_status.invoice_status }}</div>
+            <div class="summary-label">Linked Evidence</div>
+            <div>
+                {% for link in evidence_status.all_links %}
+                    {{ link.get_attachment_type_display }}{% if not forloop.last %}<br>{% endif %}
+                {% empty %}
+                    No linked line-level evidence.
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
         {% else %}
         <p class="muted">No receipt-specific blocker is recorded for this review item.</p>
         {% endif %}

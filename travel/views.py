@@ -27,6 +27,8 @@ from .forms import (
     TravelActualReviewAttachmentForm,
     TravelRefundForm,
     TravelReopenCorrectionForm,
+    TravelActualExpenseAttachmentUploadForm,
+    TravelActualExpenseAttachmentLinkForm,
 )
 from .models import (
     TravelRequest,
@@ -37,6 +39,7 @@ from .models import (
     TravelAttachmentType, 
     TravelActualReviewStatus,
     TravelExpenseType,
+    TravelActualExpenseLine,
 )
 from travel.access import (
     user_can_view_travel,
@@ -50,6 +53,7 @@ from travel.access import (
 )
 from approvals.presentation import build_request_workflow_context
 from common.permissions import can_manage_finance_setup, can_perform_accounting_work
+from finance.services import build_actual_expense_evidence_status, link_travel_attachment_to_actual
 
 from .presentation import (
     decorate_travel_list_item,
@@ -267,6 +271,16 @@ def tr_detail(request, pk):
     can_reopen_correction = can_manage_finance_setup(request.user) and travel_request.status == TravelRequestStatus.CLOSED
     refund_form = TravelRefundForm(travel_request=travel_request) if can_record_refund else None
     reopen_correction_form = TravelReopenCorrectionForm() if can_reopen_correction else None
+    actual_attachment_upload_form = (
+        TravelActualExpenseAttachmentUploadForm()
+        if can_record_refund or ui_flags["can_manage_attachments"]
+        else None
+    )
+    actual_attachment_link_form = (
+        TravelActualExpenseAttachmentLinkForm(travel_request=travel_request)
+        if can_record_refund or ui_flags["can_manage_attachments"]
+        else None
+    )
     budget_meaning = {
         "rows": [
             {
@@ -295,6 +309,7 @@ def tr_detail(request, pk):
     actual_expense_lines = travel_request.actual_expense_lines.all().order_by("line_no")
     for line in actual_expense_lines:
         line.review_items_ui = list(line.accounting_review_items.all())
+        line.evidence_ui = build_actual_expense_evidence_status(line)
     attachments = travel_request.attachments.all()
     review_attachments = attachments.filter(
         document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
@@ -452,6 +467,8 @@ def tr_detail(request, pk):
         "refund_form": refund_form,
         "can_reopen_correction": can_reopen_correction,
         "reopen_correction_form": reopen_correction_form,
+        "actual_attachment_upload_form": actual_attachment_upload_form,
+        "actual_attachment_link_form": actual_attachment_link_form,
     }
     return render(request, "travel/tr_detail.html", context)
 
@@ -976,6 +993,69 @@ def tr_reopen_correction(request, pk):
             for error in errors:
                 messages.error(request, f"{label}: {error}")
 
+    return redirect("travel:tr_detail", pk=travel_request.pk)
+
+
+@login_required
+@require_POST
+def tr_actual_attachment_upload(request, pk):
+    travel_request = get_object_or_404(TravelRequest.get_visible_queryset(request.user), pk=pk)
+    ui_flags = build_travel_detail_ui_flags(travel_request, request.user, None)
+    enforce_travel_permission(ui_flags["can_manage_attachments"] or can_perform_accounting_work(request.user))
+    form = TravelActualExpenseAttachmentUploadForm(request.POST, request.FILES)
+    if form.is_valid():
+        actual_expense = get_object_or_404(
+            TravelActualExpenseLine,
+            pk=form.cleaned_data["actual_expense_id"],
+            travel_request=travel_request,
+        )
+        attachment = TravelRequestAttachment.objects.create(
+            travel_request=travel_request,
+            document_type=TravelAttachmentType.OTHER,
+            title=form.cleaned_data.get("title") or "",
+            file=form.cleaned_data["file"],
+            uploaded_by=request.user,
+        )
+        link_travel_attachment_to_actual(
+            actual_expense=actual_expense,
+            travel_attachment=attachment,
+            attachment_type=form.cleaned_data["attachment_type"],
+            acting_user=request.user,
+        )
+        messages.success(request, "Attachment uploaded and linked to actual expense line.")
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+    return redirect("travel:tr_detail", pk=travel_request.pk)
+
+
+@login_required
+@require_POST
+def tr_actual_attachment_link(request, pk):
+    travel_request = get_object_or_404(TravelRequest.get_visible_queryset(request.user), pk=pk)
+    ui_flags = build_travel_detail_ui_flags(travel_request, request.user, None)
+    enforce_travel_permission(ui_flags["can_manage_attachments"] or can_perform_accounting_work(request.user))
+    form = TravelActualExpenseAttachmentLinkForm(request.POST, travel_request=travel_request)
+    if form.is_valid():
+        actual_expense = get_object_or_404(
+            TravelActualExpenseLine,
+            pk=form.cleaned_data["actual_expense_id"],
+            travel_request=travel_request,
+        )
+        link_travel_attachment_to_actual(
+            actual_expense=actual_expense,
+            travel_attachment=form.cleaned_data["travel_attachment"],
+            attachment_type=form.cleaned_data["attachment_type"],
+            acting_user=request.user,
+        )
+        messages.success(request, "Existing attachment linked to actual expense line.")
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
     return redirect("travel:tr_detail", pk=travel_request.pk)
 
 

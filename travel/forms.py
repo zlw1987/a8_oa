@@ -11,10 +11,12 @@ from .models import (
     TravelLocationMode,
     get_location_mode_for_expense_type,
     TravelRequestAttachment,
+    TravelAttachmentType,
     TravelActualExpenseLine,
     TravelActualReviewStatus,
 )
 from common.choices import ActualExpenseEntryType, CurrencyCode
+from finance.models import ActualExpenseAttachmentType
 
 class TravelRequestForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
@@ -591,6 +593,26 @@ class TravelReopenCorrectionForm(forms.Form):
         max_length=100,
         help_text="Optional reference such as ticket number, audit note, or month-end correction id.",
     )
+
+
+class TravelActualExpenseAttachmentUploadForm(forms.Form):
+    actual_expense_id = forms.IntegerField(widget=forms.HiddenInput)
+    attachment_type = forms.ChoiceField(choices=ActualExpenseAttachmentType.choices)
+    title = forms.CharField(required=False, max_length=200)
+    file = forms.FileField()
+
+
+class TravelActualExpenseAttachmentLinkForm(forms.Form):
+    actual_expense_id = forms.IntegerField(widget=forms.HiddenInput)
+    attachment_type = forms.ChoiceField(choices=ActualExpenseAttachmentType.choices)
+    travel_attachment = forms.ModelChoiceField(queryset=TravelRequestAttachment.objects.none())
+
+    def __init__(self, *args, travel_request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if travel_request:
+            self.fields["travel_attachment"].queryset = travel_request.attachments.exclude(
+                document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
+            ).order_by("-uploaded_at", "-id")
 
 class TravelActualReviewForm(forms.Form):
     review_status = forms.ChoiceField(

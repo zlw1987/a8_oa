@@ -6,11 +6,13 @@ from projects.access import get_usable_projects_queryset_for_user, user_can_use_
 from projects.models import Project
 
 from common.choices import ActualExpenseEntryType
+from finance.models import ActualExpenseAttachmentType
 
 from .models import (
     PurchaseRequest,
     PurchaseRequestLine,
     PurchaseRequestAttachment,
+    PurchaseRequestAttachmentType,
     PurchaseActualSpend,
     PurchaseActualReviewStatus, 
     PurchaseRequestAttachment,
@@ -308,6 +310,26 @@ class PurchaseReopenCorrectionForm(forms.Form):
         max_length=100,
         help_text="Optional reference such as ticket number, audit note, or month-end correction id.",
     )
+
+
+class PurchaseActualExpenseAttachmentUploadForm(forms.Form):
+    actual_spend_id = forms.IntegerField(widget=forms.HiddenInput)
+    attachment_type = forms.ChoiceField(choices=ActualExpenseAttachmentType.choices)
+    title = forms.CharField(required=False, max_length=200)
+    file = forms.FileField()
+
+
+class PurchaseActualExpenseAttachmentLinkForm(forms.Form):
+    actual_spend_id = forms.IntegerField(widget=forms.HiddenInput)
+    attachment_type = forms.ChoiceField(choices=ActualExpenseAttachmentType.choices)
+    purchase_attachment = forms.ModelChoiceField(queryset=PurchaseRequestAttachment.objects.none())
+
+    def __init__(self, *args, purchase_request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if purchase_request:
+            self.fields["purchase_attachment"].queryset = purchase_request.attachments.exclude(
+                document_type=PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
+            ).order_by("-uploaded_at", "-id")
 
 class PurchaseActualReviewForm(forms.Form):
     review_status = forms.ChoiceField(

@@ -8,6 +8,7 @@ from .models import (
     AccountingPeriod,
     AccountingReviewDecision,
     AccountingReviewItem,
+    DirectProjectCostPolicy,
     CardTransaction,
     CardTransactionAllocation,
     OverBudgetAction,
@@ -119,6 +120,42 @@ class ReceiptPolicyForm(forms.ModelForm):
             "amount_from": "Minimum amount where this receipt rule applies.",
             "amount_to": "Maximum amount where this receipt rule applies.",
         }
+
+
+class DirectProjectCostPolicyForm(forms.ModelForm):
+    class Meta:
+        model = DirectProjectCostPolicy
+        fields = [
+            "policy_code",
+            "policy_name",
+            "department",
+            "project",
+            "project_type",
+            "payment_method",
+            "amount_from",
+            "amount_to",
+            "currency",
+            "action",
+            "requires_receipt",
+            "requires_project_owner_review",
+            "priority",
+            "is_active",
+        ]
+        help_texts = {
+            "priority": "Lower number matches first.",
+            "action": "ALLOW posts directly. REVIEW creates accounting review. REQUIRE_PROJECT_OWNER_APPROVAL marks owner review required. BLOCK prevents allocation.",
+            "requires_receipt": "Direct project cost normally requires receipt support unless an exception is approved.",
+            "requires_project_owner_review": "When enabled, project owner review is required even if the action is REVIEW.",
+            "currency": "Leave blank for a general fallback. Amount thresholds compare against base currency amount.",
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        amount_from = cleaned_data.get("amount_from")
+        amount_to = cleaned_data.get("amount_to")
+        if amount_from is not None and amount_to is not None and amount_from > amount_to:
+            self.add_error("amount_to", "Amount to must be greater than or equal to amount from.")
+        return cleaned_data
 
 
 class CardTransactionForm(forms.ModelForm):

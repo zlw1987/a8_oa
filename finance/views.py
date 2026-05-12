@@ -20,6 +20,7 @@ from .forms import (
     AccountingReviewFilterForm,
     CardTransactionAllocationForm,
     CardTransactionForm,
+    DirectProjectCostPolicyForm,
     OverBudgetPolicyForm,
     ReceiptPolicyForm,
 )
@@ -30,6 +31,7 @@ from .models import (
     AccountingReviewItem,
     AccountingReviewStatus,
     CardTransaction,
+    DirectProjectCostPolicy,
     OverBudgetPolicy,
     ReceiptPolicy,
 )
@@ -48,6 +50,7 @@ from .presentation import (
 )
 from .services import (
     allocate_card_transaction,
+    build_actual_expense_evidence_status,
     build_accounting_period_close_checklist,
     create_duplicate_card_review_item,
     enforce_accounting_period_open,
@@ -157,6 +160,57 @@ def receipt_policy_edit(request, pk):
     return render(
         request,
         "finance/receipt_policy_form.html",
+        {"form": form, "policy": policy, "page_mode": "edit"},
+    )
+
+
+@login_required
+def direct_project_cost_policy_list(request):
+    _enforce_finance_setup_permission(request.user)
+    queryset = (
+        DirectProjectCostPolicy.objects.select_related("department", "project")
+        .order_by("priority", "policy_code")
+    )
+    q = (request.GET.get("q") or "").strip()
+    if q:
+        queryset = queryset.filter(Q(policy_code__icontains=q) | Q(policy_name__icontains=q))
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "finance/direct_project_cost_policy_list.html",
+        {"page_obj": page_obj, "q": q},
+    )
+
+
+@login_required
+def direct_project_cost_policy_create(request):
+    _enforce_finance_setup_permission(request.user)
+    if request.method == "POST":
+        form = DirectProjectCostPolicyForm(request.POST)
+        if form.is_valid():
+            policy = form.save()
+            messages.success(request, f"Direct project cost policy '{policy.policy_code}' created.")
+            return redirect("finance:direct_project_cost_policy_edit", pk=policy.pk)
+    else:
+        form = DirectProjectCostPolicyForm()
+    return render(request, "finance/direct_project_cost_policy_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def direct_project_cost_policy_edit(request, pk):
+    _enforce_finance_setup_permission(request.user)
+    policy = get_object_or_404(DirectProjectCostPolicy, pk=pk)
+    if request.method == "POST":
+        form = DirectProjectCostPolicyForm(request.POST, instance=policy)
+        if form.is_valid():
+            policy = form.save()
+            messages.success(request, f"Direct project cost policy '{policy.policy_code}' updated.")
+            return redirect("finance:direct_project_cost_policy_edit", pk=policy.pk)
+    else:
+        form = DirectProjectCostPolicyForm(instance=policy)
+    return render(
+        request,
+        "finance/direct_project_cost_policy_form.html",
         {"form": form, "policy": policy, "page_mode": "edit"},
     )
 
@@ -366,6 +420,8 @@ def accounting_review_detail(request, pk):
         pk=pk,
     )
     enrich_review_item(item)
+    actual_expense = item.purchase_actual_spend or item.travel_actual_expense
+    evidence_status = build_actual_expense_evidence_status(actual_expense) if actual_expense else None
     initial_decision = request.GET.get("decision") or ""
     form = AccountingReviewDecisionForm(initial={"decision": initial_decision})
     requester_id = None
@@ -381,6 +437,8 @@ def accounting_review_detail(request, pk):
             "item": item,
             "form": form,
             "can_decide": can_decide,
+            "actual_expense": actual_expense,
+            "evidence_status": evidence_status,
         },
     )
 

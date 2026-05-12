@@ -14,6 +14,7 @@ The current version includes V1.1 Phase 1 completion on top of the V0.5 business
 - Added closed-period validation to card transaction creation, card allocation, PR actual spend, TR actual expense, and refund/credit entry paths.
 - Closed V1.1 Phase 1 as completed after full test, UAT, and accounting validation.
 - Prepared V1.1 Phase 2 technical design for line-level receipt matching UI, direct project cost policy workflow, approval delegation UI, and overdue approval handling.
+- Implemented V1.1 Phase 2 expense-control and approval-operations workflows: line-level receipt/invoice linking on PR/TR actual expense lines, Direct Project Cost Policy setup and card allocation enforcement, approval delegation UI, admin task reassignment, and `process_approval_escalations` command alias.
 - Added Finance Reports CSV export with base and transaction currency columns.
 - Converted Approval Rule Step Editor from a wide table into step cards/accordion sections.
 - Restored the Dashboard `Approval Summary` section title for regression compatibility.
@@ -50,11 +51,13 @@ The current version includes V1.1 Phase 1 completion on top of the V0.5 business
 
 ## Verification
 
-Latest targeted verification for the V1.1 Phase 1 workflow changes:
+Latest targeted verification for the V1.1 Phase 2 workflow changes:
 
 ```text
-python manage.py test finance -v 2
-Ran 18 tests in 24.031s
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py test finance.tests.OverBudgetPolicyServiceTest.test_line_level_receipt_link_resolves_missing_receipt_review finance.tests.OverBudgetPolicyServiceTest.test_direct_project_cost_policy_review_creates_review_item finance.tests.OverBudgetPolicyServiceTest.test_direct_project_cost_policy_requires_project_owner_review finance.tests.OverBudgetPolicyServiceTest.test_direct_project_cost_policy_block_prevents_allocation approvals.tests.ApprovalDelegationWorkflowTest --keepdb -v 1
+Ran 10 tests
 OK
 ```
 
@@ -119,3 +122,7 @@ Phase 1 technical design:
 Phase 2 technical design:
 
 - [V1.1 Phase 2 Technical Design](v1.1-phase2-technical-design.md)
+
+Phase 2 implementation status:
+
+- [V1.1 Phase 2 Implementation Status](v1.1-phase2-implementation.md)

@@ -1,0 +1,49 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Active Delegations{% endblock %}
+{% block page_title %}Active Delegations{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Active Delegations</h1>
+        <p class="muted">Current active approval delegation coverage for finance/admin review.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-secondary" href="{% url 'approvals:my_delegations' %}">My Delegations</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Original Approver</th>
+                    <th>Delegate</th>
+                    <th>Date Range</th>
+                    <th>Department</th>
+                    <th>Request Type</th>
+                    <th>Created By</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for delegation in delegations %}
+                <tr>
+                    <td>{{ delegation.original_approver }}</td>
+                    <td>{{ delegation.delegate_user }}</td>
+                    <td>{{ delegation.start_date }} - {{ delegation.end_date }}</td>
+                    <td>{{ delegation.department|default:"All" }}</td>
+                    <td>{{ delegation.get_request_type_display|default:"All" }}</td>
+                    <td>{{ delegation.created_by|default:"-" }}</td>
+                    <td><a href="{% url 'approvals:delegation_edit' delegation.id %}">Edit</a></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7">No active delegations.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -4,6 +4,19 @@
 {% block page_title %}My Tasks{% endblock %}
 
     {% block content %}
+    <div class="page-header">
+        <div>
+            <h1>My Tasks</h1>
+            <p class="muted">Approval tasks assigned to you, delegated to you, or available in approval pools.</p>
+        </div>
+        <div class="page-actions">
+            <a class="btn btn-secondary" href="{% url 'approvals:my_delegations' %}">My Delegations</a>
+            {% if can_reassign_tasks %}
+            <a class="btn btn-secondary" href="{% url 'approvals:active_delegations' %}">Active Delegations</a>
+            {% endif %}
+        </div>
+    </div>
+
     <div class="card">
         <h2>Filters</h2>
         <form method="get">
@@ -115,6 +128,10 @@
                                 <button type="submit">Release to Pool</button>
                             </form>
                             {% endif %}
+
+                            {% if can_reassign_tasks %}
+                            <a href="{% url 'approvals:task_reassign' task.id %}">Reassign</a>
+                            {% endif %}
                         </div>
                     </td>
                 </tr>
@@ -200,6 +217,9 @@
                                 {% csrf_token %}
                                 <button type="submit">Claim Task</button>
                             </form>
+                            {% if can_reassign_tasks %}
+                            <a href="{% url 'approvals:task_reassign' task.id %}">Reassign</a>
+                            {% endif %}
                         </div>
                     </td>
                     </tr>

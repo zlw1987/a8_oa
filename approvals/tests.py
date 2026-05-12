@@ -3,6 +3,7 @@ from decimal import Decimal
 from io import StringIO
 
 from django.core.management import call_command
+from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -10,7 +11,7 @@ from django.core import mail
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
 
-from approvals.models import ApprovalTask,ApprovalNotificationLog, ApprovalNotificationType, ApprovalNotificationStatus
+from approvals.models import ApprovalDelegation, ApprovalTask,ApprovalNotificationLog, ApprovalNotificationType, ApprovalNotificationStatus
 from approvals.dashboard import get_approval_summary_for_user
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
@@ -27,6 +28,129 @@ from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpense
 
 
 User = get_user_model()
+
+
+class ApprovalDelegationWorkflowTest(TestCase):
+    def setUp(self):
+        self.requester = User.objects.create_user(username="deleg_req", password="testpass123")
+        self.approver = User.objects.create_user(username="deleg_mgr", password="testpass123")
+        self.delegate = User.objects.create_user(username="deleg_backup", password="testpass123")
+        self.finance_admin = User.objects.create_user(
+            username="deleg_admin",
+            password="testpass123",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.department = Department.objects.create(
+            dept_code="D-DEL",
+            dept_name="Delegation Dept",
+            dept_type=DepartmentType.GENERAL,
+        )
+        self.project = Project.objects.create(
+            project_code="PJT-DEL",
+            project_name="Delegation Project",
+            owning_department=self.department,
+            budget_amount=Decimal("1000.00"),
+            is_active=True,
+        )
+        self.purchase_request = PurchaseRequest.objects.create(
+            title="Delegation PR",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            status=RequestStatus.SUBMITTED,
+            request_date=date.today(),
+            currency="USD",
+            estimated_total=Decimal("100.00"),
+            justification="Delegation test",
+        )
+        self.rule = ApprovalRule.objects.create(
+            rule_code="DEL-RULE",
+            rule_name="Delegation Rule",
+            request_type=RequestType.PURCHASE,
+            is_active=True,
+        )
+        self.step = ApprovalRuleStep.objects.create(
+            rule=self.rule,
+            step_no=1,
+            step_name="Manager Approval",
+            approver_type=ApproverType.SPECIFIC_USER,
+            approver_user=self.approver,
+            is_active=True,
+        )
+        self.task = ApprovalTask.objects.create(
+            purchase_request=self.purchase_request,
+            rule=self.rule,
+            step=self.step,
+            step_no=1,
+            step_name="Manager Approval",
+            assigned_user=self.approver,
+            status=ApprovalTaskStatus.PENDING,
+            due_at=timezone.now() - timedelta(days=3),
+        )
+
+    def test_active_delegate_can_approve_and_history_records_delegation(self):
+        ApprovalDelegation.objects.create(
+            original_approver=self.approver,
+            delegate_user=self.delegate,
+            start_date=date.today() - timedelta(days=1),
+            end_date=date.today() + timedelta(days=1),
+            created_by=self.approver,
+        )
+
+        self.task.approve(self.delegate, comment="Looks good.")
+
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.status, ApprovalTaskStatus.APPROVED)
+        self.assertEqual(self.task.acted_by, self.delegate)
+        history = self.task.history_entries.order_by("-id").first()
+        self.assertIn("Delegated approval on behalf of", history.comment)
+
+    def test_expired_delegate_cannot_approve(self):
+        ApprovalDelegation.objects.create(
+            original_approver=self.approver,
+            delegate_user=self.delegate,
+            start_date=date.today() - timedelta(days=5),
+            end_date=date.today() - timedelta(days=1),
+            created_by=self.approver,
+        )
+
+        with self.assertRaisesMessage(ValidationError, "Only the current assignee can approve this task."):
+            self.task.approve(self.delegate)
+
+    def test_admin_reassign_requires_reason_and_blocks_requester(self):
+        with self.assertRaisesMessage(ValidationError, "Reassignment reason is required."):
+            self.task.reassign(acting_user=self.finance_admin, new_assignee=self.delegate, reason="")
+
+        with self.assertRaisesMessage(ValidationError, "Requester self-approval is not allowed."):
+            self.task.reassign(acting_user=self.finance_admin, new_assignee=self.requester, reason="No self approval.")
+
+    def test_process_approval_escalations_command_runs_dry_run(self):
+        out = StringIO()
+        call_command("process_approval_escalations", "--dry-run", stdout=out)
+        output = out.getvalue()
+
+        self.assertTrue(
+            "Dry run completed." in output
+            or "No escalated overdue approval tasks found." in output
+        )
+
+    def test_delegation_pages_render(self):
+        self.client.force_login(self.approver)
+        response = self.client.get(reverse("approvals:my_delegations"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "My Delegations")
+
+        response = self.client.get(reverse("approvals:delegation_create"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Create Delegation")
+
+    def test_finance_admin_can_open_task_reassign_page(self):
+        self.client.force_login(self.finance_admin)
+        response = self.client.get(reverse("approvals:task_reassign", args=[self.task.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Reassign Approval Task")
+
 
 class ApprovalRuleAdminViewTest(TestCase):
     def setUp(self):
