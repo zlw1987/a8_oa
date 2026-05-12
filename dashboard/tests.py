@@ -58,6 +58,20 @@ class DashboardSmokeTest(TestCase):
         self.assertContains(response, reverse("projects:project_list"))
         self.assertContains(response, reverse("projects:project_create"))
 
+    def test_system_setup_uses_custom_user_admin_url(self):
+        admin_user = User.objects.create_superuser(
+            username="dashboard_sys_admin",
+            password="testpass123",
+            email="dashboard_sys_admin@example.com",
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(reverse("dashboard:system_setup"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("admin:accounts_user_changelist"))
+        self.assertContains(response, reverse("admin:auth_group_changelist"))
+
 
 class DashboardCrossRequestRegressionTest(TestCase):
     def setUp(self):

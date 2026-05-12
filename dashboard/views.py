@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import render
@@ -480,6 +481,11 @@ def _setup_card(label, value, url="", tone="neutral", description=""):
     }
 
 
+def _admin_changelist_url(model):
+    meta = model._meta
+    return reverse(f"admin:{meta.app_label}_{meta.model_name}_changelist")
+
+
 @login_required
 def system_setup(request):
     if not can_view_system_setup(request.user):
@@ -501,13 +507,15 @@ def system_setup(request):
         _setup_card("Seed Finance Defaults", "Manual command", "", description="Run seed_finance_defaults from the server when setup data needs to be refreshed."),
         _setup_card("Static / Media Check", "Review deployment", "", description="Confirm static and media paths during deployment checklist."),
     ]
+    user_model = get_user_model()
     setup_sections = [
         {
             "title": "User & Permission Setup",
             "links": [
                 {"label": "Departments", "url": reverse("accounts:department_list")},
                 {"label": "Projects", "url": reverse("projects:project_list")},
-                {"label": "Django Admin Users / Groups", "url": reverse("admin:auth_user_changelist")},
+                {"label": "Django Admin Users", "url": _admin_changelist_url(user_model)},
+                {"label": "Django Admin Groups", "url": reverse("admin:auth_group_changelist")},
             ],
         },
         {

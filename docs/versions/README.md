@@ -10,6 +10,11 @@ This directory tracks major functional versions of A8 OA.
 - [V0.4 Finance Controls](v0.4-finance-controls.md): over-budget policies, accounting review queue, card transactions, and allocation controls.
 - [V0.5 Proposed Technical Design](v0.5-proposed-technical-design.md): proposed stabilization-driven scope after V0.4 UAT.
 - [V0.5 Business Control Completion](v0.5-business-control-complete.md): amendment, receipt policy, accounting workbench, card controls, reports, and production readiness.
+- [V0.6 Multi-Currency Foundation](v0.6-multi-currency-foundation.md): company base currency, transaction/base snapshots, FX variance, and currency-safe reports.
+- [V1.1 Production Control Roadmap](v1.1-production-control-roadmap.md): controlled roadmap for financial integrity, permissions, expense control, and reporting.
+- [V1.1 Phase 1 Completion Checkpoint](v1.1-phase1-completion.md): period close, refund/credit/reversal, and reopen/correction completion checkpoint.
+- [V1.1 Phase 1 Technical Design](v1.1-phase1-technical-design.md): technical design for Phase 1 financial integrity operations.
+- [V1.1 Phase 2 Technical Design](v1.1-phase2-technical-design.md): technical design for line-level receipt matching, direct project cost policy, delegation, and overdue handling.
 - [Current Version](current.md): latest implemented state and verification snapshot.
 
 ## Update Rule

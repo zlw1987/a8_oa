@@ -2,7 +2,7 @@
 
 ## Status
 
-The current version includes V0.5 business-control completion and the V0.6 multi-currency foundation on top of the V0.4 finance controls milestone.
+The current version includes V1.1 Phase 1 completion on top of the V0.5 business-control milestone and V0.6 multi-currency foundation.
 
 ## Latest Fixes
 
@@ -12,6 +12,8 @@ The current version includes V0.5 business-control completion and the V0.6 multi
 - Added V1.1B/V1.1C foundation models for accounting periods, refund/correction, line-level receipt links, direct project cost policy, and approval delegation/escalation.
 - Implemented V1.1 Phase 1 operational workflows: Accounting Period list/detail/create/close/reopen UI, period close checklist, PR/TR refund-credit-reversal entry forms, and PR/TR reopen-for-correction forms.
 - Added closed-period validation to card transaction creation, card allocation, PR actual spend, TR actual expense, and refund/credit entry paths.
+- Closed V1.1 Phase 1 as completed after full test, UAT, and accounting validation.
+- Prepared V1.1 Phase 2 technical design for line-level receipt matching UI, direct project cost policy workflow, approval delegation UI, and overdue approval handling.
 - Added Finance Reports CSV export with base and transaction currency columns.
 - Converted Approval Rule Step Editor from a wide table into step cards/accordion sections.
 - Restored the Dashboard `Approval Summary` section title for regression compatibility.
@@ -102,10 +104,18 @@ See [V0.6 Multi-Currency Foundation](v0.6-multi-currency-foundation.md).
 
 ## V1.1 Roadmap Progress
 
-The selected production-control roadmap has started. The current implementation includes V1.1A foundation, V1.1 Phase 1 period close/refund/reopen workflows, plus model/service foundations for V1.1B and V1.1C.
+The selected production-control roadmap has started. V1.1 Phase 1 is completed and closed. Phase 2 is now the next controlled development phase.
 
 See [V1.1 Production Control Roadmap](v1.1-production-control-roadmap.md).
 
-Phase 1 technical design is prepared before UI/workflow development starts:
+Phase 1 completion checkpoint:
+
+- [V1.1 Phase 1 Completion Checkpoint](v1.1-phase1-completion.md)
+
+Phase 1 technical design:
 
 - [V1.1 Phase 1 Technical Design](v1.1-phase1-technical-design.md)
+
+Phase 2 technical design:
+
+- [V1.1 Phase 2 Technical Design](v1.1-phase2-technical-design.md)
