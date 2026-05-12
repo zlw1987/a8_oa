@@ -266,8 +266,11 @@ Main list-page behavior:
 
 Main dashboard behavior:
 
+- Dashboard cards are grouped by priority: My Work Today, Approval Summary, My Requests / Recent Activity, oversight, and setup shortcuts.
+- Zero-count urgent cards are hidden from the top section to keep the page from becoming a wall of cards.
+- Admin/setup shortcuts are visually lower priority and can be collapsed.
 - Requesters see draft, returned, pending approval, approved-not-closed, missing receipt, and create request cards.
-- Approvers see pending tasks, overdue tasks, pool tasks, recently approved items, and returned/rejected items.
+- Approvers see Approval Summary cards for pending tasks, pool tasks, recently approved items, and returned/rejected items.
 - Accounting users see pending reviews, missing receipt, over-budget, amendment-required, unmatched card, duplicate card, and ready-to-close cards.
 - Finance admins see aging, budget risk, exceptions, unmatched card, receipt issue, finance report, and policy setup shortcuts.
 - System admins see setup shortcuts.

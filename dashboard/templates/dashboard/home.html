@@ -6,8 +6,13 @@
 
 {% block content %}
 {% for section in dashboard_sections %}
-<div class="card dashboard-section">
+{% if section.collapsible %}
+<details class="card dashboard-section dashboard-section-secondary">
+    <summary>{{ section.title }}</summary>
+{% else %}
+<div class="card dashboard-section{% if section.secondary %} dashboard-section-secondary{% endif %}">
     <h2>{{ section.title }}</h2>
+{% endif %}
     <div class="dashboard-card-grid">
         {% for card in section.cards %}
         <a class="dashboard-card dashboard-card-{{ card.tone }}" href="{{ card.url }}">
@@ -19,7 +24,11 @@
         </a>
         {% endfor %}
     </div>
+{% if section.collapsible %}
+</details>
+{% else %}
 </div>
+{% endif %}
 {% endfor %}
 
 <div class="card">

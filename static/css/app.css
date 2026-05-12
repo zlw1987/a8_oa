@@ -257,6 +257,16 @@ main {
     gap: 14px;
 }
 
+.dashboard-section-secondary {
+    background: #fbfcfe;
+}
+
+.dashboard-section > summary {
+    cursor: pointer;
+    font-size: 20px;
+    font-weight: 700;
+}
+
 .dashboard-card-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -609,6 +619,22 @@ textarea {
 .table-wrap {
     width: 100%;
     overflow-x: auto;
+}
+
+.table-scroll {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.approval-steps-table {
+    min-width: 1200px;
+}
+
+.approval-steps-table select,
+.approval-steps-table input[type="text"],
+.approval-steps-table input[type="number"] {
+    width: 100%;
+    min-width: 110px;
 }
 
 table,

@@ -71,6 +71,7 @@
     <Compile Include="common\__init__.py" />
     <Compile Include="config\asgi.py" />
     <Compile Include="config\settings.py" />
+    <Compile Include="config\settings_godaddy.py" />
     <Compile Include="config\urls.py" />
     <Compile Include="config\wsgi.py" />
     <Compile Include="config\__init__.py" />

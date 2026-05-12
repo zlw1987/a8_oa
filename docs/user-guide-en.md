@@ -30,14 +30,13 @@ The main goals are:
 2. Sign in with your username and password.
 3. The system opens the Dashboard.
 
-The Dashboard may show:
+The Dashboard is organized by priority:
 
-- Requester work cards, such as drafts, returned requests, pending approval, approved but not closed, and missing receipt items.
-- Approver work cards, such as pending tasks, overdue tasks, pool tasks, recently approved items, and returned / rejected items.
-- Accounting work cards, such as pending reviews, missing receipt items, over-budget reviews, amendment-required items, unmatched card transactions, and duplicate card reviews.
-- Finance Admin cards, such as review aging, projects near budget limit, over-budget exceptions, unmatched card count, receipt policy issues, report shortcuts, and policy setup shortcuts.
-- System Admin shortcuts, such as user / department setup, approval rule setup, finance policy setup, and system notes.
-- Recent requests and current approval task tables.
+- My Work Today: urgent items such as pending approvals, returned requests, missing receipts, pending accounting reviews, unmatched card transactions, and open blockers.
+- Approval Summary: approval task counts and recent approval activity.
+- My Requests / My Recent Activity: drafts, pending approval, approved-not-closed items, create request shortcuts, and recent request tables.
+- Team / Department / Finance Oversight: finance and manager-level exception cards when permitted.
+- Admin / Setup Shortcuts: lower-priority setup links, usually collapsed or visually de-emphasized.
 
 The Dashboard is permission-aware. Normal requesters do not see finance/admin work cards.
 
@@ -46,7 +45,7 @@ Top navigation is grouped into dropdown menus:
 - Dashboard.
 - Work: Purchase Requests, Travel Requests, My Tasks, My Approval History.
 - Finance: Accounting Review Queue, Card Transactions, Finance Reports, Variance Report.
-- Setup: Projects, Departments, Approval Rules, Over-Budget Policies, Receipt Policies.
+- Setup: Projects, Create Project when permitted, Departments, Approval Rules, Over-Budget Policies, Receipt Policies.
 - Admin: Django Admin and system setup links.
 
 Visible menus depend on your permissions. Empty menu groups are hidden.

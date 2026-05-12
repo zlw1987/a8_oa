@@ -7,6 +7,10 @@ The current version includes V0.5 business-control completion and the V0.6 multi
 ## Latest Fixes
 
 - Cleaned up Accounting Review Queue filters with visible labels, Basic/Advanced sections, tab counts, preserved-tab reset behavior, and clearer empty states.
+- Stabilized Dashboard information hierarchy with My Work Today, Approval Summary, My Requests, oversight, and collapsible setup sections.
+- Restored the Dashboard `Approval Summary` section title for regression compatibility.
+- Unified Create Project visibility through `projects.access.user_can_create_project` and added a permission-aware Create Project link under Setup navigation.
+- Added horizontal containment for the Approval Steps editor so wide formsets no longer overflow the card.
 - Added V0.6 multi-currency foundation: USD company base currency, transaction/base amount snapshots, exchange-rate snapshots, FX variance classification, and base-currency Finance Reports.
 - Added Currency, ExchangeRate, and FXVariancePolicy models for finance control setup.
 - Updated PR/TR actual expense recording and company card allocation paths to preserve original transaction currency while consuming budget in USD base currency.

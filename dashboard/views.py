@@ -9,7 +9,6 @@ from approvals.models import ApprovalTask
 from common.choices import ApprovalTaskStatus, RequestStatus
 from purchase.models import PurchaseRequest
 from travel.models import TravelRequest, TravelRequestStatus
-from accounts.models import Department
 from approvals.dashboard import get_approval_summary_for_user
 from finance.models import (
     AccountingReviewItem,
@@ -21,11 +20,7 @@ from finance.models import (
 )
 from finance.presentation import OPEN_STATUS_FILTER
 from projects.models import Project
-
-def _can_create_project(user):
-    if user.is_superuser:
-        return True
-    return Department.objects.filter(manager=user).exists()
+from projects.access import user_can_create_project
 
 def _get_request_detail_url(task):
     request_obj = task.get_request_object()
@@ -100,9 +95,20 @@ def _dashboard_card(label, value, url="", tone="neutral", description=""):
     }
 
 
-def _dashboard_section(title, cards):
+def _dashboard_section(title, cards, *, secondary=False, collapsible=False):
     visible_cards = [card for card in cards if card is not None]
-    return {"title": title, "cards": visible_cards}
+    return {
+        "title": title,
+        "cards": visible_cards,
+        "secondary": secondary,
+        "collapsible": collapsible,
+    }
+
+
+def _priority_card(label, value, url="", tone="neutral", description=""):
+    if not value:
+        return None
+    return _dashboard_card(label, value, url, tone=tone, description=description)
 
 
 def _open_review_queryset():
@@ -134,9 +140,84 @@ def _build_role_dashboard_sections(user):
     ).distinct()
     overdue_assigned = assigned_pending.filter(due_at__lt=now)
 
+    returned_count = requester_purchase.filter(status=RequestStatus.RETURNED).count() + requester_travel.filter(
+        status=TravelRequestStatus.RETURNED
+    ).count()
+    missing_receipt_count = open_reviews.filter(
+        reason=AccountingReviewReason.MISSING_RECEIPT,
+        purchase_request__requester=user,
+    ).count() + open_reviews.filter(
+        reason=AccountingReviewReason.MISSING_RECEIPT,
+        travel_request__requester=user,
+    ).count()
+    unmatched_cards = CardTransaction.objects.none()
+    if user.is_staff:
+        unmatched_cards = CardTransaction.objects.filter(
+            match_status__in=[CardTransactionMatchStatus.UNMATCHED, CardTransactionMatchStatus.PARTIALLY_MATCHED]
+        )
+
     sections = [
         _dashboard_section(
-            "Requester Work",
+            "My Work Today",
+            [
+                _priority_card("Pending Approval Tasks", assigned_pending.count(), reverse("approvals:my_tasks"), tone="attention"),
+                _priority_card(
+                    "Overdue Approval Tasks",
+                    overdue_assigned.count(),
+                    reverse("approvals:my_tasks") + "?due_state=overdue",
+                    tone="danger",
+                ),
+                _priority_card(
+                    "Returned to Me",
+                    returned_count,
+                    reverse("purchase:pr_list") + "?status=RETURNED",
+                    tone="attention",
+                    description="Requests returned for correction.",
+                ),
+                _priority_card(
+                    "Missing Receipt / Need Action",
+                    missing_receipt_count,
+                    reverse("purchase:pr_list"),
+                    tone="warning",
+                    description="Receipt issues connected to your requests.",
+                ),
+                _priority_card(
+                    "Pending Accounting Reviews",
+                    open_reviews.count() if user.is_staff else 0,
+                    reverse("finance:accounting_review_queue") if user.is_staff else "",
+                    tone="attention",
+                ),
+                _priority_card(
+                    "Unmatched Card Transactions",
+                    unmatched_cards.count() if user.is_staff else 0,
+                    reverse("finance:card_transaction_list") + "?status=UNMATCHED" if user.is_staff else "",
+                    tone="warning",
+                ),
+            ],
+        ),
+        _dashboard_section(
+            "Approval Summary",
+            [
+                _dashboard_card("My Pending Approval Tasks", assigned_pending.count(), reverse("approvals:my_tasks")),
+                _dashboard_card("Claimable Pool Tasks", pool_pending.count(), reverse("approvals:my_tasks")),
+                _dashboard_card(
+                    "Recently Approved",
+                    ApprovalTask.objects.filter(status=ApprovalTaskStatus.APPROVED, acted_by=user).count(),
+                    reverse("approvals:my_history"),
+                ),
+                _dashboard_card(
+                    "Returned / Rejected Items",
+                    ApprovalTask.objects.filter(
+                        status__in=[ApprovalTaskStatus.RETURNED, ApprovalTaskStatus.REJECTED],
+                        acted_by=user,
+                    ).count(),
+                    reverse("approvals:my_history"),
+                ),
+            ],
+            secondary=True,
+        ),
+        _dashboard_section(
+            "My Requests / My Recent Activity",
             [
                 _dashboard_card(
                     "My Draft Requests",
@@ -144,14 +225,6 @@ def _build_role_dashboard_sections(user):
                     + requester_travel.filter(status=TravelRequestStatus.DRAFT).count(),
                     reverse("purchase:pr_list") + "?status=DRAFT",
                     description="Draft PR/TR items you can continue.",
-                ),
-                _dashboard_card(
-                    "Returned to Me",
-                    requester_purchase.filter(status=RequestStatus.RETURNED).count()
-                    + requester_travel.filter(status=TravelRequestStatus.RETURNED).count(),
-                    reverse("purchase:pr_list") + "?status=RETURNED",
-                    tone="attention",
-                    description="Requests returned for correction.",
                 ),
                 _dashboard_card(
                     "Pending Approval",
@@ -174,59 +247,17 @@ def _build_role_dashboard_sections(user):
                     reverse("purchase:pr_list") + "?status=APPROVED",
                     description="Approved requests still open.",
                 ),
-                _dashboard_card(
-                    "Missing Receipt / Need Action",
-                    open_reviews.filter(
-                        reason=AccountingReviewReason.MISSING_RECEIPT,
-                        purchase_request__requester=user,
-                    ).count()
-                    + open_reviews.filter(
-                        reason=AccountingReviewReason.MISSING_RECEIPT,
-                        travel_request__requester=user,
-                    ).count(),
-                    reverse("purchase:pr_list"),
-                    tone="warning",
-                    description="Receipt issues connected to your requests.",
-                ),
                 _dashboard_card("Create Purchase Request", "+", reverse("purchase:pr_create"), tone="action"),
                 _dashboard_card("Create Travel Request", "+", reverse("travel:tr_create"), tone="action"),
             ],
-        ),
-        _dashboard_section(
-            "Approver Work",
-            [
-                _dashboard_card("My Pending Approval Tasks", assigned_pending.count(), reverse("approvals:my_tasks")),
-                _dashboard_card(
-                    "Overdue Approval Tasks",
-                    overdue_assigned.count(),
-                    reverse("approvals:my_tasks") + "?due_state=overdue",
-                    tone="danger" if overdue_assigned.exists() else "neutral",
-                ),
-                _dashboard_card("Claimable Pool Tasks", pool_pending.count(), reverse("approvals:my_tasks")),
-                _dashboard_card(
-                    "Recently Approved",
-                    ApprovalTask.objects.filter(status=ApprovalTaskStatus.APPROVED, acted_by=user).count(),
-                    reverse("approvals:my_history"),
-                ),
-                _dashboard_card(
-                    "Returned / Rejected Items",
-                    ApprovalTask.objects.filter(
-                        status__in=[ApprovalTaskStatus.RETURNED, ApprovalTaskStatus.REJECTED],
-                        acted_by=user,
-                    ).count(),
-                    reverse("approvals:my_history"),
-                ),
-            ],
+            secondary=True,
         ),
     ]
 
     if user.is_staff:
-        unmatched_cards = CardTransaction.objects.filter(
-            match_status__in=[CardTransactionMatchStatus.UNMATCHED, CardTransactionMatchStatus.PARTIALLY_MATCHED]
-        )
         sections.append(
             _dashboard_section(
-                "Accounting Work",
+                "Team / Department / Finance Oversight",
                 [
                     _dashboard_card("Pending Accounting Reviews", open_reviews.count(), reverse("finance:accounting_review_queue"), tone="attention"),
                     _dashboard_card(
@@ -266,11 +297,12 @@ def _build_role_dashboard_sections(user):
                         reverse("purchase:pr_list") + "?status=APPROVED",
                     ),
                 ],
+                secondary=True,
             )
         )
         sections.append(
             _dashboard_section(
-                "Finance Admin",
+                "Admin / Setup Shortcuts",
                 [
                     _dashboard_card(
                         "Open Review Aging",
@@ -285,6 +317,8 @@ def _build_role_dashboard_sections(user):
                     _dashboard_card("Finance Reports", "Open", reverse("finance:finance_reports"), tone="action"),
                     _dashboard_card("Policy Setup", "Open", reverse("finance:over_budget_policy_list"), tone="action"),
                 ],
+                secondary=True,
+                collapsible=True,
             )
         )
 
@@ -298,10 +332,12 @@ def _build_role_dashboard_sections(user):
                     _dashboard_card("Finance Policy Setup", "Open", reverse("finance:over_budget_policy_list"), tone="action"),
                     _dashboard_card("System Notes", "No feed", reverse("admin:index")),
                 ],
+                secondary=True,
+                collapsible=True,
             )
         )
 
-    return sections
+    return [section for section in sections if section["cards"]]
 
 
 @login_required
@@ -421,7 +457,7 @@ def home(request):
         "my_recent_requests": my_recent_requests,
         "assigned_tasks": assigned_tasks[:5],
         "pool_tasks": pool_tasks[:5],
-        "can_create_project": _can_create_project(request.user),
+        "can_create_project": user_can_create_project(request.user),
         "approval_summary": get_approval_summary_for_user(request.user),
         "dashboard_sections": _build_role_dashboard_sections(request.user),
     }

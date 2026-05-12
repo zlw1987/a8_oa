@@ -38,7 +38,8 @@
         </div>
         {% endif %}
 
-        <table>
+        <div class="table-scroll">
+        <table class="data-table approval-steps-table">
             <thead>
                 <tr>
                     <th>Step No</th>
@@ -122,6 +123,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 
     {% if rule and step_preview_rows %}

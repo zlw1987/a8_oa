@@ -1,5 +1,7 @@
 from django.urls import reverse
 
+from projects.access import user_can_create_project
+
 
 def _can_work(user):
     return user.is_authenticated
@@ -15,6 +17,10 @@ def _can_setup(user):
 
 def _can_admin(user):
     return user.is_authenticated and (user.is_staff or user.is_superuser)
+
+
+def _can_create_project(user):
+    return user.is_authenticated and user_can_create_project(user)
 
 
 def _item(label, route_name, *, permission=None, active_names=None):
@@ -78,6 +84,7 @@ def build_navigation_for_user(user, request=None):
             "Setup",
             [
                 _item("Projects", "projects:project_list", permission=_can_work, active_names=["projects:project_list", "projects:project_detail", "projects:project_budget_ledger", "projects:project_members"]),
+                _item("Create Project", "projects:project_create", permission=_can_create_project, active_names=["projects:project_create"]),
                 _item("Departments", "accounts:department_list", permission=_can_setup),
                 _item("Approval Rules", "approvals:rule_list", permission=_can_setup),
                 _item("Over-Budget Policies", "finance:over_budget_policy_list", permission=_can_setup),

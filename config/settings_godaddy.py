@@ -18,6 +18,14 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
+
+MEDIA_URL = "/oa-test/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
+LOGIN_URL = "/oa-test/accounts/login/"
+LOGIN_REDIRECT_URL = "/oa-test/"
+LOGOUT_REDIRECT_URL = "/oa-test/accounts/login/"
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -33,6 +41,6 @@ STORAGES = {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },
 }
