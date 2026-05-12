@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
 
 from accounts.models import Department
 from common.choices import BudgetEntryType, DepartmentType, RequestStatus, RequestType
@@ -15,6 +16,8 @@ from .reporting import build_project_budget_summary, build_reserved_vs_consumed_
 from .models import (
     AccountingReviewItem,
     AccountingReviewReason,
+    AccountingPeriod,
+    AccountingPeriodStatus,
     CardTransaction,
     CardTransactionMatchStatus,
     ExchangeRate,
@@ -457,3 +460,166 @@ class MultiCurrencyServiceTest(TestCase):
     def test_missing_exchange_rate_blocks_snapshot(self):
         with self.assertRaisesMessage(ValidationError, "No exchange rate found for JPY to USD"):
             build_money_snapshot(transaction_amount=Decimal("1000.00"), transaction_currency="JPY")
+
+
+class AccountingPeriodWorkflowTest(TestCase):
+    def setUp(self):
+        self.requester = User.objects.create_user(username="period_req", password="testpass123")
+        self.finance_admin = User.objects.create_user(
+            username="period_fin",
+            password="testpass123",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.department = Department.objects.create(
+            dept_code="D-PER",
+            dept_name="Period Dept",
+            dept_type=DepartmentType.FIN,
+        )
+        self.project = Project.objects.create(
+            project_code="PJT-PER",
+            project_name="Period Project",
+            owning_department=self.department,
+            budget_amount=Decimal("1000.00"),
+            currency="USD",
+            is_active=True,
+        )
+        self.purchase_request = PurchaseRequest.objects.create(
+            title="Period PR",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            status=RequestStatus.APPROVED,
+            request_date=date(2026, 5, 10),
+            currency="USD",
+            estimated_total=Decimal("200.00"),
+            justification="Period workflow",
+        )
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PURCHASE,
+            source_id=self.purchase_request.id,
+            amount=Decimal("200.00"),
+            currency="USD",
+            created_by=self.requester,
+        )
+        self.period = AccountingPeriod.objects.create(
+            period_code="2026-05",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 31),
+            status=AccountingPeriodStatus.OPEN,
+        )
+
+    def test_period_close_page_renders_checklist(self):
+        self.client.force_login(self.finance_admin)
+        response = self.client.get(reverse("finance:accounting_period_detail", args=[self.period.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Period Close Checklist")
+        self.assertContains(response, "No open requests with remaining reserve")
+
+    def test_period_close_sets_closed_metadata(self):
+        self.client.force_login(self.finance_admin)
+        response = self.client.post(
+            reverse("finance:accounting_period_close", args=[self.period.id]),
+            {"notes": "May close reviewed."},
+        )
+
+        self.assertRedirects(response, reverse("finance:accounting_period_detail", args=[self.period.id]))
+        self.period.refresh_from_db()
+        self.assertEqual(self.period.status, AccountingPeriodStatus.CLOSED)
+        self.assertEqual(self.period.closed_by, self.finance_admin)
+        self.assertIsNotNone(self.period.closed_at)
+
+    def test_closed_period_blocks_actual_spend_and_card_allocation(self):
+        self.period.status = AccountingPeriodStatus.CLOSED
+        self.period.closed_by = self.finance_admin
+        self.period.save(update_fields=["status", "closed_by"])
+
+        with self.assertRaisesMessage(ValidationError, "closed accounting period"):
+            self.purchase_request.record_actual_spend(
+                spend_date=date(2026, 5, 12),
+                amount=Decimal("50.00"),
+                acting_user=self.finance_admin,
+            )
+
+        card_transaction = CardTransaction.objects.create(
+            statement_date=date(2026, 5, 31),
+            transaction_date=date(2026, 5, 12),
+            merchant_name="Closed Period Merchant",
+            amount=Decimal("50.00"),
+            currency="USD",
+            cardholder=self.requester,
+            reference_no="PER-CARD-001",
+            imported_by=self.finance_admin,
+        )
+        with self.assertRaisesMessage(ValidationError, "closed accounting period"):
+            allocate_card_transaction(
+                card_transaction=card_transaction,
+                amount=Decimal("50.00"),
+                purchase_request=self.purchase_request,
+                acting_user=self.finance_admin,
+            )
+
+    def test_refund_creates_negative_actual_and_budget_entry(self):
+        actual = self.purchase_request.record_actual_spend(
+            spend_date=date(2026, 5, 12),
+            amount=Decimal("80.00"),
+            acting_user=self.finance_admin,
+        )
+
+        refund = self.purchase_request.record_refund(
+            original_actual_spend=actual,
+            refund_date=date(2026, 5, 13),
+            amount=Decimal("30.00"),
+            acting_user=self.finance_admin,
+            reference_no="REF-001",
+        )
+
+        self.assertEqual(refund.amount, Decimal("-30.00"))
+        self.assertEqual(refund.original_actual_spend, actual)
+        self.assertTrue(
+            ProjectBudgetEntry.objects.filter(
+                project=self.project,
+                entry_type=BudgetEntryType.CONSUME,
+                source_type=RequestType.PURCHASE,
+                source_id=self.purchase_request.id,
+                amount=Decimal("-30.00"),
+            ).exists()
+        )
+
+    def test_closed_request_can_be_reopened_by_finance_admin(self):
+        self.purchase_request.record_actual_spend(
+            spend_date=date(2026, 5, 12),
+            amount=Decimal("200.00"),
+            acting_user=self.finance_admin,
+        )
+        self.purchase_request.close_purchase(acting_user=self.finance_admin)
+
+        self.purchase_request.reopen_for_correction(
+            acting_user=self.finance_admin,
+            reason="Correct vendor reference.",
+            correction_reference="COR-001",
+        )
+
+        self.purchase_request.refresh_from_db()
+        self.assertEqual(self.purchase_request.status, RequestStatus.APPROVED)
+        self.assertEqual(self.purchase_request.correction_status, "OPEN")
+        self.assertEqual(self.purchase_request.correction_reference, "COR-001")
+
+    def test_closed_period_blocks_reopen_correction(self):
+        self.purchase_request.record_actual_spend(
+            spend_date=date(2026, 5, 12),
+            amount=Decimal("200.00"),
+            acting_user=self.finance_admin,
+        )
+        self.purchase_request.close_purchase(acting_user=self.finance_admin)
+        self.period.status = AccountingPeriodStatus.CLOSED
+        self.period.save(update_fields=["status"])
+
+        with self.assertRaisesMessage(ValidationError, "closed accounting period"):
+            self.purchase_request.reopen_for_correction(
+                acting_user=self.finance_admin,
+                reason="Closed-period correction.",
+            )

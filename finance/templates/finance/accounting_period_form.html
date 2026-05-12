@@ -1,0 +1,29 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Accounting Period{% endblock %}
+{% block page_title %}Accounting Period{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>{% if page_mode == "create" %}Create Accounting Period{% else %}Accounting Period{% endif %}</h2>
+            <p class="muted">Define the date range that month-end locking will protect.</p>
+        </div>
+        <a class="btn btn-secondary" href="{% url 'finance:accounting_period_list' %}">Back to Periods</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="post">
+        {% csrf_token %}
+        {% for field in form %}
+            {% include "includes/form_field.html" with field=field %}
+        {% endfor %}
+        <div class="action-row">
+            <button type="submit" class="btn btn-primary">Save Period</button>
+            <a class="btn btn-secondary" href="{% url 'finance:accounting_period_list' %}">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

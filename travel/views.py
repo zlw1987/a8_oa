@@ -25,6 +25,8 @@ from .forms import (
     TravelActualExpenseForm,
     TravelActualReviewForm, 
     TravelActualReviewAttachmentForm,
+    TravelRefundForm,
+    TravelReopenCorrectionForm,
 )
 from .models import (
     TravelRequest,
@@ -47,6 +49,7 @@ from travel.access import (
     enforce_travel_permission,
 )
 from approvals.presentation import build_request_workflow_context
+from common.permissions import can_manage_finance_setup, can_perform_accounting_work
 
 from .presentation import (
     decorate_travel_list_item,
@@ -260,6 +263,10 @@ def tr_detail(request, pk):
         if ui_flags["show_actual_expense_form"]
         else None
     )
+    can_record_refund = can_perform_accounting_work(request.user)
+    can_reopen_correction = can_manage_finance_setup(request.user) and travel_request.status == TravelRequestStatus.CLOSED
+    refund_form = TravelRefundForm(travel_request=travel_request) if can_record_refund else None
+    reopen_correction_form = TravelReopenCorrectionForm() if can_reopen_correction else None
     budget_meaning = {
         "rows": [
             {
@@ -441,6 +448,10 @@ def tr_detail(request, pk):
         "actual_review_form": actual_review_form,
         "actual_review_attachment_form": actual_review_attachment_form,
         "supplemental_requests": supplemental_requests,
+        "can_record_refund": can_record_refund,
+        "refund_form": refund_form,
+        "can_reopen_correction": can_reopen_correction,
+        "reopen_correction_form": reopen_correction_form,
     }
     return render(request, "travel/tr_detail.html", context)
 
@@ -894,6 +905,71 @@ def tr_upload_actual_review_attachment(request, pk):
             notes="Accounting approval attachment uploaded.",
         )
         messages.success(request, "Accounting approval document uploaded successfully.")
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+
+    return redirect("travel:tr_detail", pk=travel_request.pk)
+
+
+@login_required
+@require_POST
+def tr_record_refund(request, pk):
+    travel_request = get_object_or_404(
+        TravelRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+    enforce_travel_permission(user_can_view_travel(request.user, travel_request))
+
+    form = TravelRefundForm(request.POST, travel_request=travel_request)
+    if form.is_valid():
+        try:
+            travel_request.record_refund(
+                original_actual_expense=form.cleaned_data.get("original_actual_expense"),
+                refund_date=form.cleaned_data["refund_date"],
+                amount=form.cleaned_data["amount"],
+                acting_user=request.user,
+                vendor_name=form.cleaned_data.get("vendor_name", ""),
+                reference_no=form.cleaned_data.get("reference_no", ""),
+                notes=form.cleaned_data.get("notes", ""),
+                entry_type=form.cleaned_data["entry_type"],
+            )
+            messages.success(request, "Refund / credit entry recorded.")
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+
+    return redirect("travel:tr_detail", pk=travel_request.pk)
+
+
+@login_required
+@require_POST
+def tr_reopen_correction(request, pk):
+    travel_request = get_object_or_404(
+        TravelRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+    enforce_travel_permission(user_can_view_travel(request.user, travel_request))
+
+    form = TravelReopenCorrectionForm(request.POST)
+    if form.is_valid():
+        try:
+            travel_request.reopen_for_correction(
+                acting_user=request.user,
+                reason=form.cleaned_data["reason"],
+                correction_reference=form.cleaned_data.get("correction_reference", ""),
+            )
+            messages.success(request, f"{travel_request.travel_no} reopened for correction.")
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
     else:
         for field_name, errors in form.errors.items():
             label = form.fields[field_name].label or field_name

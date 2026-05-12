@@ -1,0 +1,76 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}{{ period.period_code }}{% endblock %}
+{% block page_title %}Accounting Period Detail{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>{{ period.period_code }}</h2>
+            <p class="muted">{{ period.start_date }} - {{ period.end_date }}</p>
+        </div>
+        <a class="btn btn-secondary" href="{% url 'finance:accounting_period_list' %}">Back to Periods</a>
+    </div>
+</div>
+
+<div class="detail-two-column">
+    <div class="card">
+        <h2>Period Status</h2>
+        <div class="summary-grid">
+            <div class="summary-label">Status</div>
+            <div>{% include "includes/status_badge.html" with label=period.get_status_display tone="neutral" %}</div>
+            <div class="summary-label">Closed By</div>
+            <div>{{ period.closed_by|default:"-" }}</div>
+            <div class="summary-label">Closed At</div>
+            <div>{{ period.closed_at|default:"-" }}</div>
+            <div class="summary-label">Notes</div>
+            <div>{{ period.notes|linebreaksbr|default:"-" }}</div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Period Actions</h2>
+        {% if can_manage_periods %}
+            {% if period.status != "CLOSED" %}
+            <form method="post" action="{% url 'finance:accounting_period_close' period.id %}">
+                {% csrf_token %}
+                {% for field in close_form %}
+                    {% include "includes/form_field.html" with field=field %}
+                {% endfor %}
+                <div class="action-row">
+                    <button type="submit" class="btn btn-primary">Close Period</button>
+                </div>
+            </form>
+            {% else %}
+            <form method="post" action="{% url 'finance:accounting_period_reopen' period.id %}">
+                {% csrf_token %}
+                {% for field in reopen_form %}
+                    {% include "includes/form_field.html" with field=field %}
+                {% endfor %}
+                <div class="action-row">
+                    <button type="submit" class="btn btn-primary">Reopen Period</button>
+                </div>
+            </form>
+            {% endif %}
+        {% else %}
+        <div class="alert alert-warning">Period actions are available only to finance setup users.</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Period Close Checklist</h2>
+    <div class="checklist">
+        {% for item in close_checklist %}
+        <div class="checklist-item {% if item.passed %}is-passed{% else %}is-blocked{% endif %}">
+            <div class="checklist-mark">{% if item.passed %}✓{% else %}!{% endif %}</div>
+            <div>
+                <div class="checklist-label">{{ item.label }}</div>
+                <div class="muted">{{ item.detail }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

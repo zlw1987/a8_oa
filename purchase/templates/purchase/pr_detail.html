@@ -166,13 +166,30 @@
     </form>
     {% endif %}
 
+    {% if can_record_refund and refund_form %}
+    <details class="card-subsection" style="margin-top: 16px;">
+        <summary>Record Refund / Credit / Reversal</summary>
+        <form method="post" action="{% url 'purchase:pr_record_refund' purchase_request.id %}" style="margin-top: 12px;">
+            {% csrf_token %}
+            {% for field in refund_form %}
+                {% include "includes/form_field.html" with field=field %}
+            {% endfor %}
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">Record Refund / Credit</button>
+            </div>
+        </form>
+    </details>
+    {% endif %}
+
     <div class="table-wrap" style="margin-top: 16px;">
     <table class="data-table">
         <thead>
             <tr>
+                <th>Type</th>
                 <th>Spend Date</th>
                 <th>Base Amount</th>
                 <th>Original Amount</th>
+                <th>Linked Original</th>
                 <th>Variance Type</th>
                 <th>Vendor</th>
                 <th>Reference No</th>
@@ -186,9 +203,17 @@
         <tbody>
             {% for spend in actual_spend_entries %}
             <tr>
+                <td>{% include "includes/status_badge.html" with label=spend.get_entry_type_display tone="neutral" %}</td>
                 <td>{{ spend.spend_date }}</td>
                 <td class="amount">{{ spend.base_amount|money:spend.base_currency }}</td>
                 <td class="amount">{{ spend.transaction_amount|money:spend.transaction_currency }}</td>
+                <td>
+                    {% if spend.original_actual_spend %}
+                    {{ spend.original_actual_spend.spend_date }} / {{ spend.original_actual_spend.base_amount|money:spend.original_actual_spend.base_currency }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
                 <td>{{ spend.get_variance_type_display|default:"-" }}</td>
                 <td>{{ spend.vendor_name }}</td>
                 <td>{{ spend.reference_no }}</td>
@@ -217,13 +242,45 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="11">No actual spend records.</td>
+                <td colspan="13">No actual spend records.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
     </div>
 </div>
+{% if purchase_request.reopened_at or can_reopen_correction %}
+<div class="card">
+    <h2>Correction Workflow</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Correction Status</div>
+        <div>{{ purchase_request.correction_status|default:"-" }}</div>
+        <div class="summary-label">Reopened By</div>
+        <div>{{ purchase_request.reopened_by|default:"-" }}</div>
+        <div class="summary-label">Reopened At</div>
+        <div>{{ purchase_request.reopened_at|default:"-" }}</div>
+        <div class="summary-label">Reason</div>
+        <div>{{ purchase_request.reopen_reason|default:"-" }}</div>
+        <div class="summary-label">Reference</div>
+        <div>{{ purchase_request.correction_reference|default:"-" }}</div>
+        <div class="summary-label">Reclosed By</div>
+        <div>{{ purchase_request.reclosed_by|default:"-" }}</div>
+        <div class="summary-label">Reclosed At</div>
+        <div>{{ purchase_request.reclosed_at|default:"-" }}</div>
+    </div>
+    {% if can_reopen_correction and reopen_correction_form %}
+    <form method="post" action="{% url 'purchase:pr_reopen_correction' purchase_request.id %}" style="margin-top: 16px;">
+        {% csrf_token %}
+        {% for field in reopen_correction_form %}
+            {% include "includes/form_field.html" with field=field %}
+        {% endfor %}
+        <div class="action-row">
+            <button type="submit" class="btn btn-primary">Reopen For Correction</button>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
 {% if purchase_request.is_over_estimate or purchase_request.actual_review_status != "NOT_REQUIRED" %}
 <div class="card">
     <h2>Accounting Actual Review</h2>

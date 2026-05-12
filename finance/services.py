@@ -15,6 +15,7 @@ from .models import (
     AccountingReviewItem,
     AccountingReviewReason,
     AccountingReviewStatus,
+    CardTransaction,
     CardTransactionAllocation,
     CardTransactionMatchStatus,
     AccountingPeriod,
@@ -119,6 +120,89 @@ def enforce_accounting_period_open(value, *, action_label="modify financial reco
     if allow_finance_override and can_manage_finance_setup(user) and reason:
         return period
     raise ValidationError(f"Cannot {action_label} in closed accounting period {period.period_code}.")
+
+
+def build_accounting_period_close_checklist(period):
+    from common.choices import RequestStatus
+    from purchase.models import PurchaseRequest
+    from travel.models import TravelRequest, TravelRequestStatus
+
+    date_filter = {"created_at__date__gte": period.start_date, "created_at__date__lte": period.end_date}
+    open_reviews = AccountingReviewItem.objects.filter(status__in=OPEN_REVIEW_STATUSES, **date_filter)
+    unmatched_cards = CardTransaction.objects.filter(
+        transaction_date__gte=period.start_date,
+        transaction_date__lte=period.end_date,
+        match_status__in=[
+            CardTransactionMatchStatus.UNMATCHED,
+            CardTransactionMatchStatus.PARTIALLY_MATCHED,
+        ],
+    )
+    missing_receipts = open_reviews.filter(reason=AccountingReviewReason.MISSING_RECEIPT)
+    open_purchase_corrections = PurchaseRequest.objects.filter(
+        correction_status="OPEN",
+        reopened_at__date__gte=period.start_date,
+        reopened_at__date__lte=period.end_date,
+    )
+    open_travel_corrections = TravelRequest.objects.filter(
+        correction_status="OPEN",
+        reopened_at__date__gte=period.start_date,
+        reopened_at__date__lte=period.end_date,
+    )
+    open_prs = [
+        pr
+        for pr in PurchaseRequest.objects.filter(
+            request_date__gte=period.start_date,
+            request_date__lte=period.end_date,
+            status__in=[RequestStatus.APPROVED, RequestStatus.SUBMITTED, RequestStatus.PENDING, RequestStatus.RETURNED],
+        ).select_related("project")[:200]
+        if pr.get_reserved_remaining_amount() > 0
+    ]
+    open_trs = [
+        tr
+        for tr in TravelRequest.objects.filter(
+            request_date__gte=period.start_date,
+            request_date__lte=period.end_date,
+            status__in=[
+                TravelRequestStatus.APPROVED,
+                TravelRequestStatus.EXPENSE_PENDING,
+                TravelRequestStatus.EXPENSE_SUBMITTED,
+                TravelRequestStatus.PENDING_APPROVAL,
+                TravelRequestStatus.RETURNED,
+            ],
+        ).select_related("project")[:200]
+        if tr.get_reserved_remaining_amount() > 0
+    ]
+
+    return [
+        {
+            "label": "No open accounting review items",
+            "passed": not open_reviews.exists(),
+            "detail": f"{open_reviews.count()} open review item(s) in this period.",
+        },
+        {
+            "label": "No missing receipt reviews",
+            "passed": not missing_receipts.exists(),
+            "detail": f"{missing_receipts.count()} missing receipt review item(s) in this period.",
+        },
+        {
+            "label": "No unmatched or partially matched card transactions",
+            "passed": not unmatched_cards.exists(),
+            "detail": f"{unmatched_cards.count()} card transaction(s) still need reconciliation.",
+        },
+        {
+            "label": "No open requests with remaining reserve",
+            "passed": not (open_prs or open_trs),
+            "detail": f"{len(open_prs) + len(open_trs)} open request(s) still have remaining reserve.",
+        },
+        {
+            "label": "No open correction workflows",
+            "passed": not (open_purchase_corrections.exists() or open_travel_corrections.exists()),
+            "detail": (
+                f"{open_purchase_corrections.count() + open_travel_corrections.count()} "
+                "open correction workflow(s) in this period."
+            ),
+        },
+    ]
 
 
 def resolve_direct_project_cost_policy(*, project, amount, payment_method=PaymentMethod.COMPANY_CARD, currency=COMPANY_BASE_CURRENCY):

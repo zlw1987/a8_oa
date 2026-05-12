@@ -86,6 +86,7 @@ def build_navigation_for_user(user, request=None):
             [
                 _item("Accounting Review Queue", "finance:accounting_review_queue", permission=_can_accounting, active_names=["finance:accounting_review_queue", "finance:accounting_review_detail"]),
                 _item("Card Transactions", "finance:card_transaction_list", permission=_can_accounting, active_names=["finance:card_transaction_list", "finance:card_transaction_detail", "finance:card_transaction_create"]),
+                _item("Accounting Periods", "finance:accounting_period_list", permission=_can_accounting, active_names=["finance:accounting_period_list", "finance:accounting_period_detail", "finance:accounting_period_create"]),
                 _item("Finance Reports", "finance:finance_reports", permission=_can_accounting),
                 _item("Variance Report", "approvals:variance_exception_report", permission=_can_accounting),
             ],

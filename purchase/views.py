@@ -24,6 +24,8 @@ from .forms import (
     PurchaseActualSpendForm,
     PurchaseActualReviewForm,
     PurchaseActualReviewAttachmentForm,
+    PurchaseRefundForm,
+    PurchaseReopenCorrectionForm,
 )
 from .models import (
     PurchaseRequest,
@@ -61,6 +63,7 @@ from .presentation import (
     get_first_failed_checklist_reason,
 )
 from approvals.presentation import build_request_workflow_context
+from common.permissions import can_manage_finance_setup, can_perform_accounting_work
 from .audit import (
     snapshot_request_header,
     snapshot_request_lines,
@@ -396,6 +399,10 @@ def pr_detail(request, pk):
         if ui_flags["show_actual_spend_form"]
         else None
     )
+    can_record_refund = can_perform_accounting_work(request.user)
+    can_reopen_correction = can_manage_finance_setup(request.user) and purchase_request.status == RequestStatus.CLOSED
+    refund_form = PurchaseRefundForm(purchase_request=purchase_request) if can_record_refund else None
+    reopen_correction_form = PurchaseReopenCorrectionForm() if can_reopen_correction else None
     detail_actions = {
         "back_url": reverse("purchase:pr_list"),
         "project_budget_url": (
@@ -462,6 +469,10 @@ def pr_detail(request, pk):
         "actual_review_form": actual_review_form,
         "actual_review_attachment_form": actual_review_attachment_form,
         "supplemental_requests": supplemental_requests,
+        "can_record_refund": can_record_refund,
+        "refund_form": refund_form,
+        "can_reopen_correction": can_reopen_correction,
+        "reopen_correction_form": reopen_correction_form,
     }
     return render(request, "purchase/pr_detail.html", context)
 
@@ -727,6 +738,71 @@ def pr_record_actual_spend(request, pk):
                     request,
                     f"{purchase_request.pr_no} actual spending now exceeds the approved estimate and requires accounting review."
                 )
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+
+    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+
+
+@login_required
+@require_POST
+def pr_record_refund(request, pk):
+    purchase_request = get_object_or_404(
+        PurchaseRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+    enforce_purchase_permission(user_can_view_purchase(request.user, purchase_request))
+
+    form = PurchaseRefundForm(request.POST, purchase_request=purchase_request)
+    if form.is_valid():
+        try:
+            purchase_request.record_refund(
+                original_actual_spend=form.cleaned_data.get("original_actual_spend"),
+                refund_date=form.cleaned_data["refund_date"],
+                amount=form.cleaned_data["amount"],
+                acting_user=request.user,
+                vendor_name=form.cleaned_data.get("vendor_name", ""),
+                reference_no=form.cleaned_data.get("reference_no", ""),
+                notes=form.cleaned_data.get("notes", ""),
+                entry_type=form.cleaned_data["entry_type"],
+            )
+            messages.success(request, "Refund / credit entry recorded.")
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    else:
+        for field_name, errors in form.errors.items():
+            label = form.fields[field_name].label or field_name
+            for error in errors:
+                messages.error(request, f"{label}: {error}")
+
+    return redirect("purchase:pr_detail", pk=purchase_request.pk)
+
+
+@login_required
+@require_POST
+def pr_reopen_correction(request, pk):
+    purchase_request = get_object_or_404(
+        PurchaseRequest.get_visible_queryset(request.user),
+        pk=pk,
+    )
+    enforce_purchase_permission(user_can_view_purchase(request.user, purchase_request))
+
+    form = PurchaseReopenCorrectionForm(request.POST)
+    if form.is_valid():
+        try:
+            purchase_request.reopen_for_correction(
+                acting_user=request.user,
+                reason=form.cleaned_data["reason"],
+                correction_reference=form.cleaned_data.get("correction_reference", ""),
+            )
+            messages.success(request, f"{purchase_request.pr_no} reopened for correction.")
         except ValidationError as exc:
             for message in exc.messages:
                 messages.error(request, message)

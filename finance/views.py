@@ -13,6 +13,9 @@ from django.views.decorators.http import require_POST
 from django.http import HttpResponse
 
 from .forms import (
+    AccountingPeriodCloseForm,
+    AccountingPeriodForm,
+    AccountingPeriodReopenForm,
     AccountingReviewDecisionForm,
     AccountingReviewFilterForm,
     CardTransactionAllocationForm,
@@ -22,6 +25,8 @@ from .forms import (
 )
 from common.permissions import can_manage_finance_setup, can_perform_accounting_work
 from .models import (
+    AccountingPeriod,
+    AccountingPeriodStatus,
     AccountingReviewItem,
     AccountingReviewStatus,
     CardTransaction,
@@ -43,7 +48,9 @@ from .presentation import (
 )
 from .services import (
     allocate_card_transaction,
+    build_accounting_period_close_checklist,
     create_duplicate_card_review_item,
+    enforce_accounting_period_open,
     mark_card_transaction_reviewed,
 )
 
@@ -152,6 +159,90 @@ def receipt_policy_edit(request, pk):
         "finance/receipt_policy_form.html",
         {"form": form, "policy": policy, "page_mode": "edit"},
     )
+
+
+@login_required
+def accounting_period_list(request):
+    _enforce_accounting_permission(request.user)
+    queryset = AccountingPeriod.objects.order_by("-start_date", "-id")
+    page_obj = Paginator(queryset, 20).get_page(request.GET.get("page"))
+    current_open_period = queryset.filter(status=AccountingPeriodStatus.OPEN).first()
+    return render(
+        request,
+        "finance/accounting_period_list.html",
+        {
+            "page_obj": page_obj,
+            "current_open_period": current_open_period,
+            "can_manage_periods": can_manage_finance_setup(request.user),
+        },
+    )
+
+
+@login_required
+def accounting_period_create(request):
+    _enforce_finance_setup_permission(request.user)
+    if request.method == "POST":
+        form = AccountingPeriodForm(request.POST)
+        if form.is_valid():
+            period = form.save()
+            messages.success(request, f"Accounting period {period.period_code} created.")
+            return redirect("finance:accounting_period_detail", pk=period.pk)
+    else:
+        form = AccountingPeriodForm()
+    return render(request, "finance/accounting_period_form.html", {"form": form, "page_mode": "create"})
+
+
+@login_required
+def accounting_period_detail(request, pk):
+    _enforce_accounting_permission(request.user)
+    period = get_object_or_404(AccountingPeriod, pk=pk)
+    checklist = build_accounting_period_close_checklist(period)
+    return render(
+        request,
+        "finance/accounting_period_detail.html",
+        {
+            "period": period,
+            "close_checklist": checklist,
+            "close_form": AccountingPeriodCloseForm(),
+            "reopen_form": AccountingPeriodReopenForm(),
+            "can_manage_periods": can_manage_finance_setup(request.user),
+        },
+    )
+
+
+@login_required
+@require_POST
+def accounting_period_close(request, pk):
+    _enforce_finance_setup_permission(request.user)
+    period = get_object_or_404(AccountingPeriod, pk=pk)
+    form = AccountingPeriodCloseForm(request.POST)
+    if form.is_valid():
+        period.status = AccountingPeriodStatus.CLOSED
+        period.closed_by = request.user
+        period.closed_at = timezone.now()
+        period.notes = form.cleaned_data["notes"]
+        period.save(update_fields=["status", "closed_by", "closed_at", "notes"])
+        messages.success(request, f"Accounting period {period.period_code} closed.")
+    else:
+        messages.error(request, "Close notes are required.")
+    return redirect("finance:accounting_period_detail", pk=period.pk)
+
+
+@login_required
+@require_POST
+def accounting_period_reopen(request, pk):
+    _enforce_finance_setup_permission(request.user)
+    period = get_object_or_404(AccountingPeriod, pk=pk)
+    form = AccountingPeriodReopenForm(request.POST)
+    if form.is_valid():
+        reason = form.cleaned_data["reason"]
+        period.status = AccountingPeriodStatus.OPEN
+        period.notes = f"{period.notes}\n\nReopened by {request.user} at {timezone.now()}: {reason}".strip()
+        period.save(update_fields=["status", "notes"])
+        messages.success(request, f"Accounting period {period.period_code} reopened.")
+    else:
+        messages.error(request, "Reopen reason is required.")
+    return redirect("finance:accounting_period_detail", pk=period.pk)
 
 
 @login_required
@@ -355,14 +446,23 @@ def card_transaction_create(request):
     if request.method == "POST":
         form = CardTransactionForm(request.POST)
         if form.is_valid():
-            transaction = form.save(commit=False)
-            transaction.imported_by = request.user
-            transaction.save()
-            if transaction.has_possible_duplicate():
-                create_duplicate_card_review_item(transaction, created_by=request.user)
-                messages.warning(request, "Possible duplicate card transaction detected.")
-            messages.success(request, "Card transaction created.")
-            return redirect("finance:card_transaction_detail", pk=transaction.pk)
+            try:
+                enforce_accounting_period_open(
+                    form.cleaned_data["transaction_date"],
+                    action_label="create card transaction",
+                    user=request.user,
+                )
+                transaction = form.save(commit=False)
+                transaction.imported_by = request.user
+                transaction.save()
+                if transaction.has_possible_duplicate():
+                    create_duplicate_card_review_item(transaction, created_by=request.user)
+                    messages.warning(request, "Possible duplicate card transaction detected.")
+                messages.success(request, "Card transaction created.")
+                return redirect("finance:card_transaction_detail", pk=transaction.pk)
+            except ValidationError as exc:
+                for message in exc.messages:
+                    form.add_error(None, message)
     else:
         form = CardTransactionForm()
     return render(request, "finance/card_transaction_form.html", {"form": form})

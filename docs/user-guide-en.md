@@ -44,7 +44,7 @@ Top navigation is grouped into dropdown menus:
 
 - Dashboard.
 - Work: Purchase Requests, Travel Requests, My Tasks, My Approval History.
-- Finance: Accounting Review Queue, Card Transactions, Finance Reports, Variance Report.
+- Finance: Accounting Review Queue, Card Transactions, Accounting Periods, Finance Reports, Variance Report.
 - Setup: Projects, Create Project when permitted, Departments, Approval Rules, Over-Budget Policies, Receipt Policies.
 - Admin: Django Admin and system setup links.
 
@@ -519,11 +519,15 @@ If a foreign-currency actual expense exceeds the approved USD base amount only b
 
 ## 11.1 Financial Integrity Controls
 
-Accounting periods can be configured as Open, Closing, or Closed.
+Accounting periods are available from Finance > Accounting Periods and System Setup > Accounting Periods.
+
+Accounting periods can be configured as Open, Closing, or Closed. The period detail page shows a Period Close Checklist for open reviews, missing receipts, unmatched card transactions, open requests with remaining reserve, and open correction workflows.
 
 When a period is Closed, ordinary financial changes in that period are blocked, including actual expense posting and card allocation changes. Finance/Admin adjustment handling is controlled separately.
 
-Refunds and credits are recorded as separate negative actual entries. The original actual expense remains visible, and the refund reduces consumed budget through a negative budget ledger entry.
+Finance/Admin users can close a period with close notes. Reopening a closed period requires a reason and is limited to finance setup users.
+
+Accounting users can record Refund / Credit / Reversal entries from the PR/TR detail page. Refunds and credits are recorded as separate negative actual entries. The original actual expense remains visible, and the refund reduces consumed budget through a negative budget ledger entry.
 
 Closed PR/TR records can only be reopened for correction by Finance/Admin users. Reopen requires a reason, writes history, and reclose runs the normal closeout validation again.
 
@@ -604,6 +608,15 @@ Common reasons:
 - Amount is zero or negative.
 - Project budget is insufficient.
 - Over-budget policy action is BLOCK.
+- The expense date is inside a closed accounting period.
+
+### Why can I not allocate a company card transaction?
+
+Common reasons:
+
+- The allocation amount exceeds the unallocated transaction amount.
+- The transaction date is inside a closed accounting period.
+- A direct project cost policy blocks the allocation.
 
 ### I uploaded an attachment. Why is there still a missing receipt review?
 

@@ -5,6 +5,8 @@ from django.forms import BaseInlineFormSet, inlineformset_factory
 from projects.access import get_usable_projects_queryset_for_user, user_can_use_project_for_request
 from projects.models import Project
 
+from common.choices import ActualExpenseEntryType
+
 from .models import (
     PurchaseRequest,
     PurchaseRequestLine,
@@ -264,6 +266,48 @@ class PurchaseActualSpendForm(forms.ModelForm):
         widgets = {
             "spend_date": forms.DateInput(attrs={"type": "date"}),
         }
+
+
+class PurchaseRefundForm(forms.Form):
+    original_actual_spend = forms.ModelChoiceField(
+        queryset=PurchaseActualSpend.objects.none(),
+        required=False,
+        label="Original Actual Spend",
+        help_text="Optional. Link this refund or credit to the original spend line.",
+    )
+    refund_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    entry_type = forms.ChoiceField(
+        choices=[
+            (ActualExpenseEntryType.REFUND, "Refund"),
+            (ActualExpenseEntryType.CREDIT_MEMO, "Credit Memo"),
+            (ActualExpenseEntryType.REVERSAL, "Reversal"),
+            (ActualExpenseEntryType.ADJUSTMENT, "Adjustment"),
+        ]
+    )
+    amount = forms.DecimalField(min_value=0, max_digits=12, decimal_places=2, help_text="Enter a positive amount. The system records the budget impact as negative.")
+    vendor_name = forms.CharField(required=False, max_length=100)
+    reference_no = forms.CharField(required=False, max_length=100)
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
+
+    def __init__(self, *args, purchase_request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if purchase_request:
+            self.fields["original_actual_spend"].queryset = purchase_request.actual_spend_entries.filter(
+                amount__gt=0
+            ).order_by("-spend_date", "-id")
+
+
+class PurchaseReopenCorrectionForm(forms.Form):
+    reason = forms.CharField(
+        required=True,
+        label="Reopen Reason",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    correction_reference = forms.CharField(
+        required=False,
+        max_length=100,
+        help_text="Optional reference such as ticket number, audit note, or month-end correction id.",
+    )
 
 class PurchaseActualReviewForm(forms.Form):
     review_status = forms.ChoiceField(

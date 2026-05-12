@@ -219,15 +219,32 @@
     </form>
     {% endif %}
 
+    {% if can_record_refund and refund_form %}
+    <details class="card-subsection" style="margin-top: 16px;">
+        <summary>Record Refund / Credit / Reversal</summary>
+        <form method="post" action="{% url 'travel:tr_record_refund' travel_request.id %}" style="margin-top: 12px;">
+            {% csrf_token %}
+            {% for field in refund_form %}
+                {% include "includes/form_field.html" with field=field %}
+            {% endfor %}
+            <div class="action-row">
+                <button type="submit" class="btn btn-primary">Record Refund / Credit</button>
+            </div>
+        </form>
+    </details>
+    {% endif %}
+
     <div class="table-wrap" style="margin-top: 16px;">
     <table class="data-table">
         <thead>
             <tr>
+                <th>Type</th>
                 <th>Line No</th>
                 <th>Expense Type</th>
                 <th>Expense Date</th>
                 <th>Base Amount</th>
                 <th>Original Amount</th>
+                <th>Linked Original</th>
                 <th>Variance Type</th>
                 <th>Estimated Link</th>
                 <th>Vendor</th>
@@ -243,11 +260,19 @@
         <tbody>
             {% for line in actual_expense_lines %}
             <tr>
+                <td>{% include "includes/status_badge.html" with label=line.get_entry_type_display tone="neutral" %}</td>
                 <td>{{ line.line_no }}</td>
                 <td>{{ line.get_expense_type_display }}</td>
                 <td>{{ line.expense_date }}</td>
                 <td class="amount">{{ line.base_amount|money:line.base_currency }}</td>
                 <td class="amount">{{ line.transaction_amount|money:line.transaction_currency }}</td>
+                <td>
+                    {% if line.original_actual_expense %}
+                    Line {{ line.original_actual_expense.line_no }} / {{ line.original_actual_expense.base_amount|money:line.original_actual_expense.base_currency }}
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
                 <td>{{ line.get_variance_type_display|default:"-" }}</td>
                 <td>
                     {% if line.estimated_expense_line %}
@@ -285,13 +310,46 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="15">No actual expense lines.</td>
+                <td colspan="17">No actual expense lines.</td>
             </tr>
             {% endfor %}
         </tbody>
     </table>
     </div>
 </div>
+
+{% if travel_request.reopened_at or can_reopen_correction %}
+<div class="card">
+    <h2>Correction Workflow</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Correction Status</div>
+        <div>{{ travel_request.correction_status|default:"-" }}</div>
+        <div class="summary-label">Reopened By</div>
+        <div>{{ travel_request.reopened_by|default:"-" }}</div>
+        <div class="summary-label">Reopened At</div>
+        <div>{{ travel_request.reopened_at|default:"-" }}</div>
+        <div class="summary-label">Reason</div>
+        <div>{{ travel_request.reopen_reason|default:"-" }}</div>
+        <div class="summary-label">Reference</div>
+        <div>{{ travel_request.correction_reference|default:"-" }}</div>
+        <div class="summary-label">Reclosed By</div>
+        <div>{{ travel_request.reclosed_by|default:"-" }}</div>
+        <div class="summary-label">Reclosed At</div>
+        <div>{{ travel_request.reclosed_at|default:"-" }}</div>
+    </div>
+    {% if can_reopen_correction and reopen_correction_form %}
+    <form method="post" action="{% url 'travel:tr_reopen_correction' travel_request.id %}" style="margin-top: 16px;">
+        {% csrf_token %}
+        {% for field in reopen_correction_form %}
+            {% include "includes/form_field.html" with field=field %}
+        {% endfor %}
+        <div class="action-row">
+            <button type="submit" class="btn btn-primary">Reopen For Correction</button>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
 
 {% if travel_request.is_over_estimate or travel_request.actual_review_status != "NOT_REQUIRED" %}
 <div class="card">

@@ -1,6 +1,6 @@
 # UI Productization Status
 
-Last updated: 2026-05-11
+Last updated: 2026-05-12
 
 ## Current Project Stage
 
@@ -21,6 +21,9 @@ The core business-control foundation currently includes:
 - Duplicate card transaction review.
 - Accounting Review Queue.
 - Finance reports.
+- Accounting Period close/reopen screens.
+- Refund / credit / reversal entry actions.
+- Reopen / correction workflow panels.
 - GoDaddy/cPanel Git deployment helper files.
 
 The main remaining risk is no longer basic workflow coverage. The main risk is pilot usability: users need clearer navigation, clearer next actions, and safer accounting/card reconciliation screens.
@@ -90,6 +93,7 @@ Navigation groups:
 - Finance
   - Accounting Review Queue
   - Card Transactions
+  - Accounting Periods
   - Finance Reports
   - Variance Report
 - Setup
@@ -118,6 +122,29 @@ Main behavior:
 ## UI-2.6 Completed: Hover Dropdown Fix
 
 The first hover implementation relied on JavaScript pointer detection. In user testing, hover did not open the dropdown. A CSS hover fallback was added.
+
+## V1.1 Phase 1 UI Completed: Financial Integrity Operations
+
+Phase 1 added operational screens and actions for month-end control and corrections.
+
+Changed areas:
+
+- `finance/templates/finance/accounting_period_list.html`
+- `finance/templates/finance/accounting_period_detail.html`
+- `finance/templates/finance/accounting_period_form.html`
+- `purchase/templates/purchase/pr_detail.html`
+- `travel/templates/travel/tr_detail.html`
+- `finance/views.py`
+- `purchase/views.py`
+- `travel/views.py`
+
+Main behavior:
+
+- Accounting users can view Accounting Periods from Finance navigation.
+- Finance setup users can create, close, and reopen accounting periods.
+- Period detail shows a close checklist for unresolved review/card/request/correction blockers.
+- PR/TR detail pages show refund-credit-reversal entry forms for accounting users.
+- PR/TR detail pages show correction workflow history and reopen action for finance/admin users.
 
 Changed area:
 

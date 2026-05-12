@@ -1202,7 +1202,7 @@ class TravelRequest(models.Model):
             raise ValidationError("Only finance/admin users can reopen closed travel requests.")
         if not reason:
             raise ValidationError("Reopen reason is required.")
-        enforce_accounting_period_open(timezone.localdate(), action_label="reopen closed request", user=acting_user)
+        enforce_accounting_period_open(self.request_date, action_label="reopen closed request", user=acting_user)
 
         from_status = self.status
         self.status = TravelRequestStatus.EXPENSE_PENDING

@@ -10,6 +10,8 @@ The current version includes V0.5 business-control completion and the V0.6 multi
 - Stabilized Dashboard information hierarchy with My Work Today, Approval Summary, My Requests, oversight, and collapsible setup sections.
 - Added V1.1A System Setup landing page, shared role/permission helpers, and Admin dropdown cleanup.
 - Added V1.1B/V1.1C foundation models for accounting periods, refund/correction, line-level receipt links, direct project cost policy, and approval delegation/escalation.
+- Implemented V1.1 Phase 1 operational workflows: Accounting Period list/detail/create/close/reopen UI, period close checklist, PR/TR refund-credit-reversal entry forms, and PR/TR reopen-for-correction forms.
+- Added closed-period validation to card transaction creation, card allocation, PR actual spend, TR actual expense, and refund/credit entry paths.
 - Added Finance Reports CSV export with base and transaction currency columns.
 - Converted Approval Rule Step Editor from a wide table into step cards/accordion sections.
 - Restored the Dashboard `Approval Summary` section title for regression compatibility.
@@ -46,11 +48,11 @@ The current version includes V0.5 business-control completion and the V0.6 multi
 
 ## Verification
 
-Latest full-suite verification:
+Latest targeted verification for the V1.1 Phase 1 workflow changes:
 
 ```text
-python manage.py test --keepdb -v 1
-Ran 228 tests in 687.798s
+python manage.py test finance -v 2
+Ran 18 tests in 24.031s
 OK
 ```
 
@@ -100,6 +102,10 @@ See [V0.6 Multi-Currency Foundation](v0.6-multi-currency-foundation.md).
 
 ## V1.1 Roadmap Progress
 
-The selected production-control roadmap has started. The current implementation includes V1.1A foundation plus model/service foundations for V1.1B and V1.1C.
+The selected production-control roadmap has started. The current implementation includes V1.1A foundation, V1.1 Phase 1 period close/refund/reopen workflows, plus model/service foundations for V1.1B and V1.1C.
 
 See [V1.1 Production Control Roadmap](v1.1-production-control-roadmap.md).
+
+Phase 1 technical design is prepared before UI/workflow development starts:
+
+- [V1.1 Phase 1 Technical Design](v1.1-phase1-technical-design.md)

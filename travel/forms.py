@@ -14,7 +14,7 @@ from .models import (
     TravelActualExpenseLine,
     TravelActualReviewStatus,
 )
-from common.choices import CurrencyCode
+from common.choices import ActualExpenseEntryType, CurrencyCode
 
 class TravelRequestForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
@@ -549,6 +549,48 @@ class TravelActualExpenseForm(forms.ModelForm):
             cleaned_data["currency"] = self.travel_request.currency
 
         return cleaned_data
+
+
+class TravelRefundForm(forms.Form):
+    original_actual_expense = forms.ModelChoiceField(
+        queryset=TravelActualExpenseLine.objects.none(),
+        required=False,
+        label="Original Actual Expense",
+        help_text="Optional. Link this refund or credit to the original expense line.",
+    )
+    refund_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+    entry_type = forms.ChoiceField(
+        choices=[
+            (ActualExpenseEntryType.REFUND, "Refund"),
+            (ActualExpenseEntryType.CREDIT_MEMO, "Credit Memo"),
+            (ActualExpenseEntryType.REVERSAL, "Reversal"),
+            (ActualExpenseEntryType.ADJUSTMENT, "Adjustment"),
+        ]
+    )
+    amount = forms.DecimalField(min_value=0, max_digits=12, decimal_places=2, help_text="Enter a positive amount. The system records the budget impact as negative.")
+    vendor_name = forms.CharField(required=False, max_length=100)
+    reference_no = forms.CharField(required=False, max_length=100)
+    notes = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
+
+    def __init__(self, *args, travel_request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if travel_request:
+            self.fields["original_actual_expense"].queryset = travel_request.actual_expense_lines.filter(
+                actual_amount__gt=0
+            ).order_by("-expense_date", "-id")
+
+
+class TravelReopenCorrectionForm(forms.Form):
+    reason = forms.CharField(
+        required=True,
+        label="Reopen Reason",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    correction_reference = forms.CharField(
+        required=False,
+        max_length=100,
+        help_text="Optional reference such as ticket number, audit note, or month-end correction id.",
+    )
 
 class TravelActualReviewForm(forms.Form):
     review_status = forms.ChoiceField(

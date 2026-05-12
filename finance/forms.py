@@ -5,6 +5,7 @@ from purchase.models import PurchaseRequest
 from travel.models import TravelRequest
 
 from .models import (
+    AccountingPeriod,
     AccountingReviewDecision,
     AccountingReviewItem,
     CardTransaction,
@@ -13,6 +14,46 @@ from .models import (
     OverBudgetPolicy,
     ReceiptPolicy,
 )
+
+
+class AccountingPeriodForm(forms.ModelForm):
+    class Meta:
+        model = AccountingPeriod
+        fields = ["period_code", "start_date", "end_date", "status", "notes"]
+        widgets = {
+            "start_date": forms.DateInput(attrs={"type": "date"}),
+            "end_date": forms.DateInput(attrs={"type": "date"}),
+        }
+        help_texts = {
+            "period_code": "Use a stable code such as 2026-05.",
+            "status": "OPEN allows normal financial activity. CLOSED blocks direct changes.",
+        }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        if start_date and end_date and start_date > end_date:
+            self.add_error("end_date", "End date must be on or after start date.")
+        return cleaned_data
+
+
+class AccountingPeriodCloseForm(forms.Form):
+    notes = forms.CharField(
+        required=True,
+        label="Close Notes",
+        help_text="Explain the month-end close decision or outstanding exceptions.",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+
+
+class AccountingPeriodReopenForm(forms.Form):
+    reason = forms.CharField(
+        required=True,
+        label="Reopen Reason",
+        help_text="A reason is required because reopening a period can change financial reporting.",
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
 
 
 class OverBudgetPolicyForm(forms.ModelForm):

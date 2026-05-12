@@ -494,6 +494,7 @@ def system_setup(request):
         _setup_card("Approval Rules", ApprovalRule.objects.filter(is_active=True).count(), reverse("approvals:rule_list")),
         _setup_card("Over-Budget Policies", OverBudgetPolicy.objects.filter(is_active=True).count(), reverse("finance:over_budget_policy_list")),
         _setup_card("Receipt Policies", ReceiptPolicy.objects.filter(is_active=True).count(), reverse("finance:receipt_policy_list")),
+        _setup_card("Accounting Periods", "Month-End Close", reverse("finance:accounting_period_list")),
         _setup_card("FX Variance Policies", FXVariancePolicy.objects.filter(is_active=True).count(), reverse("admin:finance_fxvariancepolicy_changelist")),
         _setup_card("Exchange Rates", ExchangeRate.objects.count(), reverse("admin:finance_exchangerate_changelist")),
         _setup_card("Current Version", "V0.6 / V1.1A foundation", reverse("dashboard:system_setup")),
@@ -516,6 +517,7 @@ def system_setup(request):
                 {"label": "Over-Budget Policies", "url": reverse("finance:over_budget_policy_list")},
                 {"label": "Receipt Policies", "url": reverse("finance:receipt_policy_list")},
                 {"label": "FX Variance Policies", "url": reverse("admin:finance_fxvariancepolicy_changelist")},
+                {"label": "Accounting Periods", "url": reverse("finance:accounting_period_list")},
             ],
         },
         {

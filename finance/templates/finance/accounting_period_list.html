@@ -1,0 +1,64 @@
+{% extends "purchase/base.html" %}
+
+{% block title %}Accounting Periods{% endblock %}
+{% block page_title %}Accounting Periods{% endblock %}
+
+{% block content %}
+<div class="card page-action-card">
+    <div class="section-header">
+        <div>
+            <h2>Accounting Periods</h2>
+            <p class="muted">Manage month-end close periods and financial locking.</p>
+        </div>
+        {% if can_manage_periods %}
+        <a class="btn btn-primary" href="{% url 'finance:accounting_period_create' %}">Create Period</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if current_open_period %}
+<div class="card">
+    <h2>Current Open Period</h2>
+    <div class="summary-grid">
+        <div class="summary-label">Period</div>
+        <div><a href="{% url 'finance:accounting_period_detail' current_open_period.id %}">{{ current_open_period.period_code }}</a></div>
+        <div class="summary-label">Date Range</div>
+        <div>{{ current_open_period.start_date }} - {{ current_open_period.end_date }}</div>
+        <div class="summary-label">Status</div>
+        <div>{% include "includes/status_badge.html" with label=current_open_period.get_status_display tone="success" %}</div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2>Period List</h2>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Period</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Status</th>
+                    <th>Closed By</th>
+                    <th>Closed At</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for period in page_obj.object_list %}
+                <tr>
+                    <td><a href="{% url 'finance:accounting_period_detail' period.id %}">{{ period.period_code }}</a></td>
+                    <td>{{ period.start_date }}</td>
+                    <td>{{ period.end_date }}</td>
+                    <td>{% include "includes/status_badge.html" with label=period.get_status_display tone="neutral" %}</td>
+                    <td>{{ period.closed_by|default:"-" }}</td>
+                    <td>{{ period.closed_at|default:"-" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6">No accounting periods have been created.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
