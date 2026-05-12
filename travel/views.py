@@ -310,7 +310,7 @@ def tr_detail(request, pk):
     for line in actual_expense_lines:
         line.review_items_ui = list(line.accounting_review_items.all())
         line.evidence_ui = build_actual_expense_evidence_status(line)
-    attachments = travel_request.attachments.all()
+    attachments = travel_request.attachments.filter(is_deleted=False)
     review_attachments = attachments.filter(
         document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
     )
@@ -389,6 +389,12 @@ def tr_detail(request, pk):
             {
                 "step_no": task.step_no,
                 "step_name": task.step_name,
+                "rule_snapshot": (
+                    f"{task.approval_rule_code or getattr(task.rule, 'rule_code', '')} / "
+                    f"v{task.approval_rule_version or getattr(task.rule, 'version', 1)}"
+                ),
+                "step_type": task.step_type or getattr(task.step, "approver_type", ""),
+                "candidate_pool_snapshot": task.candidate_pool_snapshot,
                 "status": task.get_status_display() if hasattr(task, "get_status_display") else task.status,
                 "assigned_user": task.assigned_user,
                 "comment": task.comment,
@@ -776,9 +782,19 @@ def tr_delete_attachment(request, pk, attachment_id):
         TravelRequestAttachment,
         pk=attachment_id,
         travel_request=travel_request,
+        is_deleted=False,
     )
 
     attachment_title = attachment.title or attachment.filename
+    if attachment.actual_expense_links.exists() and not can_perform_accounting_work(request.user):
+        messages.error(request, "Receipts or invoices linked to actual expense can only be removed by Accounting or Finance.")
+        return redirect("travel:tr_detail", pk=travel_request.pk)
+    if travel_request.status in [TravelRequestStatus.APPROVED, TravelRequestStatus.CLOSED] and not can_perform_accounting_work(request.user):
+        messages.error(request, "Attachments cannot be deleted by requester after approval or posting.")
+        return redirect("travel:tr_detail", pk=travel_request.pk)
+    if travel_request.status == TravelRequestStatus.CLOSED:
+        messages.error(request, "Closed request attachments are retained for audit. Use a replacement/correction note instead.")
+        return redirect("travel:tr_detail", pk=travel_request.pk)
     travel_request._add_content_audit(
         "HEADER_UPDATED",
         changed_by=request.user,
@@ -787,7 +803,7 @@ def tr_delete_attachment(request, pk, attachment_id):
         old_value=attachment_title,
         notes=f"Attachment deleted: {attachment.document_type}",
     )
-    attachment.delete()
+    attachment.soft_delete(user=request.user, reason="Deleted from travel request detail.")
     messages.success(request, f"Attachment '{attachment_title}' deleted successfully.")
 
     return redirect("travel:tr_detail", pk=travel_request.pk)

@@ -111,6 +111,50 @@
     </table>
 </div>
 <div class="card">
+    <h2>Pending Budget Adjustment Requests</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Submitted At</th>
+                <th>Amount</th>
+                <th>Requested By</th>
+                <th>Reason</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for adjustment in pending_adjustment_requests %}
+            <tr>
+                <td>{{ adjustment.submitted_at }}</td>
+                <td>{{ adjustment.currency }} {{ adjustment.amount }}</td>
+                <td>{{ adjustment.requested_by|default:"-" }}</td>
+                <td>{{ adjustment.reason }}</td>
+                <td>
+                    {% if can_approve_budget_adjustments %}
+                    <form method="post" action="{% url 'projects:project_approve_budget_adjustment' project.id adjustment.id %}" class="inline-form">
+                        {% csrf_token %}
+                        <input type="text" name="comment" placeholder="Approval comment">
+                        <button type="submit">Approve & Post</button>
+                    </form>
+                    <form method="post" action="{% url 'projects:project_reject_budget_adjustment' project.id adjustment.id %}" class="inline-form">
+                        {% csrf_token %}
+                        <input type="text" name="comment" placeholder="Reject reason required">
+                        <button type="submit" class="btn-secondary">Reject</button>
+                    </form>
+                    {% else %}
+                    Pending finance approval
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5">No pending budget adjustment requests.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div class="card">
     <h2>Ledger Meaning</h2>
     <table>
         <thead>

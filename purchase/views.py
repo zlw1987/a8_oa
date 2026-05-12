@@ -205,7 +205,7 @@ def pr_detail(request, pk):
     enforce_purchase_permission(user_can_view_purchase(request.user, purchase_request))
 
     lines = purchase_request.lines.all().order_by("line_no")
-    attachments = purchase_request.attachments.all()
+    attachments = purchase_request.attachments.filter(is_deleted=False)
     review_attachments = attachments.filter(
         document_type=PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
     )
@@ -387,6 +387,12 @@ def pr_detail(request, pk):
             {
                 "step_no": task.step_no,
                 "step_name": task.step_name,
+                "rule_snapshot": (
+                    f"{task.approval_rule_code or getattr(task.rule, 'rule_code', '')} / "
+                    f"v{task.approval_rule_version or getattr(task.rule, 'version', 1)}"
+                ),
+                "step_type": task.step_type or getattr(task.step, "approver_type", ""),
+                "candidate_pool_snapshot": task.candidate_pool_snapshot,
                 "status": task.get_status_display() if hasattr(task, "get_status_display") else task.status,
                 "assigned_user": task.assigned_user,
                 "comment": task.comment,
@@ -673,9 +679,19 @@ def pr_delete_attachment(request, pk, attachment_id):
         PurchaseRequestAttachment,
         pk=attachment_id,
         purchase_request=purchase_request,
+        is_deleted=False,
     )
 
     attachment_title = attachment.title or attachment.filename
+    if attachment.actual_expense_links.exists() and not can_perform_accounting_work(request.user):
+        messages.error(request, "Receipts or invoices linked to actual spend can only be removed by Accounting or Finance.")
+        return redirect("purchase:pr_detail", pk=purchase_request.pk)
+    if purchase_request.status in [RequestStatus.APPROVED, RequestStatus.CLOSED] and not can_perform_accounting_work(request.user):
+        messages.error(request, "Attachments cannot be deleted by requester after approval or posting.")
+        return redirect("purchase:pr_detail", pk=purchase_request.pk)
+    if purchase_request.status == RequestStatus.CLOSED:
+        messages.error(request, "Closed request attachments are retained for audit. Use a replacement/correction note instead.")
+        return redirect("purchase:pr_detail", pk=purchase_request.pk)
     purchase_request._add_content_audit(
         "HEADER_UPDATED",
         changed_by=request.user,
@@ -683,7 +699,7 @@ def pr_delete_attachment(request, pk, attachment_id):
         old_value=attachment_title,
         notes=f"Attachment deleted: {attachment.document_type}",
     )
-    attachment.delete()
+    attachment.soft_delete(user=request.user, reason="Deleted from purchase request detail.")
     messages.success(request, f"Attachment '{attachment_title}' deleted successfully.")
 
     return redirect("purchase:pr_detail", pk=purchase_request.pk)

@@ -916,8 +916,10 @@ class TravelSmokeTest(TestCase):
         self.assertEqual(response.status_code, 302)
 
         tr.refresh_from_db()
-        self.assertEqual(tr.attachments.count(), 0)
-        self.assertEqual(TravelRequestAttachment.objects.filter(pk=attachment.id).count(), 0)
+        attachment.refresh_from_db()
+        self.assertTrue(attachment.is_deleted)
+        self.assertEqual(tr.attachments.filter(is_deleted=False).count(), 0)
+        self.assertEqual(TravelRequestAttachment.objects.filter(pk=attachment.id).count(), 1)
 
     def test_travel_create_generates_initial_content_audit(self):
         tr = TravelRequest.objects.create(

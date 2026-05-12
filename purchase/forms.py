@@ -337,7 +337,7 @@ class PurchaseActualExpenseAttachmentLinkForm(forms.Form):
         if purchase_request:
             self.fields["purchase_attachment"].queryset = purchase_request.attachments.exclude(
                 document_type=PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
-            ).order_by("-uploaded_at", "-id")
+            ).filter(is_deleted=False).order_by("-uploaded_at", "-id")
 
 class PurchaseActualReviewForm(forms.Form):
     review_status = forms.ChoiceField(

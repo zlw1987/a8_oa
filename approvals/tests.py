@@ -30,6 +30,77 @@ from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpense
 User = get_user_model()
 
 
+class ApprovalSnapshotRegressionTest(TestCase):
+    def setUp(self):
+        self.requester = User.objects.create_user(username="snap_req", password="testpass123")
+        self.manager = User.objects.create_user(username="snap_mgr", password="testpass123")
+        self.department = Department.objects.create(
+            dept_code="SNAP",
+            dept_name="Snapshot Dept",
+            dept_type=DepartmentType.GENERAL,
+            manager=self.manager,
+        )
+        self.requester.primary_department = self.department
+        self.requester.save(update_fields=["primary_department"])
+        UserDepartment.objects.create(user=self.requester, department=self.department, is_active=True)
+        self.project = Project.objects.create(
+            project_code="SNAP-PRJ",
+            project_name="Snapshot Project",
+            owning_department=self.department,
+            project_manager=self.manager,
+            budget_amount=Decimal("10000.00"),
+            is_active=True,
+        )
+        self.rule = ApprovalRule.objects.create(
+            rule_code="SNAP-PR",
+            rule_name="Snapshot Rule",
+            request_type=RequestType.PURCHASE,
+            department=self.department,
+            priority=1,
+            is_active=True,
+        )
+        self.step = ApprovalRuleStep.objects.create(
+            rule=self.rule,
+            step_no=1,
+            step_name="Manager Approval",
+            approver_type=ApproverType.DEPARTMENT_MANAGER,
+            is_active=True,
+        )
+
+    def test_approval_task_preserves_rule_snapshot_after_rule_edit(self):
+        pr = PurchaseRequest.objects.create(
+            title="Snapshot Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            currency="USD",
+            justification="Snapshot regression",
+        )
+        PurchaseRequestLine.objects.create(
+            request=pr,
+            line_no=1,
+            item_name="Snapshot Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("100.00"),
+        )
+
+        pr.submit(acting_user=self.requester)
+        task = ApprovalTask.objects.get(purchase_request=pr)
+        snap_version = task.approval_rule_version
+
+        self.rule.rule_name = "Snapshot Rule Changed"
+        self.rule.save()
+        task.refresh_from_db()
+        self.rule.refresh_from_db()
+
+        self.assertGreater(self.rule.version, snap_version)
+        self.assertEqual(task.approval_rule_code, "SNAP-PR")
+        self.assertEqual(task.approval_rule_name, "Snapshot Rule")
+        self.assertEqual(task.approval_rule_version, snap_version)
+        self.assertEqual(task.step_name, "Manager Approval")
+
+
 class ApprovalDelegationWorkflowTest(TestCase):
     def setUp(self):
         self.requester = User.objects.create_user(username="deleg_req", password="testpass123")

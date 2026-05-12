@@ -21,6 +21,10 @@ The current version includes V1.1 Phase 2 completion on top of the V0.5 business
 - Added business UI pages for Currencies, Exchange Rates, and FX Variance Policies so normal finance setup no longer depends on Django Admin pages.
 - Added Department General Budget Setup with current-year System Setup warning for departments missing annual general projects.
 - Added PR/TR validation so Department General Budget projects must match the request department.
+- Added approval rule snapshot fields on approval tasks so historical request approval context remains visible after approval rules change.
+- Changed manual project budget adjustment into a controlled Budget Adjustment Request workflow; budget ledger `ADJUST` entries are posted only after Finance approval.
+- Added duplicate actual expense / invoice review detection based on vendor, date, amount, and reference matching.
+- Added attachment retention controls: request attachments are soft-deleted for audit visibility, linked receipt/invoice evidence cannot be removed by normal requesters after posting/approval, and closed request attachments are retained.
 - Added Finance Reports CSV export with base and transaction currency columns.
 - Converted Approval Rule Step Editor from a wide table into step cards/accordion sections.
 - Restored the Dashboard `Approval Summary` section title for regression compatibility.
@@ -57,13 +61,13 @@ The current version includes V1.1 Phase 2 completion on top of the V0.5 business
 
 ## Verification
 
-Latest targeted verification for the V1.1 Phase 3 setup changes:
+Latest targeted verification for the V1.1 Phase 3 setup and control changes:
 
 ```text
 python manage.py check
 python manage.py makemigrations --check --dry-run
-python manage.py test finance.tests.FinanceCurrencySetupViewTest projects.tests.DepartmentGeneralProjectSetupTest dashboard.tests.DashboardSmokeTest.test_system_setup_uses_business_currency_setup_urls --keepdb -v 1
-Ran 9 tests
+python manage.py test approvals.tests.ApprovalSnapshotRegressionTest finance.tests.DuplicateActualExpenseReviewTest purchase.tests.PurchaseSmokeTest.test_purchase_attachment_upload_and_delete_regression travel.tests.TravelSmokeTest.test_travel_attachment_upload_and_delete_regression --keepdb -v 1
+Ran 4 tests
 OK
 ```
 

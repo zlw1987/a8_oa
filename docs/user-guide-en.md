@@ -615,9 +615,47 @@ Project budget is affected by:
 - RESERVE: budget reserved by request submission or amendment approval.
 - CONSUME: budget consumed by actual expense posting.
 - RELEASE: reserved budget released by close, return, cancel, reject, or actual conversion.
-- ADJUST: manual adjustment.
+- ADJUST: approved budget adjustment posted from a Budget Adjustment Request.
 
 Project detail and budget ledger show the full history.
+
+### 13.2 Budget Adjustment Requests
+
+Project managers can submit a Budget Adjustment Request from the project budget ledger.
+
+Important rules:
+
+- Submitting an adjustment request does not change the budget ledger.
+- Finance/Admin must approve and post the request before an ADJUST ledger entry is created.
+- Rejected adjustment requests do not affect the project budget.
+- A reason is required for audit.
+
+### 13.3 Approval Rule Snapshot
+
+When a PR/TR/project budget request is submitted, the approval task stores the approval rule code, rule name, rule version, step name, step type, assigned user, and candidate pool snapshot.
+
+If the approval rule is changed later, old request approval history still shows the rule snapshot that was used at submission time.
+
+### 13.4 Duplicate Actual Expense / Invoice Review
+
+When accounting records an actual expense, the system checks for possible duplicate actual expenses using vendor/merchant, expense date, amount, and reference number.
+
+If a possible duplicate is found:
+
+- The actual expense is not deleted automatically.
+- An Accounting Review Item is created.
+- Accounting can review and approve the exception or resolve the duplicate.
+
+### 13.5 Attachment Retention
+
+Attachments are audit evidence.
+
+Current rules:
+
+- Draft attachments can still be removed by authorized users.
+- Attachments are soft-deleted so the audit trail can retain deletion information.
+- Receipts or invoices linked to actual expense lines cannot be removed by normal requesters after posting.
+- Closed request attachments are retained for audit and cannot be normally deleted.
 
 ## 14. FAQ
 

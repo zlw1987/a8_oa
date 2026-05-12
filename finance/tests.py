@@ -9,7 +9,7 @@ from django.urls import reverse
 from accounts.models import Department
 from common.choices import BudgetEntryType, DepartmentType, RequestStatus, RequestType
 from projects.models import Project, ProjectBudgetEntry
-from purchase.models import PurchaseRequest
+from purchase.models import PurchaseActualSpend, PurchaseRequest, PurchaseRequestLine
 from purchase.models import PurchaseRequestAttachment, PurchaseRequestAttachmentType
 
 from common.templatetags.money import money
@@ -396,6 +396,69 @@ class OverBudgetPolicyServiceTest(TestCase):
         self.assertIsNotNone(review_item)
         self.assertEqual(review_item.reason, AccountingReviewReason.DUPLICATE_CARD)
         self.assertEqual(review_item.card_transaction, duplicate)
+
+
+class DuplicateActualExpenseReviewTest(TestCase):
+    def setUp(self):
+        self.accounting = User.objects.create_user(
+            username="dup_actual_acct",
+            password="testpass123",
+            is_staff=True,
+        )
+        self.requester = User.objects.create_user(username="dup_actual_req", password="testpass123")
+        self.department = Department.objects.create(
+            dept_code="DUP-ACT",
+            dept_name="Duplicate Actual Dept",
+            dept_type=DepartmentType.GENERAL,
+        )
+        self.project = Project.objects.create(
+            project_code="DUP-ACT-PRJ",
+            project_name="Duplicate Actual Project",
+            owning_department=self.department,
+            budget_amount=Decimal("10000.00"),
+            is_active=True,
+        )
+        self.purchase = PurchaseRequest.objects.create(
+            title="Duplicate Actual Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            status=RequestStatus.APPROVED,
+            estimated_total=Decimal("1000.00"),
+            currency="USD",
+        )
+        PurchaseRequestLine.objects.create(
+            request=self.purchase,
+            line_no=1,
+            item_name="Duplicate Actual Item",
+            quantity=Decimal("1"),
+            unit_price=Decimal("1000.00"),
+        )
+
+    def test_same_vendor_date_amount_reference_creates_duplicate_actual_review(self):
+        self.purchase.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("100.00"),
+            acting_user=self.accounting,
+            vendor_name="Same Vendor",
+            reference_no="INV-100",
+        )
+        second = self.purchase.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("100.00"),
+            acting_user=self.accounting,
+            vendor_name="Same Vendor",
+            reference_no="INV-100",
+        )
+
+        self.assertTrue(
+            AccountingReviewItem.objects.filter(
+                purchase_actual_spend=second,
+                reason=AccountingReviewReason.DUPLICATE_EXPENSE,
+                status="PENDING_REVIEW",
+            ).exists()
+        )
 
 
 class FinanceReportCurrencyFormattingTest(TestCase):

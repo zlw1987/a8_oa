@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DepartmentGeneralProject, Project, ProjectBudgetEntry
+from .models import BudgetAdjustmentRequest, DepartmentGeneralProject, Project, ProjectBudgetEntry
 
 
 class ProjectBudgetEntryInline(admin.TabularInline):
@@ -61,6 +61,13 @@ class ProjectBudgetEntryAdmin(admin.ModelAdmin):
         "source_type",
         "project",
     )
+
+
+@admin.register(BudgetAdjustmentRequest)
+class BudgetAdjustmentRequestAdmin(admin.ModelAdmin):
+    list_display = ("project", "amount", "currency", "status", "requested_by", "submitted_at", "approved_by")
+    search_fields = ("project__project_code", "project__project_name", "reason")
+    list_filter = ("status", "currency", "project")
 
 
 @admin.register(DepartmentGeneralProject)

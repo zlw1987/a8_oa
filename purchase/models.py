@@ -889,6 +889,7 @@ class PurchaseRequest(models.Model):
             )
 
         from finance.services import apply_receipt_policy_for_actual
+        from finance.services import create_duplicate_actual_expense_review_item
 
         apply_receipt_policy_for_actual(
             self,
@@ -900,6 +901,7 @@ class PurchaseRequest(models.Model):
             card_allocation=card_allocation,
             acting_user=acting_user,
         )
+        create_duplicate_actual_expense_review_item(actual_spend, created_by=acting_user)
 
         ProjectBudgetEntry.objects.create(
             project=self.project,
@@ -1140,6 +1142,16 @@ class PurchaseRequestAttachment(models.Model):
         related_name="purchase_request_attachments",
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="deleted_purchase_request_attachments",
+    )
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    delete_reason = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "PS_A8_PR_ATT"
@@ -1160,9 +1172,27 @@ class PurchaseRequestAttachment(models.Model):
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
+        if kwargs.pop("hard", False):
+            storage = self.file.storage if self.file else None
+            file_name = self.file.name if self.file else None
+            super().delete(*args, **kwargs)
+            if storage and file_name:
+                storage.delete(file_name)
+            return
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.save(update_fields=["is_deleted", "deleted_at"])
+
+    def soft_delete(self, *, user=None, reason=""):
+        self.is_deleted = True
+        self.deleted_by = user
+        self.deleted_at = timezone.now()
+        self.delete_reason = reason or ""
+        self.save(update_fields=["is_deleted", "deleted_by", "deleted_at", "delete_reason"])
+
+    def hard_delete_file(self):
         storage = self.file.storage if self.file else None
         file_name = self.file.name if self.file else None
-        super().delete(*args, **kwargs)
         if storage and file_name:
             storage.delete(file_name)
 

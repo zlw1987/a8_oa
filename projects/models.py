@@ -30,6 +30,15 @@ class ProjectBudgetApprovalStatus(models.TextChoices):
     RETURNED = "RETURNED", "Returned"
     NOT_REQUIRED = "NOT_REQUIRED", "Not Required"
 
+
+class BudgetAdjustmentRequestStatus(models.TextChoices):
+    DRAFT = "DRAFT", "Draft"
+    SUBMITTED = "SUBMITTED", "Submitted"
+    APPROVED = "APPROVED", "Approved"
+    REJECTED = "REJECTED", "Rejected"
+    POSTED = "POSTED", "Posted"
+    CANCELLED = "CANCELLED", "Cancelled"
+
 class ProjectExternalOrderType(models.TextChoices):
     NONE = "", "-"
     SALES_ORDER = "SALES_ORDER", "Sales Order"
@@ -425,6 +434,130 @@ class ProjectBudgetEntry(models.Model):
 
     def __str__(self):
         return f"{self.project.project_code} / {self.entry_type} / {self.amount}"
+
+
+class BudgetAdjustmentRequest(models.Model):
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="budget_adjustment_requests",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(max_length=10, choices=CurrencyCode, default=COMPANY_BASE_CURRENCY)
+    reason = models.TextField()
+    status = models.CharField(
+        max_length=30,
+        choices=BudgetAdjustmentRequestStatus,
+        default=BudgetAdjustmentRequestStatus.SUBMITTED,
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="requested_budget_adjustments",
+    )
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_budget_adjustments",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="rejected_budget_adjustments",
+    )
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    decision_comment = models.TextField(blank=True, default="")
+    posted_entry = models.OneToOneField(
+        ProjectBudgetEntry,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="adjustment_request",
+    )
+    posted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "PS_A8_PROJ_BUD_ADJ_REQ"
+        verbose_name = "Budget Adjustment Request"
+        verbose_name_plural = "Budget Adjustment Requests"
+        ordering = ["-submitted_at", "-id"]
+
+    def __str__(self):
+        return f"{self.project.project_code} / {self.amount} / {self.status}"
+
+    def clean(self):
+        super().clean()
+        if self.amount == Decimal("0.00"):
+            raise ValidationError("Adjustment amount cannot be 0.")
+        if not self.reason:
+            raise ValidationError("Adjustment reason is required.")
+
+    @transaction.atomic
+    def approve_and_post(self, *, acting_user, comment=""):
+        from common.permissions import can_manage_finance_setup
+
+        if not can_manage_finance_setup(acting_user):
+            raise ValidationError("Only finance admins can approve budget adjustments.")
+        if self.status not in [
+            BudgetAdjustmentRequestStatus.SUBMITTED,
+            BudgetAdjustmentRequestStatus.APPROVED,
+        ]:
+            raise ValidationError("Only submitted budget adjustments can be approved.")
+        if self.posted_entry_id:
+            raise ValidationError("This budget adjustment has already been posted.")
+
+        entry = ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.ADJUST,
+            source_type=RequestType.PROJECT,
+            source_id=self.project_id,
+            amount=self.amount,
+            currency=self.currency,
+            notes=f"Approved budget adjustment request #{self.id}: {self.reason[:120]}",
+            created_by=acting_user,
+        )
+        self.status = BudgetAdjustmentRequestStatus.POSTED
+        self.approved_by = acting_user
+        self.approved_at = timezone.now()
+        self.decision_comment = comment or ""
+        self.posted_entry = entry
+        self.posted_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "approved_by",
+                "approved_at",
+                "decision_comment",
+                "posted_entry",
+                "posted_at",
+            ]
+        )
+        entry.source_id = self.id
+        entry.save(update_fields=["source_id"])
+        return entry
+
+    def reject(self, *, acting_user, comment=""):
+        from common.permissions import can_manage_finance_setup
+
+        if not can_manage_finance_setup(acting_user):
+            raise ValidationError("Only finance admins can reject budget adjustments.")
+        if self.status != BudgetAdjustmentRequestStatus.SUBMITTED:
+            raise ValidationError("Only submitted budget adjustments can be rejected.")
+        if not comment:
+            raise ValidationError("Reject comment is required.")
+        self.status = BudgetAdjustmentRequestStatus.REJECTED
+        self.rejected_by = acting_user
+        self.rejected_at = timezone.now()
+        self.decision_comment = comment
+        self.save(update_fields=["status", "rejected_by", "rejected_at", "decision_comment"])
 
 class ProjectMember(models.Model):
     project = models.ForeignKey(

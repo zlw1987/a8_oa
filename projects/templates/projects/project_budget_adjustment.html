@@ -31,9 +31,10 @@
 </div>
 
 <div class="card">
-    <h2>Add Budget Adjustment</h2>
+    <h2>Submit Budget Adjustment Request</h2>
     <p class="muted">
         Use a positive amount to increase effective budget. Use a negative amount to decrease it.
+        The adjustment will not affect the budget ledger until Finance approves and posts it.
     </p>
 
     <form method="post">
@@ -42,7 +43,7 @@
             {{ form.as_table }}
         </table>
         <div class="action-row">
-            <button type="submit">Save Adjustment</button>
+            <button type="submit">Submit Adjustment Request</button>
             <a href="{% url 'projects:project_budget_ledger' project.id %}">Back to Budget Ledger</a>
         </div>
     </form>

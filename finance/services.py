@@ -624,30 +624,37 @@ def _request_has_attachment_for_receipt_policy(request_obj):
     attachments = getattr(request_obj, "attachments", None)
     if attachments is None:
         return False
-    return attachments.exclude(document_type="ACCOUNTING_APPROVAL").exists()
+    return attachments.exclude(document_type="ACCOUNTING_APPROVAL").filter(is_deleted=False).exists()
+
+
+def _active_line_attachment_queryset(actual_expense):
+    links = getattr(actual_expense, "line_attachments", None) if actual_expense else None
+    if links is None:
+        return ActualExpenseAttachment.objects.none()
+    return links.filter(
+        Q(purchase_attachment__isnull=True) | Q(purchase_attachment__is_deleted=False),
+        Q(travel_attachment__isnull=True) | Q(travel_attachment__is_deleted=False),
+    )
 
 
 def _actual_expense_has_line_attachment(actual_expense, *, requires_invoice=False):
     if actual_expense is None:
         return False
-    links = getattr(actual_expense, "line_attachments", None)
-    if links is None:
-        return False
+    links = _active_line_attachment_queryset(actual_expense)
     if requires_invoice:
         return links.filter(attachment_type="INVOICE").exists()
     return links.filter(attachment_type__in=["RECEIPT", "INVOICE"]).exists()
 
 
 def actual_expense_has_attachment(actual_expense, attachment_type):
-    links = getattr(actual_expense, "line_attachments", None)
-    if actual_expense is None or links is None:
+    if actual_expense is None:
         return False
+    links = _active_line_attachment_queryset(actual_expense)
     return links.filter(attachment_type=attachment_type).exists()
 
 
 def build_actual_expense_evidence_status(actual_expense):
-    manager = getattr(actual_expense, "line_attachments", None) if actual_expense else None
-    links = list(manager.all()) if manager is not None else []
+    links = list(_active_line_attachment_queryset(actual_expense)) if actual_expense else []
     receipt_links = [link for link in links if link.attachment_type == ActualExpenseAttachmentType.RECEIPT]
     invoice_links = [link for link in links if link.attachment_type == ActualExpenseAttachmentType.INVOICE]
     support_links = [link for link in links if link.attachment_type not in [ActualExpenseAttachmentType.RECEIPT, ActualExpenseAttachmentType.INVOICE]]
@@ -1031,6 +1038,74 @@ def create_duplicate_card_review_item(card_transaction, *, created_by=None):
         description=(
             "Same merchant, amount, transaction date, and reference were found. "
             "Review before treating this as a legitimate separate transaction."
+        ),
+        created_by=created_by,
+    )
+
+
+def create_duplicate_actual_expense_review_item(actual_expense, *, created_by=None):
+    request_obj = getattr(actual_expense, "purchase_request", None) or getattr(actual_expense, "travel_request", None)
+    if not request_obj:
+        return None
+
+    vendor = (getattr(actual_expense, "vendor_name", "") or "").strip()
+    reference = (getattr(actual_expense, "reference_no", "") or "").strip()
+    amount = getattr(actual_expense, "amount", None)
+    expense_date = getattr(actual_expense, "spend_date", None)
+    request_type = RequestType.PURCHASE
+    duplicate_qs = None
+
+    if hasattr(actual_expense, "purchase_request_id"):
+        from purchase.models import PurchaseActualSpend
+
+        duplicate_qs = PurchaseActualSpend.objects.filter(
+            spend_date=expense_date,
+            amount=amount,
+        ).exclude(pk=actual_expense.pk)
+        if vendor:
+            duplicate_qs = duplicate_qs.filter(vendor_name__iexact=vendor)
+        if reference:
+            duplicate_qs = duplicate_qs.filter(reference_no__iexact=reference)
+    elif hasattr(actual_expense, "travel_request_id"):
+        from travel.models import TravelActualExpenseLine
+
+        request_type = RequestType.TRAVEL
+        amount = getattr(actual_expense, "actual_amount", None)
+        expense_date = getattr(actual_expense, "expense_date", None)
+        duplicate_qs = TravelActualExpenseLine.objects.filter(
+            expense_date=expense_date,
+            actual_amount=amount,
+        ).exclude(pk=actual_expense.pk)
+        if vendor:
+            duplicate_qs = duplicate_qs.filter(vendor_name__iexact=vendor)
+        if reference:
+            duplicate_qs = duplicate_qs.filter(reference_no__iexact=reference)
+
+    if duplicate_qs is None or not duplicate_qs.exists():
+        return None
+    if getattr(actual_expense, "accounting_review_items", None) and actual_expense.accounting_review_items.filter(
+        reason=AccountingReviewReason.DUPLICATE_EXPENSE,
+        status__in=OPEN_REVIEW_STATUSES,
+    ).exists():
+        return None
+
+    duplicate_ids = ", ".join(str(item.id) for item in duplicate_qs[:5])
+    content_type = ContentType.objects.get_for_model(actual_expense)
+    return AccountingReviewItem.objects.create(
+        source_type=request_type,
+        purchase_request=request_obj if request_type == RequestType.PURCHASE else None,
+        travel_request=request_obj if request_type == RequestType.TRAVEL else None,
+        purchase_actual_spend=actual_expense if request_type == RequestType.PURCHASE else None,
+        travel_actual_expense=actual_expense if request_type == RequestType.TRAVEL else None,
+        source_content_type=content_type,
+        source_object_id=actual_expense.pk,
+        reason=AccountingReviewReason.DUPLICATE_EXPENSE,
+        status=AccountingReviewStatus.PENDING_REVIEW,
+        amount=amount or Decimal("0.00"),
+        title=f"Possible duplicate actual expense for {get_request_no(request_obj)}",
+        description=(
+            "A possible duplicate actual expense was found using vendor/merchant, date, amount, "
+            f"and reference matching. Candidate line id(s): {duplicate_ids}."
         ),
         created_by=created_by,
     )

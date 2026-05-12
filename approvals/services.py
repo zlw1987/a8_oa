@@ -15,6 +15,12 @@ from .models import (
 )
 
 
+def _format_candidate_pool_snapshot(candidates):
+    return ", ".join(
+        f"{user.get_username()}#{user.id}" for user in candidates if user
+    )
+
+
 def get_request_type_for_object(request_obj):
     app_label = request_obj._meta.app_label
     if app_label == "purchase":
@@ -122,6 +128,13 @@ def create_approval_tasks_for_request(request_obj, matched_rule=None):
             "step": step,
             "step_no": step.step_no,
             "step_name": step.step_name,
+            "approval_rule_code": matched_rule.rule_code,
+            "approval_rule_name": matched_rule.rule_name,
+            "approval_rule_version": matched_rule.version or 1,
+            "step_type": step.approver_type,
+            "assigned_role": step.approver_level or step.approver_type or "",
+            "candidate_pool_snapshot": _format_candidate_pool_snapshot(candidates),
+            "snapshot_created_at": timezone.now(),
             "assigned_user": assigned_user,
             "status": task_status,
             "due_at": timezone.now() + timedelta(days=step.sla_days or 0),

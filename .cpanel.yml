@@ -1,12 +1,4 @@
 ---
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/rsnwvvl103hc/a8_oa
-    - export PYTHON=/home/rsnwvvl103hc/virtualenv/a8_oa/3.11/bin/python3.11_bin
-    - /bin/mkdir -p $DEPLOYPATH
-    - /bin/rsync -av --delete --exclude='.git' --exclude='.venv' --exclude='.env' --exclude='db.sqlite3' --exclude='media/' --exclude='staticfiles/' --exclude='sent_emails/' --exclude='passenger.log' --exclude='tmp/' --exclude='__pycache__/' --exclude='*.pyc' ./ $DEPLOYPATH/
-    - cd $DEPLOYPATH && $PYTHON -m pip install -r requirements.txt
-    - cd $DEPLOYPATH && $PYTHON manage.py migrate --settings=config.settings_godaddy --noinput
-    - cd $DEPLOYPATH && $PYTHON manage.py collectstatic --settings=config.settings_godaddy --noinput
-    - /bin/mkdir -p $DEPLOYPATH/tmp
-    - /bin/touch $DEPLOYPATH/tmp/restart.txt
+    - /bin/bash deploy/godaddy_deploy.sh

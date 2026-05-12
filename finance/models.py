@@ -317,6 +317,7 @@ class AccountingReviewReason(models.TextChoices):
     MISSING_RECEIPT = "MISSING_RECEIPT", "Missing Receipt"
     UNMATCHED_CARD = "UNMATCHED_CARD", "Unmatched Card Transaction"
     DUPLICATE_CARD = "DUPLICATE_CARD", "Duplicate Card Transaction"
+    DUPLICATE_EXPENSE = "DUPLICATE_EXPENSE", "Duplicate Actual Expense / Invoice"
     DIRECT_PROJECT_COST = "DIRECT_PROJECT_COST", "Direct Project Cost"
     POLICY_EXCEPTION = "POLICY_EXCEPTION", "Policy Exception"
     MANUAL_FLAG = "MANUAL_FLAG", "Manual Flag"

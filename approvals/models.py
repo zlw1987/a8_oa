@@ -46,6 +46,8 @@ class ApprovalRule(models.Model):
     is_general_fallback = models.BooleanField(default=False)
     priority = models.PositiveIntegerField(default=100)
     is_active = models.BooleanField(default=True)
+    version = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "PS_A8_AP_RULE"
@@ -62,6 +64,27 @@ class ApprovalRule(models.Model):
 
     def __str__(self):
         return f"{self.rule_code} - {self.rule_name}"
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = ApprovalRule.objects.filter(pk=self.pk).first()
+            if original:
+                watched_fields = [
+                    "rule_code",
+                    "rule_name",
+                    "request_type",
+                    "department_id",
+                    "amount_from",
+                    "amount_to",
+                    "requester_level",
+                    "specific_requester_id",
+                    "is_general_fallback",
+                    "priority",
+                    "is_active",
+                ]
+                if any(getattr(original, field) != getattr(self, field) for field in watched_fields):
+                    self.version = (original.version or 1) + 1
+        super().save(*args, **kwargs)
 
     def clean(self):
         super().clean()
@@ -128,6 +151,24 @@ class ApprovalRuleStep(models.Model):
 
     def __str__(self):
         return f"{self.rule.rule_code} / Step {self.step_no} - {self.step_name}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.rule_id:
+            ApprovalRule.objects.filter(pk=self.rule_id).update(
+                version=models.F("version") + 1,
+                updated_at=timezone.now(),
+            )
+
+    def delete(self, *args, **kwargs):
+        rule_id = self.rule_id
+        result = super().delete(*args, **kwargs)
+        if rule_id:
+            ApprovalRule.objects.filter(pk=rule_id).update(
+                version=models.F("version") + 1,
+                updated_at=timezone.now(),
+            )
+        return result
 
 
 class ApprovalTaskActionType(models.TextChoices):
@@ -244,6 +285,13 @@ class ApprovalTask(models.Model):
     )
     step_no = models.PositiveIntegerField()
     step_name = models.CharField(max_length=100)
+    approval_rule_code = models.CharField(max_length=30, blank=True, default="")
+    approval_rule_name = models.CharField(max_length=100, blank=True, default="")
+    approval_rule_version = models.PositiveIntegerField(default=1)
+    step_type = models.CharField(max_length=30, blank=True, default="")
+    assigned_role = models.CharField(max_length=80, blank=True, default="")
+    candidate_pool_snapshot = models.TextField(blank=True, default="")
+    snapshot_created_at = models.DateTimeField(null=True, blank=True)
     assigned_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

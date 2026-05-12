@@ -12,8 +12,21 @@ from django.urls import reverse
 from common.choices import BudgetEntryType, RequestType
 from purchase.models import PurchaseRequest
 from travel.models import TravelRequest
-from .forms import DepartmentGeneralProjectForm, ProjectBudgetAdjustmentForm, ProjectCreateForm, ProjectMemberAddForm
-from .models import DepartmentGeneralProject, Project, ProjectBudgetEntry, ProjectMember
+from .forms import (
+    BudgetAdjustmentDecisionForm,
+    DepartmentGeneralProjectForm,
+    ProjectBudgetAdjustmentForm,
+    ProjectCreateForm,
+    ProjectMemberAddForm,
+)
+from .models import (
+    BudgetAdjustmentRequest,
+    BudgetAdjustmentRequestStatus,
+    DepartmentGeneralProject,
+    Project,
+    ProjectBudgetEntry,
+    ProjectMember,
+)
 from common.permissions import can_manage_finance_setup
 from .access import (
     get_visible_projects_queryset_for_user,
@@ -341,6 +354,7 @@ def project_detail(request, pk):
         "available_amount": project.get_available_amount(),
         "project_budget_url": reverse("projects:project_budget_ledger", args=[project.id]),
         "can_manage_budget": user_can_manage_project_budget(request.user, project),
+        "can_approve_budget_adjustments": can_manage_finance_setup(request.user),
         "project_adjust_budget_url": reverse("projects:project_add_budget_adjustment", args=[project.id]),
         "can_manage_members": user_can_manage_project_members(request.user, project),
         "current_task": project.get_current_task(),
@@ -421,6 +435,9 @@ def project_budget_ledger(request, pk):
         "travel_adjusted": _sum_budget_entries(project, BudgetEntryType.ADJUST, RequestType.TRAVEL),
         "can_manage_budget": user_can_manage_project_budget(request.user, project),
         "project_adjust_budget_url": reverse("projects:project_add_budget_adjustment", args=[project.id]),
+        "pending_adjustment_requests": project.budget_adjustment_requests.filter(
+            status=BudgetAdjustmentRequestStatus.SUBMITTED
+        ).order_by("-submitted_at", "-id"),
         "ledger_legend": [
             ("RESERVE", "Reserve budget for submitted request"),
             ("CONSUME", "Convert budget into actual spending"),
@@ -444,16 +461,13 @@ def project_add_budget_adjustment(request, pk):
     if request.method == "POST":
         form = ProjectBudgetAdjustmentForm(request.POST)
         if form.is_valid():
-            ProjectBudgetEntry.objects.create(
-                project=project,
-                entry_type=BudgetEntryType.ADJUST,
-                source_type=RequestType.PROJECT,
-                source_id=project.id,
-                amount=form.cleaned_data["amount"],
-                notes=form.cleaned_data["notes"],
-                created_by=request.user,
-            )
-            messages.success(request, f"Budget adjustment recorded for {project.project_code}.")
+            adjustment = form.save(commit=False)
+            adjustment.project = project
+            adjustment.currency = project.currency
+            adjustment.requested_by = request.user
+            adjustment.full_clean()
+            adjustment.save()
+            messages.success(request, f"Budget adjustment request submitted for {project.project_code}.")
             return redirect("projects:project_budget_ledger", pk=project.id)
     else:
         form = ProjectBudgetAdjustmentForm()
@@ -463,3 +477,41 @@ def project_add_budget_adjustment(request, pk):
         "form": form,
     }
     return render(request, "projects/project_budget_adjustment.html", context)
+
+
+@login_required
+@require_POST
+def project_approve_budget_adjustment(request, pk, adjustment_id):
+    project = get_object_or_404(get_visible_projects_queryset_for_user(request.user), pk=pk)
+    adjustment = get_object_or_404(BudgetAdjustmentRequest, pk=adjustment_id, project=project)
+    form = BudgetAdjustmentDecisionForm(request.POST)
+    if form.is_valid():
+        try:
+            adjustment.approve_and_post(
+                acting_user=request.user,
+                comment=form.cleaned_data.get("comment", ""),
+            )
+            messages.success(request, "Budget adjustment approved and posted.")
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    return redirect("projects:project_budget_ledger", pk=project.id)
+
+
+@login_required
+@require_POST
+def project_reject_budget_adjustment(request, pk, adjustment_id):
+    project = get_object_or_404(get_visible_projects_queryset_for_user(request.user), pk=pk)
+    adjustment = get_object_or_404(BudgetAdjustmentRequest, pk=adjustment_id, project=project)
+    form = BudgetAdjustmentDecisionForm(request.POST)
+    if form.is_valid():
+        try:
+            adjustment.reject(
+                acting_user=request.user,
+                comment=form.cleaned_data.get("comment", ""),
+            )
+            messages.success(request, "Budget adjustment rejected.")
+        except ValidationError as exc:
+            for message in exc.messages:
+                messages.error(request, message)
+    return redirect("projects:project_budget_ledger", pk=project.id)

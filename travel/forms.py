@@ -620,7 +620,7 @@ class TravelActualExpenseAttachmentLinkForm(forms.Form):
         if travel_request:
             self.fields["travel_attachment"].queryset = travel_request.attachments.exclude(
                 document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
-            ).order_by("-uploaded_at", "-id")
+            ).filter(is_deleted=False).order_by("-uploaded_at", "-id")
 
 class TravelActualReviewForm(forms.Form):
     review_status = forms.ChoiceField(

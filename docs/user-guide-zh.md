@@ -315,6 +315,53 @@ Finance/Admin 用户可以从 System Setup 或 Setup > Department General Budget
 
 如果 PR/TR 选择了 Department General Budget project，request department 必须和 project owning department 一致。
 
+### 13.1 Budget Adjustment Request
+
+项目预算调整不再是直接写入 ledger。
+
+现在的规则是：
+
+- Project manager 可以从 Project Budget Ledger 提交 Budget Adjustment Request。
+- 提交 request 不会立刻影响项目预算。
+- Finance/Admin 审批并 post 之后，系统才会创建 ADJUST ledger entry。
+- Reject 的 adjustment 不影响预算。
+- 每个 adjustment 都必须填写 reason，作为 audit 依据。
+
+### 13.2 Approval Rule Snapshot
+
+PR/TR/Project Budget 提交审批时，系统会在 Approval Task 上保存当时使用的 rule snapshot：
+
+- Rule code。
+- Rule name。
+- Rule version。
+- Step name。
+- Step type。
+- Assigned user。
+- Candidate pool snapshot。
+
+之后即使 Approval Rule 被修改，旧 request 的审批历史仍然显示提交当时的规则上下文。
+
+### 13.3 Duplicate Actual Expense / Invoice Review
+
+Accounting 录入 actual expense 时，系统会根据 vendor / merchant、expense date、amount、reference number 检查可能重复的 actual expense。
+
+如果发现疑似重复：
+
+- 系统不会自动删除或阻止 legitimate transaction。
+- 系统会创建 Accounting Review Item。
+- Accounting 可以在 review 中 resolve 或 approve exception。
+
+### 13.4 Attachment Retention
+
+附件是审计证据。
+
+当前规则：
+
+- Draft 阶段授权用户可以删除附件。
+- 删除采用 soft delete，保留审计信息。
+- 已经 linked 到 actual expense line 的 receipt / invoice，普通 requester 在 posting 后不能删除。
+- Closed request 的附件会被保留，不能正常删除。
+
 ## 14. 常见问题
 
 ### 为什么申请不能关闭？

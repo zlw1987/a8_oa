@@ -651,8 +651,10 @@ class PurchaseSmokeTest(TestCase):
         self.assertEqual(response.status_code, 302)
 
         pr.refresh_from_db()
-        self.assertEqual(pr.attachments.count(), 0)
-        self.assertEqual(PurchaseRequestAttachment.objects.filter(pk=attachment.id).count(), 0)
+        attachment.refresh_from_db()
+        self.assertTrue(attachment.is_deleted)
+        self.assertEqual(pr.attachments.filter(is_deleted=False).count(), 0)
+        self.assertEqual(PurchaseRequestAttachment.objects.filter(pk=attachment.id).count(), 1)
 
     def test_purchase_create_generates_initial_content_audit(self):
         pr = PurchaseRequest.objects.create(

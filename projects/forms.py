@@ -4,7 +4,13 @@ from django import forms
 from django.contrib.auth import get_user_model
 
 from accounts.models import Department
-from .models import DepartmentGeneralProject, Project, ProjectBudgetApprovalStatus, ProjectType
+from .models import (
+    BudgetAdjustmentRequest,
+    DepartmentGeneralProject,
+    Project,
+    ProjectBudgetApprovalStatus,
+    ProjectType,
+)
 from common.choices import CurrencyCode
 
 User = get_user_model()
@@ -114,15 +120,26 @@ class ProjectMemberAddForm(forms.Form):
         ).order_by("username", "id")
 
 
-class ProjectBudgetAdjustmentForm(forms.Form):
-    amount = forms.DecimalField(max_digits=14, decimal_places=2)
-    notes = forms.CharField(max_length=200)
+class ProjectBudgetAdjustmentForm(forms.ModelForm):
+    class Meta:
+        model = BudgetAdjustmentRequest
+        fields = ["amount", "reason"]
+        labels = {"reason": "Adjustment Reason"}
+        widgets = {"reason": forms.Textarea(attrs={"rows": 3})}
+        help_texts = {
+            "amount": "Use a positive amount to increase budget or a negative amount to decrease it.",
+            "reason": "Required for audit. Explain why this project budget needs adjustment.",
+        }
 
     def clean_amount(self):
         amount = self.cleaned_data["amount"]
         if amount == Decimal("0.00"):
             raise forms.ValidationError("Adjustment amount cannot be 0.")
         return amount
+
+
+class BudgetAdjustmentDecisionForm(forms.Form):
+    comment = forms.CharField(required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
 
 class DepartmentGeneralProjectForm(forms.ModelForm):

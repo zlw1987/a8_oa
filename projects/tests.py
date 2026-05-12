@@ -9,7 +9,16 @@ from django.core.exceptions import ValidationError
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
 from common.choices import ApproverType, RequestType, DepartmentType, BudgetEntryType
-from projects.models import DepartmentGeneralProject, Project, ProjectBudgetEntry, ProjectMember, ProjectStatus, ProjectType
+from projects.models import (
+    BudgetAdjustmentRequest,
+    BudgetAdjustmentRequestStatus,
+    DepartmentGeneralProject,
+    Project,
+    ProjectBudgetEntry,
+    ProjectMember,
+    ProjectStatus,
+    ProjectType,
+)
 from purchase.models import PurchaseRequest, PurchaseRequestLine
 from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpenseLine
 
@@ -116,6 +125,12 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
             username="outsider_project_budget",
             password="testpass123",
             email="outsider_project_budget@example.com",
+        )
+        self.finance_admin = User.objects.create_user(
+            username="finance_project_budget",
+            password="testpass123",
+            email="finance_project_budget@example.com",
+            is_superuser=True,
         )
 
         self.department = Department.objects.create(
@@ -383,7 +398,7 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
-    def test_project_manager_can_add_positive_budget_adjustment(self):
+    def test_project_manager_can_submit_positive_budget_adjustment_request(self):
         self.project.project_manager = self.manager
         self.project.save(update_fields=["project_manager"])
 
@@ -392,28 +407,37 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
             reverse("projects:project_add_budget_adjustment", args=[self.project.id]),
             data={
                 "amount": "1000.00",
-                "notes": "Budget increase approved",
+                "reason": "Budget increase requested",
             },
         )
 
         self.assertEqual(response.status_code, 302)
         self.project.refresh_from_db()
 
-        self.assertEqual(self.project.get_adjustment_amount(), Decimal("1000.00"))
-        self.assertEqual(self.project.get_effective_budget_amount(), Decimal("11000.00"))
-        self.assertEqual(self.project.get_available_amount(), Decimal("11000.00"))
-
-        self.assertTrue(
+        self.assertEqual(self.project.get_adjustment_amount(), Decimal("0.00"))
+        adjustment = BudgetAdjustmentRequest.objects.get(project=self.project)
+        self.assertEqual(adjustment.status, BudgetAdjustmentRequestStatus.SUBMITTED)
+        self.assertEqual(adjustment.amount, Decimal("1000.00"))
+        self.assertFalse(
             ProjectBudgetEntry.objects.filter(
                 project=self.project,
                 entry_type=BudgetEntryType.ADJUST,
-                source_type=RequestType.PROJECT,
-                source_id=self.project.id,
-                amount=Decimal("1000.00"),
             ).exists()
         )
 
-    def test_project_manager_can_add_negative_budget_adjustment(self):
+        self.client.login(username="finance_project_budget", password="testpass123")
+        response = self.client.post(
+            reverse("projects:project_approve_budget_adjustment", args=[self.project.id, adjustment.id]),
+            data={"comment": "Approved"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.project.refresh_from_db()
+        adjustment.refresh_from_db()
+        self.assertEqual(adjustment.status, BudgetAdjustmentRequestStatus.POSTED)
+        self.assertEqual(self.project.get_adjustment_amount(), Decimal("1000.00"))
+        self.assertEqual(self.project.get_effective_budget_amount(), Decimal("11000.00"))
+
+    def test_project_manager_can_submit_negative_budget_adjustment_request(self):
         self.project.project_manager = self.manager
         self.project.save(update_fields=["project_manager"])
 
@@ -422,16 +446,16 @@ class ProjectBudgetLedgerRegressionTest(TestCase):
             reverse("projects:project_add_budget_adjustment", args=[self.project.id]),
             data={
                 "amount": "-500.00",
-                "notes": "Budget reduction",
+                "reason": "Budget reduction requested",
             },
         )
 
         self.assertEqual(response.status_code, 302)
         self.project.refresh_from_db()
 
-        self.assertEqual(self.project.get_adjustment_amount(), Decimal("-500.00"))
-        self.assertEqual(self.project.get_effective_budget_amount(), Decimal("9500.00"))
-        self.assertEqual(self.project.get_available_amount(), Decimal("9500.00"))
+        self.assertEqual(self.project.get_adjustment_amount(), Decimal("0.00"))
+        adjustment = BudgetAdjustmentRequest.objects.get(project=self.project)
+        self.assertEqual(adjustment.amount, Decimal("-500.00"))
 
     def test_visible_but_unauthorized_user_cannot_add_budget_adjustment(self):
         self._create_purchase_with_budget_entries()
