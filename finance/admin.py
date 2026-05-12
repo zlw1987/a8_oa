@@ -7,6 +7,10 @@ from .models import (
     Currency,
     ExchangeRate,
     FXVariancePolicy,
+    AccountingPeriod,
+    DirectProjectCostPolicy,
+    ActualExpenseAttachment,
+    CardAllocationAttachment,
     OverBudgetPolicy,
     ReceiptPolicy,
 )
@@ -48,6 +52,20 @@ class ExchangeRateAdmin(admin.ModelAdmin):
 class FXVariancePolicyAdmin(admin.ModelAdmin):
     list_display = ("policy_code", "policy_name", "currency", "action", "priority", "is_active")
     list_filter = ("currency", "action", "is_active")
+    search_fields = ("policy_code", "policy_name")
+
+
+@admin.register(AccountingPeriod)
+class AccountingPeriodAdmin(admin.ModelAdmin):
+    list_display = ("period_code", "start_date", "end_date", "status", "closed_by", "closed_at")
+    list_filter = ("status", "start_date")
+    search_fields = ("period_code", "notes")
+
+
+@admin.register(DirectProjectCostPolicy)
+class DirectProjectCostPolicyAdmin(admin.ModelAdmin):
+    list_display = ("policy_code", "policy_name", "department", "project", "project_type", "payment_method", "action", "priority", "is_active")
+    list_filter = ("action", "payment_method", "is_active", "department", "project_type")
     search_fields = ("policy_code", "policy_name")
 
 
@@ -104,3 +122,15 @@ class CardTransactionAdmin(admin.ModelAdmin):
 class CardTransactionAllocationAdmin(admin.ModelAdmin):
     list_display = ("card_transaction", "purchase_request", "travel_request", "project", "amount", "policy_action", "created_at")
     list_filter = ("policy_action",)
+
+
+@admin.register(ActualExpenseAttachment)
+class ActualExpenseAttachmentAdmin(admin.ModelAdmin):
+    list_display = ("purchase_actual_spend", "travel_actual_expense", "attachment_type", "uploaded_by", "uploaded_at")
+    list_filter = ("attachment_type",)
+
+
+@admin.register(CardAllocationAttachment)
+class CardAllocationAttachmentAdmin(admin.ModelAdmin):
+    list_display = ("card_transaction", "allocation", "attachment_type", "uploaded_by", "uploaded_at")
+    list_filter = ("attachment_type",)

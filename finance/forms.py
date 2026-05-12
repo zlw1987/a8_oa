@@ -38,6 +38,15 @@ class OverBudgetPolicyForm(forms.ModelForm):
             "priority",
             "is_active",
         ]
+        help_texts = {
+            "priority": "Lower number matches first.",
+            "currency": "Leave blank for a general fallback. Finance reports and budget controls use base currency.",
+            "action": "WARNING allows posting with audit note. REVIEW creates accounting review. AMENDMENT_REQUIRED blocks closeout until resolved. BLOCK prevents posting.",
+            "requires_comment": "Requires accounting/reviewer comment when this policy is applied.",
+            "requires_finance_review": "Creates or routes review work for finance when applicable.",
+            "over_percent_from": "Use decimal form, for example 0.0500 for 5%.",
+            "over_percent_to": "Use decimal form, for example 0.1500 for 15%.",
+        }
 
 
 class ReceiptPolicyForm(forms.ModelForm):
@@ -60,6 +69,15 @@ class ReceiptPolicyForm(forms.ModelForm):
             "priority",
             "is_active",
         ]
+        help_texts = {
+            "priority": "Lower number matches first.",
+            "requires_receipt": "When enabled, missing receipt support creates an accounting review item.",
+            "requires_invoice": "Use for higher-value or AP invoice requirements.",
+            "allows_exception": "If enabled, accounting can approve an exception instead of blocking forever.",
+            "currency": "Leave blank for a general fallback. Amount thresholds compare against base amount unless transaction-specific handling is added.",
+            "amount_from": "Minimum amount where this receipt rule applies.",
+            "amount_to": "Maximum amount where this receipt rule applies.",
+        }
 
 
 class CardTransactionForm(forms.ModelForm):

@@ -19,6 +19,7 @@ from common.choices import (
     DepartmentType,
     UnitOfMeasure,
     CurrencyCode,
+    ActualExpenseEntryType,
 )
 from projects.models import ProjectBudgetEntry
 from accounts.models import UserDepartment
@@ -136,6 +137,25 @@ class PurchaseRequest(models.Model):
     actual_reviewed_at = models.DateTimeField(null=True, blank=True)
     pending_overage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     pending_overage_note = models.TextField(blank=True, default="")
+    reopened_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reopened_purchase_requests",
+    )
+    reopened_at = models.DateTimeField(null=True, blank=True)
+    reopen_reason = models.TextField(blank=True, default="")
+    reclosed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reclosed_purchase_requests",
+    )
+    reclosed_at = models.DateTimeField(null=True, blank=True)
+    correction_reference = models.CharField(max_length=80, blank=True, default="")
+    correction_status = models.CharField(max_length=30, blank=True, default="")
 
 
     class Meta:
@@ -784,6 +804,9 @@ class PurchaseRequest(models.Model):
             raise ValidationError("Actual spend amount must be greater than 0.")
 
         from finance.services import build_money_snapshot
+        from finance.services import enforce_accounting_period_open
+
+        enforce_accounting_period_open(spend_date, action_label="record actual spend", user=acting_user)
 
         snapshot = build_money_snapshot(
             transaction_amount=transaction_amount if transaction_amount is not None else amount,
@@ -942,6 +965,64 @@ class PurchaseRequest(models.Model):
         return actual_spend
 
     @transaction.atomic
+    def record_refund(
+        self,
+        *,
+        original_actual_spend=None,
+        refund_date,
+        amount,
+        acting_user=None,
+        vendor_name="",
+        reference_no="",
+        notes="",
+        entry_type=ActualExpenseEntryType.REFUND,
+    ):
+        from common.permissions import can_perform_accounting_work
+        from finance.services import enforce_accounting_period_open
+
+        if not can_perform_accounting_work(acting_user):
+            raise ValidationError("Only accounting or finance users can record refunds or credits.")
+        if amount <= 0:
+            raise ValidationError("Refund amount must be greater than 0.")
+        enforce_accounting_period_open(refund_date, action_label="record refund or credit", user=acting_user)
+
+        negative_amount = Decimal("0.00") - amount
+        refund = PurchaseActualSpend.objects.create(
+            purchase_request=self,
+            spend_date=refund_date,
+            amount=negative_amount,
+            currency=COMPANY_BASE_CURRENCY,
+            transaction_currency=COMPANY_BASE_CURRENCY,
+            transaction_amount=negative_amount,
+            base_currency=COMPANY_BASE_CURRENCY,
+            base_amount=negative_amount,
+            entry_type=entry_type,
+            original_actual_spend=original_actual_spend,
+            vendor_name=vendor_name,
+            reference_no=reference_no,
+            notes=notes or "Refund / credit recorded.",
+            created_by=acting_user,
+        )
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.CONSUME,
+            source_type=RequestType.PURCHASE,
+            source_id=self.id,
+            amount=negative_amount,
+            currency=COMPANY_BASE_CURRENCY,
+            notes=f"Budget consumption reduced by refund/credit for {self.pr_no}",
+            created_by=acting_user,
+        )
+        self._add_history(
+            action_type=PurchaseRequestActionType.SPEND_RECORDED,
+            from_status=self.status,
+            to_status=self.status,
+            acting_user=acting_user,
+            comment=f"Refund/credit recorded: {COMPANY_BASE_CURRENCY} {negative_amount}.",
+        )
+        return refund
+
+    @transaction.atomic
     def close_purchase(self, acting_user=None, comment=""):
         if self.status != RequestStatus.APPROVED:
             raise ValidationError("Only approved purchase requests can be closed.")
@@ -968,7 +1049,13 @@ class PurchaseRequest(models.Model):
 
         self.status = RequestStatus.CLOSED
         self.fulfillment_status = PurchaseFulfillmentStatus.COMPLETED
-        self.save(update_fields=["status", "fulfillment_status"])
+        update_fields = ["status", "fulfillment_status"]
+        if self.reopened_at:
+            self.reclosed_by = acting_user
+            self.reclosed_at = timezone.now()
+            self.correction_status = "RECLOSED"
+            update_fields += ["reclosed_by", "reclosed_at", "correction_status"]
+        self.save(update_fields=update_fields)
 
         self._add_history(
             action_type=PurchaseRequestActionType.CLOSED,
@@ -980,6 +1067,44 @@ class PurchaseRequest(models.Model):
                 or f"{self.pr_no} closed. Actual spent total: {self.currency} {actual_spent_total}. "
                    f"Unused reserve released: {self.currency} {reserved_remaining}."
             ),
+        )
+
+    @transaction.atomic
+    def reopen_for_correction(self, *, acting_user=None, reason="", correction_reference=""):
+        from common.permissions import can_manage_finance_setup
+        from finance.services import enforce_accounting_period_open
+
+        if self.status != RequestStatus.CLOSED:
+            raise ValidationError("Only closed purchase requests can be reopened for correction.")
+        if not can_manage_finance_setup(acting_user):
+            raise ValidationError("Only finance/admin users can reopen closed purchase requests.")
+        if not reason:
+            raise ValidationError("Reopen reason is required.")
+        enforce_accounting_period_open(timezone.localdate(), action_label="reopen closed request", user=acting_user)
+
+        from_status = self.status
+        self.status = RequestStatus.APPROVED
+        self.reopened_by = acting_user
+        self.reopened_at = timezone.now()
+        self.reopen_reason = reason
+        self.correction_reference = correction_reference or ""
+        self.correction_status = "OPEN"
+        self.save(
+            update_fields=[
+                "status",
+                "reopened_by",
+                "reopened_at",
+                "reopen_reason",
+                "correction_reference",
+                "correction_status",
+            ]
+        )
+        self._add_history(
+            action_type=PurchaseRequestActionType.REOPENED,
+            from_status=from_status,
+            to_status=self.status,
+            acting_user=acting_user,
+            comment=f"Reopened for correction: {reason}",
         )
 
 def purchase_attachment_upload_to(instance, filename):
@@ -1143,6 +1268,18 @@ class PurchaseActualSpend(models.Model):
     exchange_rate_source = models.CharField(max_length=30, blank=True, default="")
     exchange_rate_override_reason = models.TextField(blank=True, default="")
     variance_type = models.CharField(max_length=30, blank=True, default="")
+    entry_type = models.CharField(
+        max_length=30,
+        choices=ActualExpenseEntryType,
+        default=ActualExpenseEntryType.ACTUAL_SPEND,
+    )
+    original_actual_spend = models.ForeignKey(
+        "purchase.PurchaseActualSpend",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="refund_entries",
+    )
     vendor_name = models.CharField(max_length=100, blank=True, default="")
     reference_no = models.CharField(max_length=100, blank=True, default="")
     notes = models.TextField(blank=True, default="")
@@ -1196,4 +1333,5 @@ class PurchaseRequestActionType(models.TextChoices):
     SUBMITTED = "SUBMITTED", "Submitted"
     CANCELLED = "CANCELLED", "Cancelled"
     SPEND_RECORDED = "SPEND_RECORDED", "Actual Spend Recorded"
+    REOPENED = "REOPENED", "Reopened For Correction"
     CLOSED = "CLOSED", "Closed"

@@ -9,7 +9,7 @@ from django.db.models import Sum, Max
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
 
-from common.choices import CurrencyCode, RequestType, BudgetEntryType
+from common.choices import CurrencyCode, RequestType, BudgetEntryType, ActualExpenseEntryType
 from common.currency import COMPANY_BASE_CURRENCY
 from approvals.models import ApprovalTask, ApprovalTaskStatus
 from projects.models import ProjectBudgetEntry
@@ -155,6 +155,7 @@ class TravelRequestHistoryActionType(models.TextChoices):
     REJECTED = "REJECTED", "Rejected"
     APPROVED = "APPROVED", "Approved"
     ACTUAL_EXPENSE_RECORDED = "ACTUAL_EXPENSE_RECORDED", "Actual Expense Recorded"
+    REOPENED = "REOPENED", "Reopened For Correction"
     CLOSED = "CLOSED", "Closed"
 
 
@@ -234,6 +235,25 @@ class TravelRequest(models.Model):
     actual_reviewed_at = models.DateTimeField(null=True, blank=True)
     pending_overage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     pending_overage_note = models.TextField(blank=True, default="")
+    reopened_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reopened_travel_requests",
+    )
+    reopened_at = models.DateTimeField(null=True, blank=True)
+    reopen_reason = models.TextField(blank=True, default="")
+    reclosed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reclosed_travel_requests",
+    )
+    reclosed_at = models.DateTimeField(null=True, blank=True)
+    correction_reference = models.CharField(max_length=80, blank=True, default="")
+    correction_status = models.CharField(max_length=30, blank=True, default="")
 
     class Meta:
         db_table = "PS_A8_TR_HDR"
@@ -637,6 +657,9 @@ class TravelRequest(models.Model):
                 "Approved, In Trip, Expense Pending, or Expense Submitted."
             )
         from finance.services import build_money_snapshot
+        from finance.services import enforce_accounting_period_open
+
+        enforce_accounting_period_open(expense_date, action_label="record actual expense", user=acting_user)
 
         effective_currency = currency or self.currency
         snapshot = build_money_snapshot(
@@ -1149,7 +1172,13 @@ class TravelRequest(models.Model):
         from_status = self.status
         self.refresh_actual_total(commit=False)
         self.status = TravelRequestStatus.CLOSED
-        self.save(update_fields=["actual_total", "status"])
+        update_fields = ["actual_total", "status"]
+        if self.reopened_at:
+            self.reclosed_by = acting_user
+            self.reclosed_at = timezone.now()
+            self.correction_status = "RECLOSED"
+            update_fields += ["reclosed_by", "reclosed_at", "correction_status"]
+        self.save(update_fields=update_fields)
 
         self._add_history(
             action_type=TravelRequestHistoryActionType.CLOSED,
@@ -1161,6 +1190,106 @@ class TravelRequest(models.Model):
 
         from travel.notifications import notify_tr_closed
         transaction.on_commit(lambda: notify_tr_closed(self, comment))
+
+    @transaction.atomic
+    def reopen_for_correction(self, *, acting_user=None, reason="", correction_reference=""):
+        from common.permissions import can_manage_finance_setup
+        from finance.services import enforce_accounting_period_open
+
+        if self.status != TravelRequestStatus.CLOSED:
+            raise ValidationError("Only closed travel requests can be reopened for correction.")
+        if not can_manage_finance_setup(acting_user):
+            raise ValidationError("Only finance/admin users can reopen closed travel requests.")
+        if not reason:
+            raise ValidationError("Reopen reason is required.")
+        enforce_accounting_period_open(timezone.localdate(), action_label="reopen closed request", user=acting_user)
+
+        from_status = self.status
+        self.status = TravelRequestStatus.EXPENSE_PENDING
+        self.reopened_by = acting_user
+        self.reopened_at = timezone.now()
+        self.reopen_reason = reason
+        self.correction_reference = correction_reference or ""
+        self.correction_status = "OPEN"
+        self.save(
+            update_fields=[
+                "status",
+                "reopened_by",
+                "reopened_at",
+                "reopen_reason",
+                "correction_reference",
+                "correction_status",
+            ]
+        )
+        self._add_history(
+            action_type=TravelRequestHistoryActionType.REOPENED,
+            from_status=from_status,
+            to_status=self.status,
+            acting_user=acting_user,
+            comment=f"Reopened for correction: {reason}",
+        )
+
+    @transaction.atomic
+    def record_refund(
+        self,
+        *,
+        original_actual_expense=None,
+        refund_date,
+        amount,
+        acting_user=None,
+        vendor_name="",
+        reference_no="",
+        notes="",
+        entry_type=ActualExpenseEntryType.REFUND,
+    ):
+        from common.permissions import can_perform_accounting_work
+        from finance.services import enforce_accounting_period_open
+
+        if not can_perform_accounting_work(acting_user):
+            raise ValidationError("Only accounting or finance users can record refunds or credits.")
+        if amount <= 0:
+            raise ValidationError("Refund amount must be greater than 0.")
+        enforce_accounting_period_open(refund_date, action_label="record refund or credit", user=acting_user)
+
+        next_line_no = (self.actual_expense_lines.aggregate(max_line_no=Max("line_no"))["max_line_no"] or 0) + 1
+        negative_amount = Decimal("0.00") - amount
+        refund = TravelActualExpenseLine.objects.create(
+            travel_request=self,
+            line_no=next_line_no,
+            expense_type=TravelActualExpenseType.MISC,
+            expense_date=refund_date,
+            actual_amount=negative_amount,
+            currency=COMPANY_BASE_CURRENCY,
+            transaction_currency=COMPANY_BASE_CURRENCY,
+            transaction_amount=negative_amount,
+            base_currency=COMPANY_BASE_CURRENCY,
+            base_amount=negative_amount,
+            entry_type=entry_type,
+            original_actual_expense=original_actual_expense,
+            vendor_name=vendor_name,
+            reference_no=reference_no,
+            notes=notes or "Refund / credit recorded.",
+            created_by=acting_user,
+        )
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.CONSUME,
+            source_type=RequestType.TRAVEL,
+            source_id=self.id,
+            amount=negative_amount,
+            currency=COMPANY_BASE_CURRENCY,
+            notes=f"Budget consumption reduced by refund/credit for {self.travel_no}",
+            created_by=acting_user,
+        )
+        self.refresh_actual_total(commit=True)
+        self._add_history(
+            action_type=TravelRequestHistoryActionType.ACTUAL_EXPENSE_RECORDED,
+            from_status=self.status,
+            to_status=self.status,
+            acting_user=acting_user,
+            comment=f"Refund/credit recorded: {COMPANY_BASE_CURRENCY} {negative_amount}.",
+        )
+        return refund
 
     def get_actual_total(self):
         total = self.actual_expense_lines.aggregate(total=Sum("actual_amount"))["total"]
@@ -1447,6 +1576,18 @@ class TravelActualExpenseLine(models.Model):
     exchange_rate_source = models.CharField(max_length=30, blank=True, default="")
     exchange_rate_override_reason = models.TextField(blank=True, default="")
     variance_type = models.CharField(max_length=30, blank=True, default="")
+    entry_type = models.CharField(
+        max_length=30,
+        choices=ActualExpenseEntryType,
+        default=ActualExpenseEntryType.ACTUAL_SPEND,
+    )
+    original_actual_expense = models.ForeignKey(
+        "travel.TravelActualExpenseLine",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="refund_entries",
+    )
     estimated_expense_line = models.ForeignKey(
         "travel.TravelEstimatedExpenseLine",
         null=True,

@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
@@ -9,6 +10,7 @@ from approvals.models import ApprovalTask
 from common.choices import ApprovalTaskStatus, RequestStatus
 from purchase.models import PurchaseRequest
 from travel.models import TravelRequest, TravelRequestStatus
+from accounts.models import Department
 from approvals.dashboard import get_approval_summary_for_user
 from finance.models import (
     AccountingReviewItem,
@@ -21,6 +23,10 @@ from finance.models import (
 from finance.presentation import OPEN_STATUS_FILTER
 from projects.models import Project
 from projects.access import user_can_create_project
+from common.currency import COMPANY_BASE_CURRENCY
+from common.permissions import ROLE_PERMISSION_MATRIX, can_view_system_setup
+from finance.models import Currency, ExchangeRate, FXVariancePolicy, OverBudgetPolicy, ReceiptPolicy
+from approvals.models import ApprovalRule
 
 def _get_request_detail_url(task):
     request_obj = task.get_request_object()
@@ -462,3 +468,77 @@ def home(request):
         "dashboard_sections": _build_role_dashboard_sections(request.user),
     }
     return render(request, "dashboard/home.html", context)
+
+
+def _setup_card(label, value, url="", tone="neutral", description=""):
+    return {
+        "label": label,
+        "value": value,
+        "url": url,
+        "tone": tone,
+        "description": description,
+    }
+
+
+@login_required
+def system_setup(request):
+    if not can_view_system_setup(request.user):
+        raise PermissionDenied("You do not have permission to view System Setup.")
+
+    active_currencies = list(Currency.objects.filter(is_active=True).order_by("code").values_list("code", flat=True))
+    setup_cards = [
+        _setup_card("Base Currency", COMPANY_BASE_CURRENCY, description="Used for budget control and finance reports."),
+        _setup_card("Active Currencies", ", ".join(active_currencies) if active_currencies else "Not configured", tone="warning" if not active_currencies else "neutral"),
+        _setup_card("Departments", Department.objects.count(), reverse("accounts:department_list")),
+        _setup_card("Projects", Project.objects.count(), reverse("projects:project_list")),
+        _setup_card("Approval Rules", ApprovalRule.objects.filter(is_active=True).count(), reverse("approvals:rule_list")),
+        _setup_card("Over-Budget Policies", OverBudgetPolicy.objects.filter(is_active=True).count(), reverse("finance:over_budget_policy_list")),
+        _setup_card("Receipt Policies", ReceiptPolicy.objects.filter(is_active=True).count(), reverse("finance:receipt_policy_list")),
+        _setup_card("FX Variance Policies", FXVariancePolicy.objects.filter(is_active=True).count(), reverse("admin:finance_fxvariancepolicy_changelist")),
+        _setup_card("Exchange Rates", ExchangeRate.objects.count(), reverse("admin:finance_exchangerate_changelist")),
+        _setup_card("Current Version", "V0.6 / V1.1A foundation", reverse("dashboard:system_setup")),
+        _setup_card("Seed Finance Defaults", "Manual command", "", description="Run seed_finance_defaults from the server when setup data needs to be refreshed."),
+        _setup_card("Static / Media Check", "Review deployment", "", description="Confirm static and media paths during deployment checklist."),
+    ]
+    setup_sections = [
+        {
+            "title": "User & Permission Setup",
+            "links": [
+                {"label": "Departments", "url": reverse("accounts:department_list")},
+                {"label": "Projects", "url": reverse("projects:project_list")},
+                {"label": "Django Admin Users / Groups", "url": reverse("admin:auth_user_changelist")},
+            ],
+        },
+        {
+            "title": "Approval And Finance Policy",
+            "links": [
+                {"label": "Approval Rules", "url": reverse("approvals:rule_list")},
+                {"label": "Over-Budget Policies", "url": reverse("finance:over_budget_policy_list")},
+                {"label": "Receipt Policies", "url": reverse("finance:receipt_policy_list")},
+                {"label": "FX Variance Policies", "url": reverse("admin:finance_fxvariancepolicy_changelist")},
+            ],
+        },
+        {
+            "title": "Currency And Exchange Rates",
+            "links": [
+                {"label": "Currencies", "url": reverse("admin:finance_currency_changelist")},
+                {"label": "Exchange Rates", "url": reverse("admin:finance_exchangerate_changelist")},
+            ],
+        },
+        {
+            "title": "System Health",
+            "links": [
+                {"label": "Finance Reports", "url": reverse("finance:finance_reports")},
+                {"label": "Django Admin", "url": reverse("admin:index")},
+            ],
+        },
+    ]
+    return render(
+        request,
+        "dashboard/system_setup.html",
+        {
+            "setup_cards": setup_cards,
+            "setup_sections": setup_sections,
+            "role_permission_matrix": ROLE_PERMISSION_MATRIX,
+        },
+    )

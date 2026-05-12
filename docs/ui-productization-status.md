@@ -276,6 +276,27 @@ Main dashboard behavior:
 - System admins see setup shortcuts.
 - Dashboard cards link to the relevant worklist or filtered queue where the user has permission.
 
+## V1.1A Setup UX Completed
+
+System Setup is now a real internal landing page instead of a duplicate Django Admin link.
+
+Changed areas:
+
+- `dashboard/views.py`
+- `dashboard/urls.py`
+- `dashboard/templates/dashboard/system_setup.html`
+- `common/navigation.py`
+- `common/permissions.py`
+- `static/css/app.css`
+
+Main behavior:
+
+- Admin dropdown separates Django Admin from System Setup.
+- System Setup shows setup shortcuts, status cards, current version, and role/permission matrix.
+- Setup visibility uses shared permission helpers.
+- Approval Rule Step Editor uses step cards/accordion instead of a wide editable table.
+- Finance Reports include CSV export.
+
 ## User Guide Maintenance Rule
 
 When UI or workflow behavior changes, update the formal user guides directly:

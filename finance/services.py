@@ -17,6 +17,10 @@ from .models import (
     AccountingReviewStatus,
     CardTransactionAllocation,
     CardTransactionMatchStatus,
+    AccountingPeriod,
+    AccountingPeriodStatus,
+    DirectProjectCostAction,
+    DirectProjectCostPolicy,
     ExchangeRate,
     ExchangeRateSource,
     FXVarianceAction,
@@ -27,6 +31,7 @@ from .models import (
     ReceiptPolicy,
     VarianceType,
 )
+from common.permissions import can_manage_finance_setup, can_perform_accounting_work
 
 
 OPEN_REVIEW_STATUSES = [
@@ -99,6 +104,40 @@ def _money(value):
 
 def _percent(value):
     return (value or Decimal("0.0000")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+
+def get_accounting_period_for_date(value):
+    if not value:
+        return None
+    return AccountingPeriod.objects.filter(start_date__lte=value, end_date__gte=value).order_by("-start_date").first()
+
+
+def enforce_accounting_period_open(value, *, action_label="modify financial record", user=None, allow_finance_override=False, reason=""):
+    period = get_accounting_period_for_date(value)
+    if not period or period.status != AccountingPeriodStatus.CLOSED:
+        return period
+    if allow_finance_override and can_manage_finance_setup(user) and reason:
+        return period
+    raise ValidationError(f"Cannot {action_label} in closed accounting period {period.period_code}.")
+
+
+def resolve_direct_project_cost_policy(*, project, amount, payment_method=PaymentMethod.COMPANY_CARD, currency=COMPANY_BASE_CURRENCY):
+    queryset = DirectProjectCostPolicy.objects.filter(is_active=True).order_by("priority", "policy_code", "id")
+    department = getattr(project, "owning_department", None)
+    project_type = getattr(project, "project_type", "")
+    queryset = queryset.filter(payment_method__in=[PaymentMethod.ALL, payment_method])
+    queryset = queryset.filter(department__isnull=True) | queryset.filter(department=department)
+    queryset = queryset.filter(project__isnull=True) | queryset.filter(project=project)
+    queryset = queryset.filter(project_type__in=["", project_type])
+    queryset = queryset.filter(currency__in=["", currency or COMPANY_BASE_CURRENCY])
+    amount = _money(amount)
+    for policy in queryset:
+        if policy.amount_from is not None and amount < policy.amount_from:
+            continue
+        if policy.amount_to is not None and amount > policy.amount_to:
+            continue
+        return policy
+    return None
 
 
 def get_request_type(request_obj):
@@ -499,6 +538,17 @@ def _request_has_attachment_for_receipt_policy(request_obj):
     return attachments.exclude(document_type="ACCOUNTING_APPROVAL").exists()
 
 
+def _actual_expense_has_line_attachment(actual_expense, *, requires_invoice=False):
+    if actual_expense is None:
+        return False
+    links = getattr(actual_expense, "line_attachments", None)
+    if links is None:
+        return False
+    if requires_invoice:
+        return links.filter(attachment_type="INVOICE").exists()
+    return links.filter(attachment_type__in=["RECEIPT", "INVOICE"]).exists()
+
+
 def _receipt_review_exists(result, actual_expense=None, card_transaction=None, card_allocation=None):
     queryset = AccountingReviewItem.objects.filter(
         reason=AccountingReviewReason.MISSING_RECEIPT,
@@ -524,7 +574,9 @@ def apply_receipt_policy_result(
     card_allocation=None,
     acting_user=None,
 ):
-    if not result.requires_review or _request_has_attachment_for_receipt_policy(result.request_obj):
+    if not result.requires_review:
+        return None
+    if _actual_expense_has_line_attachment(actual_expense, requires_invoice=result.requires_invoice):
         return None
     if _receipt_review_exists(result, actual_expense, card_transaction, card_allocation):
         return None
@@ -883,6 +935,13 @@ def allocate_card_transaction(
     notes="",
 ):
     amount = _money(amount)
+    if not can_perform_accounting_work(acting_user):
+        raise ValidationError("Only accounting or finance users can allocate company card transactions.")
+    enforce_accounting_period_open(
+        card_transaction.transaction_date,
+        action_label="change card allocation",
+        user=acting_user,
+    )
     if amount > card_transaction.get_unallocated_amount():
         raise ValidationError("Allocation amount cannot exceed the unallocated card transaction amount.")
 
@@ -976,6 +1035,30 @@ def allocate_card_transaction(
                 card_allocation=allocation,
             )
     elif project is not None:
+        direct_policy = resolve_direct_project_cost_policy(
+            project=project,
+            amount=amount,
+            payment_method=PaymentMethod.COMPANY_CARD,
+            currency=card_transaction.base_currency,
+        )
+        direct_action = direct_policy.action if direct_policy else DirectProjectCostAction.REVIEW
+        if direct_action == DirectProjectCostAction.BLOCK:
+            raise ValidationError("Direct project cost is blocked by finance policy.")
+        allocation.direct_project_cost_policy = direct_policy
+        allocation.direct_project_cost_action = direct_action
+        allocation.project_owner_review_status = (
+            "PENDING_REVIEW"
+            if direct_action == DirectProjectCostAction.REQUIRE_PROJECT_OWNER_APPROVAL
+            or (direct_policy and direct_policy.requires_project_owner_review)
+            else ""
+        )
+        allocation.save(
+            update_fields=[
+                "direct_project_cost_policy",
+                "direct_project_cost_action",
+                "project_owner_review_status",
+            ]
+        )
         allocated_transaction_amount = amount
         if card_transaction.base_amount:
             allocated_transaction_amount = _money(card_transaction.transaction_amount * amount / card_transaction.base_amount)
@@ -993,6 +1076,23 @@ def allocate_card_transaction(
             notes=f"Company card transaction {card_transaction.reference_no} allocated directly to project.",
             created_by=acting_user,
         )
+        if direct_action in [DirectProjectCostAction.REVIEW, DirectProjectCostAction.REQUIRE_PROJECT_OWNER_APPROVAL]:
+            AccountingReviewItem.objects.create(
+                source_type="CARD_ALLOCATION",
+                card_transaction=card_transaction,
+                card_allocation=allocation,
+                reason=AccountingReviewReason.DIRECT_PROJECT_COST,
+                status=AccountingReviewStatus.PENDING_REVIEW,
+                direct_project_cost_policy=direct_policy,
+                policy_action=direct_action,
+                amount=amount,
+                title=f"Direct project cost review for {project.project_code}",
+                description=(
+                    "Company card allocation was posted directly to a project. "
+                    "Review policy result, receipt support, and project owner approval requirements."
+                ),
+                created_by=acting_user,
+            )
 
     card_transaction.refresh_match_status()
     return allocation

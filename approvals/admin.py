@@ -8,6 +8,8 @@ from .models import (
     ApprovalTaskCandidate,
     ApprovalTaskHistory,
     ApprovalNotificationLog,
+    ApprovalDelegation,
+    ApprovalEscalationPolicy,
 )
 
 @admin.register(ApprovalNotificationLog)
@@ -49,6 +51,20 @@ class ApprovalNotificationLogAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(ApprovalDelegation)
+class ApprovalDelegationAdmin(admin.ModelAdmin):
+    list_display = ("original_approver", "delegate_user", "start_date", "end_date", "department", "request_type", "is_active")
+    list_filter = ("is_active", "request_type", "department", "start_date", "end_date")
+    search_fields = ("original_approver__username", "delegate_user__username")
+
+
+@admin.register(ApprovalEscalationPolicy)
+class ApprovalEscalationPolicyAdmin(admin.ModelAdmin):
+    list_display = ("request_type", "step_type", "overdue_days", "escalate_to_role", "escalate_to_user", "is_active")
+    list_filter = ("request_type", "step_type", "is_active")
+    search_fields = ("escalate_to_role", "escalate_to_user__username")
 
 @admin.action(description="Claim selected tasks to me")
 def claim_selected_tasks(modeladmin, request, queryset):

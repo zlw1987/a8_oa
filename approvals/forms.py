@@ -22,6 +22,14 @@ class ApprovalRuleForm(forms.ModelForm):
             "priority",
             "is_active",
         ]
+        help_texts = {
+            "priority": "Lower number matches first.",
+            "is_general_fallback": "Used only when no more specific active rule matches. It cannot be limited by department, amount, requester level, or requester.",
+            "amount_from": "Minimum request amount for this rule. Leave blank for no lower bound.",
+            "amount_to": "Maximum request amount for this rule. Leave blank for no upper bound.",
+            "requester_level": "Optional requester level condition.",
+            "specific_requester": "Optional requester-specific rule. Avoid using this for normal department workflows.",
+        }
 
     def clean(self):
         cleaned_data = super().clean()
@@ -64,6 +72,14 @@ class ApprovalRuleStepForm(forms.ModelForm):
             "sla_days",
             "is_active",
         ]
+        help_texts = {
+            "step_no": "Active steps must be continuous starting from 1.",
+            "approver_type": "Determines how the approver or approval pool is selected.",
+            "approver_user": "Required only when Approver Type is Specific User.",
+            "approver_department": "Required only when Approver Type is Department Approver.",
+            "allow_self_skip": "Allows a step to be skipped when the approver would be the requester. It does not allow requester self-approval.",
+            "sla_days": "Used for due dates, reminders, aging, and escalation reporting.",
+        }
 
     def clean(self):
         cleaned_data = super().clean()

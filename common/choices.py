@@ -33,6 +33,14 @@ class BudgetEntryType(models.TextChoices):
     ADJUST = "ADJUST", "Adjust"
 
 
+class ActualExpenseEntryType(models.TextChoices):
+    ACTUAL_SPEND = "ACTUAL_SPEND", "Actual Spend"
+    REFUND = "REFUND", "Refund"
+    CREDIT_MEMO = "CREDIT_MEMO", "Credit Memo"
+    REVERSAL = "REVERSAL", "Reversal"
+    ADJUSTMENT = "ADJUSTMENT", "Adjustment"
+
+
 class ApprovalTaskStatus(models.TextChoices):
     WAITING = "WAITING", "Waiting"
     POOL = "POOL", "Pool"

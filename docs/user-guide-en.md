@@ -62,6 +62,22 @@ List and setup pages follow a consistent layout:
 
 Create, New, Add, and Import actions are page-level actions. They are not part of the Filters panel.
 
+## 3.1 System Setup
+
+System Setup is a business setup hub. It is separate from Django Admin.
+
+System Setup shows:
+
+- Base currency and active currencies.
+- Departments, projects, approval rules, and finance policy status.
+- Currency, exchange-rate, and FX variance policy shortcuts.
+- Current version and setup health notes.
+- Role / permission matrix.
+
+Normal requesters cannot access System Setup.
+
+Finance/Admin users can use System Setup to navigate setup areas without treating Django Admin as the main business UI.
+
 ## 4. Purchase Request Flow
 
 ### 4.1 Create A Purchase Request
@@ -479,6 +495,8 @@ Available reports include:
 - Company card unmatched transaction report.
 - Accounting review aging report.
 
+Use Export CSV to download a finance report extract. The export includes base currency amount columns and original transaction currency columns where available.
+
 These reports are operational tables for daily use and UAT, not advanced BI dashboards.
 
 Money values on Finance Reports always show:
@@ -498,6 +516,22 @@ Company card foreign transactions use the card statement posted USD amount as th
 PR/TR detail pages show actual expenses with both base amount and original transaction amount when foreign-currency data is available.
 
 If a foreign-currency actual expense exceeds the approved USD base amount only because the exchange rate changed, the system can classify it as FX Variance instead of ordinary spending overrun. If the original transaction amount also increased, it is treated as spending overrun.
+
+## 11.1 Financial Integrity Controls
+
+Accounting periods can be configured as Open, Closing, or Closed.
+
+When a period is Closed, ordinary financial changes in that period are blocked, including actual expense posting and card allocation changes. Finance/Admin adjustment handling is controlled separately.
+
+Refunds and credits are recorded as separate negative actual entries. The original actual expense remains visible, and the refund reduces consumed budget through a negative budget ledger entry.
+
+Closed PR/TR records can only be reopened for correction by Finance/Admin users. Reopen requires a reason, writes history, and reclose runs the normal closeout validation again.
+
+Line-level receipt matching is supported at the data-control level. Receipt and invoice support can be linked to the actual expense line instead of relying only on request-level attachments.
+
+Direct project cost allocation from company card transactions is policy controlled. Finance can configure whether direct project cost is allowed, reviewed, requires project owner approval, or blocked.
+
+Approval delegation can be configured for approvers by date range. Delegation does not allow requester self-approval.
 
 ## 12. Finance Policy Setup
 

@@ -1,4 +1,5 @@
 from datetime import timedelta
+import csv
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -9,6 +10,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.http import HttpResponse
 
 from .forms import (
     AccountingReviewDecisionForm,
@@ -18,6 +20,7 @@ from .forms import (
     OverBudgetPolicyForm,
     ReceiptPolicyForm,
 )
+from common.permissions import can_manage_finance_setup, can_perform_accounting_work
 from .models import (
     AccountingReviewItem,
     AccountingReviewStatus,
@@ -46,12 +49,12 @@ from .services import (
 
 
 def _enforce_finance_setup_permission(user):
-    if not user.is_authenticated or not user.is_staff:
+    if not can_manage_finance_setup(user):
         raise PermissionDenied("You do not have permission to manage finance setup.")
 
 
 def _enforce_accounting_permission(user):
-    if not user.is_authenticated or not user.is_staff:
+    if not can_perform_accounting_work(user):
         raise PermissionDenied("You do not have permission to perform accounting actions.")
 
 
@@ -451,4 +454,40 @@ def card_transaction_mark_reviewed(request, pk):
 @login_required
 def finance_reports(request):
     _enforce_accounting_permission(request.user)
-    return render(request, "finance/reports.html", build_finance_report_context())
+    context = build_finance_report_context()
+    if request.GET.get("export") == "csv":
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="finance_reports.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Report", "Key", "Description", "Base Currency", "Amount", "Transaction Currency", "Transaction Amount"])
+        for row in context["project_budget_rows"]:
+            writer.writerow(["Project Budget", row["project"].project_code, "Budget", row["currency"], row["budget"], "", ""])
+            writer.writerow(["Project Budget", row["project"].project_code, "Reserved", row["currency"], row["reserved"], "", ""])
+            writer.writerow(["Project Budget", row["project"].project_code, "Consumed", row["currency"], row["consumed"], "", ""])
+            writer.writerow(["Project Budget", row["project"].project_code, "Available", row["currency"], row["available"], "", ""])
+        for row in context["department_spending_rows"]:
+            writer.writerow(["Department Spending", row["department"].dept_code, "Consumed", row["currency"], row["consumed"], "", ""])
+        for row in context["open_reserve_rows"]:
+            writer.writerow(["Open Reserve", row["type"], getattr(row["request"], "pr_no", "") or getattr(row["request"], "travel_no", ""), row["currency"], row["remaining"], "", ""])
+        for item in context["over_budget_items"]:
+            writer.writerow([
+                "Over-Budget Exception",
+                item.title,
+                item.get_status_display(),
+                item.report_currency,
+                item.report_amount,
+                item.transaction_currency,
+                item.transaction_amount,
+            ])
+        for transaction in context["unmatched_card_transactions"]:
+            writer.writerow([
+                "Unmatched Card",
+                transaction.reference_no,
+                transaction.merchant_name,
+                transaction.base_currency,
+                transaction.base_amount,
+                transaction.transaction_currency,
+                transaction.transaction_amount,
+            ])
+        return response
+    return render(request, "finance/reports.html", context)

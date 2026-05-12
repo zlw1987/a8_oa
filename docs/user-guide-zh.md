@@ -61,6 +61,22 @@ Dashboard 会按优先级分区：
 
 Create、New、Add、Import 这类创建动作是页面级操作，不应放在 Filters 区域。
 
+### 3.1 System Setup
+
+System Setup 是业务设置中心，和 Django Admin 分开。
+
+System Setup 会显示：
+
+- Base Currency 和 Active Currencies。
+- Departments、Projects、Approval Rules 和 Finance Policy 配置状态。
+- Currency、Exchange Rate、FX Variance Policy 快捷入口。
+- 当前版本和 setup health 信息。
+- Role / Permission Matrix。
+
+普通申请人不能访问 System Setup。
+
+Finance/Admin 用户可以通过 System Setup 进入常用设置页面，不需要把 Django Admin 当成主要业务入口。
+
 ## 4. 采购申请流程
 
 ### 4.1 创建采购申请
@@ -215,6 +231,8 @@ Unallocated Amount 是最重要的数字，表示还未分配的金额。
 - Company Card Unmatched Transactions。
 - Accounting Review Aging。
 
+可以使用 Export CSV 下载报表。导出会包含基准币金额字段，并在有资料时包含原始交易币种和原始交易金额字段。
+
 所有金额会统一显示：
 
 - 币种代码。
@@ -232,6 +250,22 @@ Unallocated Amount 是最重要的数字，表示还未分配的金额。
 PR/TR 详情页的实际费用会显示基准金额，也会在有外币资料时显示原始交易金额。
 
 如果外币实际费用超过批准 USD 基准金额只是因为汇率变化，系统可以识别为 FX Variance，而不是普通超支。如果原始交易金额本身也增加，则按 Spending Overrun 处理。
+
+### 11.1 财务完整性控制
+
+Accounting Period 可以配置为 Open、Closing 或 Closed。
+
+当期间为 Closed 时，系统会阻止该期间内的普通财务修改，例如实际费用入账和公司卡分配变更。Finance/Admin 的调整处理会走单独控制。
+
+退款和贷项会作为独立的负数实际费用记录，不会删除原始实际费用。退款会通过负数预算 ledger entry 减少 consumed budget。
+
+已关闭的 PR/TR 只能由 Finance/Admin 重新打开进行 correction。Reopen 必须填写原因，会写入历史记录，重新关闭时仍会执行 closeout validation。
+
+系统已支持实际费用行级别的 receipt/invoice 关联数据结构。收据和发票可以关联到具体 actual expense line，而不是只依赖 request-level attachment。
+
+公司卡直接分配到 Project Direct Cost 会受政策控制。Finance 可以配置允许、复核、需要项目负责人审批或阻止。
+
+审批 delegation 可以按日期范围配置。Delegation 不允许 requester self-approval。
 
 ## 12. 设置页面
 

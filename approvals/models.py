@@ -139,6 +139,73 @@ class ApprovalTaskActionType(models.TextChoices):
     REJECTED = "REJECTED", "Rejected"
     RETURNED = "RETURNED", "Returned"
     CANCELLED = "CANCELLED", "Cancelled"
+    REASSIGNED = "REASSIGNED", "Reassigned"
+    DELEGATED = "DELEGATED", "Delegated"
+
+
+class ApprovalDelegation(models.Model):
+    original_approver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="approval_delegations_from",
+    )
+    delegate_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="approval_delegations_to",
+    )
+    start_date = models.DateField()
+    end_date = models.DateField()
+    department = models.ForeignKey(
+        "accounts.Department",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="approval_delegations",
+    )
+    request_type = models.CharField(max_length=20, choices=RequestType, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_approval_delegations",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "PS_A8_AP_DELEG"
+        verbose_name = "Approval Delegation"
+        verbose_name_plural = "Approval Delegations"
+        ordering = ["-start_date", "original_approver"]
+
+    def clean(self):
+        super().clean()
+        if self.original_approver_id and self.delegate_user_id and self.original_approver_id == self.delegate_user_id:
+            raise ValidationError("Delegate user must be different from original approver.")
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValidationError("Delegation start date cannot be after end date.")
+
+
+class ApprovalEscalationPolicy(models.Model):
+    request_type = models.CharField(max_length=20, choices=RequestType, blank=True, default="")
+    step_type = models.CharField(max_length=30, choices=ApproverType, blank=True, default="")
+    overdue_days = models.PositiveIntegerField(default=2)
+    escalate_to_role = models.CharField(max_length=80, blank=True, default="")
+    escalate_to_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approval_escalation_targets",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "PS_A8_AP_ESC_POL"
+        verbose_name = "Approval Escalation Policy"
+        verbose_name_plural = "Approval Escalation Policies"
 
 
 class ApprovalTask(models.Model):
@@ -316,7 +383,16 @@ class ApprovalTask(models.Model):
         )
 
     def can_user_claim(self, user):
-        return self.candidates.filter(user=user, is_active=True).exists()
+        if self.candidates.filter(user=user, is_active=True).exists():
+            return True
+        today = timezone.localdate()
+        return ApprovalDelegation.objects.filter(
+            original_approver__in=self.candidates.filter(is_active=True).values_list("user", flat=True),
+            delegate_user=user,
+            start_date__lte=today,
+            end_date__gte=today,
+            is_active=True,
+        ).exists()
 
     @transaction.atomic
     def claim(self, user):
@@ -325,6 +401,9 @@ class ApprovalTask(models.Model):
 
         if not self.can_user_claim(user):
             raise ValidationError("You are not a candidate for this task.")
+        requester = self.request_requester
+        if requester and requester.id == user.id:
+            raise ValidationError("Requester self-approval is not allowed.")
 
         from_status = self.status
         from_assignee = self.assigned_user
@@ -503,6 +582,15 @@ class ApprovalTask(models.Model):
             raise ValidationError(
                 f"Unable to resolve approver for step {self.step_no} - {self.step_name}."
             )
+        today = timezone.localdate()
+        delegation = ApprovalDelegation.objects.filter(
+            original_approver=assigned_user,
+            start_date__lte=today,
+            end_date__gte=today,
+            is_active=True,
+        ).first()
+        if delegation:
+            assigned_user = delegation.delegate_user
 
         self.assigned_user = assigned_user
         self.status = ApprovalTaskStatus.PENDING
@@ -518,6 +606,35 @@ class ApprovalTask(models.Model):
             from_assignee=from_assignee,
             to_assignee=assigned_user,
             comment=f"Task activated and assigned to {assigned_user}.",
+        )
+
+    @transaction.atomic
+    def reassign(self, *, acting_user, new_assignee, reason):
+        from common.permissions import can_manage_finance_setup
+
+        if not can_manage_finance_setup(acting_user):
+            raise ValidationError("Only admin/finance users can reassign approval tasks.")
+        if not reason:
+            raise ValidationError("Reassignment reason is required.")
+        requester = self.request_requester
+        if requester and requester.id == new_assignee.id:
+            raise ValidationError("Requester self-approval is not allowed.")
+        if self.status not in [ApprovalTaskStatus.PENDING, ApprovalTaskStatus.POOL]:
+            raise ValidationError("Only open approval tasks can be reassigned.")
+
+        from_status = self.status
+        from_assignee = self.assigned_user
+        self.assigned_user = new_assignee
+        self.status = ApprovalTaskStatus.PENDING
+        self.save(update_fields=["assigned_user", "status"])
+        self._add_history(
+            action_type=ApprovalTaskActionType.REASSIGNED,
+            action_by=acting_user,
+            from_status=from_status,
+            to_status=self.status,
+            from_assignee=from_assignee,
+            to_assignee=new_assignee,
+            comment=reason,
         )
 
     def _get_next_task(self):

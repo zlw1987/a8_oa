@@ -8,6 +8,10 @@ The current version includes V0.5 business-control completion and the V0.6 multi
 
 - Cleaned up Accounting Review Queue filters with visible labels, Basic/Advanced sections, tab counts, preserved-tab reset behavior, and clearer empty states.
 - Stabilized Dashboard information hierarchy with My Work Today, Approval Summary, My Requests, oversight, and collapsible setup sections.
+- Added V1.1A System Setup landing page, shared role/permission helpers, and Admin dropdown cleanup.
+- Added V1.1B/V1.1C foundation models for accounting periods, refund/correction, line-level receipt links, direct project cost policy, and approval delegation/escalation.
+- Added Finance Reports CSV export with base and transaction currency columns.
+- Converted Approval Rule Step Editor from a wide table into step cards/accordion sections.
 - Restored the Dashboard `Approval Summary` section title for regression compatibility.
 - Unified Create Project visibility through `projects.access.user_can_create_project` and added a permission-aware Create Project link under Setup navigation.
 - Added horizontal containment for the Approval Steps editor so wide formsets no longer overflow the card.
@@ -93,3 +97,9 @@ V0.6 multi-currency foundation is implemented at model/service/UI-documentation 
 - Finance Reports are base-currency reports.
 
 See [V0.6 Multi-Currency Foundation](v0.6-multi-currency-foundation.md).
+
+## V1.1 Roadmap Progress
+
+The selected production-control roadmap has started. The current implementation includes V1.1A foundation plus model/service foundations for V1.1B and V1.1C.
+
+See [V1.1 Production Control Roadmap](v1.1-production-control-roadmap.md).

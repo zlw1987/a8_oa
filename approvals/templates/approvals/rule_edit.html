@@ -38,91 +38,46 @@
         </div>
         {% endif %}
 
-        <div class="table-scroll">
-        <table class="data-table approval-steps-table">
-            <thead>
-                <tr>
-                    <th>Step No</th>
-                    <th>Step Name</th>
-                    <th>Approver Type</th>
-                    <th>Approver User</th>
-                    <th>Approver Department</th>
-                    <th>Approver Level</th>
-                    <th>Required</th>
-                    <th>Allow Self Skip</th>
-                    <th>SLA Days</th>
-                    <th>Active</th>
-                    <th>Delete</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for step_form in formset %}
-                <tr>
-                    {% for hidden in step_form.hidden_fields %}
-                    {{ hidden }}
-                    {% endfor %}
-
-                    <td>
-                        {{ step_form.step_no }}
-                        {% for error in step_form.step_no.errors %}
-                        <div class="message error">{{ error }}</div>
-                        {% endfor %}
-                    </td>
-                    <td>
-                        {{ step_form.step_name }}
-                        {% for error in step_form.step_name.errors %}
-                        <div class="message error">{{ error }}</div>
-                        {% endfor %}
-                    </td>
-                    <td>
-                        {{ step_form.approver_type }}
-                        {% for error in step_form.approver_type.errors %}
-                        <div class="message error">{{ error }}</div>
-                        {% endfor %}
-                    </td>
-                    <td>
-                        {{ step_form.approver_user }}
-                        {% for error in step_form.approver_user.errors %}
-                        <div class="message error">{{ error }}</div>
-                        {% endfor %}
-                    </td>
-                    <td>
-                        {{ step_form.approver_department }}
-                        {% for error in step_form.approver_department.errors %}
-                        <div class="message error">{{ error }}</div>
-                        {% endfor %}
-                    </td>
-                    <td>
-                        {{ step_form.approver_level }}
-                        {% for error in step_form.approver_level.errors %}
-                        <div class="message error">{{ error }}</div>
-                        {% endfor %}
-                    </td>
-                    <td>{{ step_form.is_required }}</td>
-                    <td>{{ step_form.allow_self_skip }}</td>
-                    <td>
-                        {{ step_form.sla_days }}
-                        {% for error in step_form.sla_days.errors %}
-                        <div class="message error">{{ error }}</div>
-                        {% endfor %}
-                    </td>
-                    <td>{{ step_form.is_active }}</td>
-                    <td>{{ step_form.DELETE }}</td>
-                </tr>
-                {% if step_form.non_field_errors %}
-                <tr>
-                    <td colspan="11">
-                        <div class="message error">
-                            {% for error in step_form.non_field_errors %}
-                            <div>{{ error }}</div>
-                            {% endfor %}
-                        </div>
-                    </td>
-                </tr>
-                {% endif %}
+        <div class="approval-step-editor">
+            {% for step_form in formset %}
+            <details class="approval-step-card" open>
+                <summary>Step {{ forloop.counter }}{% if step_form.step_name.value %}: {{ step_form.step_name.value }}{% endif %}</summary>
+                {% for hidden in step_form.hidden_fields %}
+                {{ hidden }}
                 {% endfor %}
-            </tbody>
-        </table>
+                {% if step_form.non_field_errors %}
+                <div class="message error">
+                    {% for error in step_form.non_field_errors %}
+                    <div>{{ error }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <div class="form-grid">
+                    <div class="form-section">
+                        <h3>Basic</h3>
+                        {% include "includes/form_field.html" with field=step_form.step_no %}
+                        {% include "includes/form_field.html" with field=step_form.step_name %}
+                        {% include "includes/form_field.html" with field=step_form.sla_days %}
+                    </div>
+                    <div class="form-section">
+                        <h3>Approver</h3>
+                        {% include "includes/form_field.html" with field=step_form.approver_type %}
+                        {% include "includes/form_field.html" with field=step_form.approver_user %}
+                        {% include "includes/form_field.html" with field=step_form.approver_department %}
+                        {% include "includes/form_field.html" with field=step_form.approver_level %}
+                    </div>
+                    <div class="form-section">
+                        <h3>Options</h3>
+                        {% include "includes/form_field.html" with field=step_form.is_required %}
+                        {% include "includes/form_field.html" with field=step_form.allow_self_skip %}
+                        {% include "includes/form_field.html" with field=step_form.is_active %}
+                        {% if step_form.DELETE %}
+                        {% include "includes/form_field.html" with field=step_form.DELETE %}
+                        {% endif %}
+                    </div>
+                </div>
+            </details>
+            {% endfor %}
         </div>
     </div>
 

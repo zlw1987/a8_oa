@@ -1,6 +1,12 @@
 from django.urls import reverse
 
 from projects.access import user_can_create_project
+from .permissions import (
+    can_manage_finance_setup,
+    can_perform_accounting_work,
+    can_use_django_admin,
+    can_view_system_setup,
+)
 
 
 def _can_work(user):
@@ -8,15 +14,19 @@ def _can_work(user):
 
 
 def _can_accounting(user):
-    return user.is_authenticated and user.is_staff
+    return can_perform_accounting_work(user)
 
 
 def _can_setup(user):
-    return user.is_authenticated and user.is_staff
+    return can_manage_finance_setup(user)
 
 
 def _can_admin(user):
-    return user.is_authenticated and (user.is_staff or user.is_superuser)
+    return can_use_django_admin(user)
+
+
+def _can_system_setup(user):
+    return can_view_system_setup(user)
 
 
 def _can_create_project(user):
@@ -96,7 +106,7 @@ def build_navigation_for_user(user, request=None):
             [
                 _item("Django Admin", "admin:index", permission=_can_admin),
                 _item("User / Department Setup", "accounts:department_list", permission=_can_setup),
-                _item("System Setup", "admin:index", permission=_can_admin),
+                _item("System Setup", "dashboard:system_setup", permission=_can_system_setup, active_names=["dashboard:system_setup"]),
             ],
         ),
     ]

@@ -51,6 +51,19 @@ class FXVarianceAction(models.TextChoices):
     BLOCK = "BLOCK", "Block"
 
 
+class AccountingPeriodStatus(models.TextChoices):
+    OPEN = "OPEN", "Open"
+    CLOSING = "CLOSING", "Closing"
+    CLOSED = "CLOSED", "Closed"
+
+
+class DirectProjectCostAction(models.TextChoices):
+    ALLOW = "ALLOW", "Allow"
+    REVIEW = "REVIEW", "Review"
+    REQUIRE_PROJECT_OWNER_APPROVAL = "REQUIRE_PROJECT_OWNER_APPROVAL", "Require Project Owner Approval"
+    BLOCK = "BLOCK", "Block"
+
+
 class Currency(models.Model):
     code = models.CharField(max_length=10, unique=True)
     name = models.CharField(max_length=80)
@@ -183,6 +196,74 @@ class FXVariancePolicy(models.Model):
         return f"{self.policy_code} - {self.policy_name}"
 
 
+class AccountingPeriod(models.Model):
+    period_code = models.CharField(max_length=20, unique=True)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    status = models.CharField(max_length=20, choices=AccountingPeriodStatus, default=AccountingPeriodStatus.OPEN)
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_accounting_periods",
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "PS_A8_FIN_PERIOD"
+        verbose_name = "Accounting Period"
+        verbose_name_plural = "Accounting Periods"
+        ordering = ["-start_date"]
+
+    def __str__(self):
+        return f"{self.period_code} / {self.status}"
+
+    def contains(self, value):
+        return self.start_date <= value <= self.end_date
+
+
+class DirectProjectCostPolicy(models.Model):
+    policy_code = models.CharField(max_length=30, unique=True)
+    policy_name = models.CharField(max_length=120)
+    department = models.ForeignKey(
+        "accounts.Department",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="direct_project_cost_policies",
+    )
+    project = models.ForeignKey(
+        "projects.Project",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="direct_cost_policies",
+    )
+    project_type = models.CharField(max_length=30, choices=ProjectType, blank=True, default="")
+    payment_method = models.CharField(max_length=30, choices=PaymentMethod, default=PaymentMethod.COMPANY_CARD)
+    amount_from = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    amount_to = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=10, choices=CurrencyCode, blank=True, default="")
+    action = models.CharField(max_length=40, choices=DirectProjectCostAction, default=DirectProjectCostAction.REVIEW)
+    requires_receipt = models.BooleanField(default=True)
+    requires_project_owner_review = models.BooleanField(default=False)
+    priority = models.PositiveIntegerField(default=100)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "PS_A8_FIN_DPC_POL"
+        verbose_name = "Direct Project Cost Policy"
+        verbose_name_plural = "Direct Project Cost Policies"
+        ordering = ["priority", "policy_code"]
+
+    def __str__(self):
+        return f"{self.policy_code} - {self.policy_name}"
+
+
 class ReceiptPolicy(models.Model):
     REQUEST_TYPE_CHOICES = [
         ("ALL", "All"),
@@ -236,6 +317,7 @@ class AccountingReviewReason(models.TextChoices):
     MISSING_RECEIPT = "MISSING_RECEIPT", "Missing Receipt"
     UNMATCHED_CARD = "UNMATCHED_CARD", "Unmatched Card Transaction"
     DUPLICATE_CARD = "DUPLICATE_CARD", "Duplicate Card Transaction"
+    DIRECT_PROJECT_COST = "DIRECT_PROJECT_COST", "Direct Project Cost"
     POLICY_EXCEPTION = "POLICY_EXCEPTION", "Policy Exception"
     MANUAL_FLAG = "MANUAL_FLAG", "Manual Flag"
 
@@ -324,6 +406,13 @@ class AccountingReviewItem(models.Model):
     )
     policy = models.ForeignKey(
         OverBudgetPolicy,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="review_items",
+    )
+    direct_project_cost_policy = models.ForeignKey(
+        DirectProjectCostPolicy,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -521,6 +610,15 @@ class CardTransactionAllocation(models.Model):
         on_delete=models.SET_NULL,
         related_name="card_allocations",
     )
+    direct_project_cost_policy = models.ForeignKey(
+        DirectProjectCostPolicy,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="card_allocations",
+    )
+    direct_project_cost_action = models.CharField(max_length=40, choices=DirectProjectCostAction, blank=True, default="")
+    project_owner_review_status = models.CharField(max_length=30, blank=True, default="")
     policy_action = models.CharField(max_length=30, choices=OverBudgetAction, blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -554,3 +652,91 @@ class CardTransactionAllocation(models.Model):
     @property
     def linked_request(self):
         return self.purchase_request or self.travel_request
+
+
+class ActualExpenseAttachmentType(models.TextChoices):
+    RECEIPT = "RECEIPT", "Receipt"
+    INVOICE = "INVOICE", "Invoice"
+    QUOTE = "QUOTE", "Quote"
+    OTHER = "OTHER", "Other"
+
+
+class ActualExpenseAttachment(models.Model):
+    purchase_actual_spend = models.ForeignKey(
+        "purchase.PurchaseActualSpend",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="line_attachments",
+    )
+    travel_actual_expense = models.ForeignKey(
+        "travel.TravelActualExpenseLine",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="line_attachments",
+    )
+    purchase_attachment = models.ForeignKey(
+        "purchase.PurchaseRequestAttachment",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="actual_expense_links",
+    )
+    travel_attachment = models.ForeignKey(
+        "travel.TravelRequestAttachment",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="actual_expense_links",
+    )
+    attachment_type = models.CharField(max_length=20, choices=ActualExpenseAttachmentType, default=ActualExpenseAttachmentType.RECEIPT)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="actual_expense_attachment_links",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "PS_A8_FIN_ACT_ATT"
+        verbose_name = "Actual Expense Attachment"
+        verbose_name_plural = "Actual Expense Attachments"
+
+    def clean(self):
+        super().clean()
+        actual_count = sum(1 for value in [self.purchase_actual_spend_id, self.travel_actual_expense_id] if value)
+        attachment_count = sum(1 for value in [self.purchase_attachment_id, self.travel_attachment_id] if value)
+        if actual_count != 1:
+            raise ValidationError("Link exactly one purchase or travel actual expense.")
+        if attachment_count != 1:
+            raise ValidationError("Link exactly one purchase or travel attachment.")
+
+
+class CardAllocationAttachment(models.Model):
+    card_transaction = models.ForeignKey(
+        CardTransaction,
+        on_delete=models.CASCADE,
+        related_name="allocation_attachments",
+    )
+    allocation = models.ForeignKey(
+        CardTransactionAllocation,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    attachment_type = models.CharField(max_length=20, choices=ActualExpenseAttachmentType, default=ActualExpenseAttachmentType.RECEIPT)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="card_allocation_attachment_links",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "PS_A8_FIN_CARD_ATT"
+        verbose_name = "Card Allocation Attachment"
+        verbose_name_plural = "Card Allocation Attachments"
