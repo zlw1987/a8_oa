@@ -647,16 +647,23 @@ If a possible duplicate is found:
 - The actual expense is not deleted automatically.
 - An Accounting Review Item is created.
 - Accounting can review and approve the exception or resolve the duplicate.
+- Accounting Review Detail shows runtime-computed duplicate candidates with links back to the related PR/TR detail page when the candidate can be resolved.
+
+Important limitation:
+
+- Duplicate candidates are calculated from current records when the review detail page is opened. They are not stored as an immutable duplicate snapshot.
 
 ### 13.6 Finance Report Drill-Down
 
-Finance Reports include drill-down links:
+Finance Reports include link-based drill-down:
 
 - Project Budget Summary opens the project budget ledger.
 - Over-Budget Exceptions open Accounting Review Detail.
 - Accounting Review Aging opens Accounting Review Detail.
 - Open Reserve rows open the source PR/TR.
 - Unmatched Card rows open the card transaction detail.
+
+This is an operational drill-down pattern, not an advanced reporting or BI framework.
 
 ### 13.5 Attachment Retention
 
@@ -667,7 +674,13 @@ Current rules:
 - Draft attachments can still be removed by authorized users.
 - Attachments are soft-deleted so the audit trail can retain deletion information.
 - Receipts or invoices linked to actual expense lines cannot be removed by normal requesters after posting.
+- Accounting/Admin users can void posted or linked evidence only with a reason.
+- PR/TR detail pages show Attachment History for soft-deleted or voided attachments.
 - Closed request attachments are retained for audit and cannot be normally deleted.
+
+Current limitation:
+
+- This is a void-with-reason workflow. A full attachment replacement workflow is not implemented yet.
 
 ## 14. FAQ
 

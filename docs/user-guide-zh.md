@@ -352,16 +352,23 @@ Accounting 录入 actual expense 时，系统会根据 vendor / merchant、expen
 - 系统不会自动删除或阻止 legitimate transaction。
 - 系统会创建 Accounting Review Item。
 - Accounting 可以在 review 中 resolve 或 approve exception。
+- Accounting Review Detail 会显示 runtime 计算出来的 duplicate candidates，并在可以解析时链接回对应 PR/TR detail 页面。
+
+重要限制：
+
+- Duplicate candidates 是打开 review detail 时根据当前记录计算出来的，不是不可变的 persisted duplicate snapshot。
 
 ### 13.3.1 Finance Reports Drill-Down
 
-Finance Reports 现在提供 drill-down 链接：
+Finance Reports 现在提供 link-based drill-down 链接：
 
 - Project Budget Summary 可打开 project budget ledger。
 - Over-Budget Exceptions 可打开 Accounting Review Detail。
 - Accounting Review Aging 可打开 Accounting Review Detail。
 - Open Reserve 行可打开来源 PR/TR。
 - Unmatched Card 行可打开 card transaction detail。
+
+这是 operational drill-down，不是 advanced reporting / BI framework。
 
 ### 13.4 Attachment Retention
 
@@ -372,7 +379,13 @@ Finance Reports 现在提供 drill-down 链接：
 - Draft 阶段授权用户可以删除附件。
 - 删除采用 soft delete，保留审计信息。
 - 已经 linked 到 actual expense line 的 receipt / invoice，普通 requester 在 posting 后不能删除。
+- Accounting/Admin 用户 void 已 posting 或 linked evidence 时必须填写 reason。
+- PR/TR detail 页面会在 Attachment History 中显示 soft-deleted / voided attachments。
 - Closed request 的附件会被保留，不能正常删除。
+
+当前限制：
+
+- 目前是 void-with-reason workflow，还不是完整的 attachment replacement workflow。
 
 ## 14. 常见问题
 

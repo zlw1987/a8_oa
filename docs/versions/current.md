@@ -2,7 +2,7 @@
 
 ## Status
 
-The current version includes V1.1 Phase 2 completion on top of the V0.5 business-control milestone, V0.6 multi-currency foundation, and V1.1 Phase 1 financial-integrity workflows.
+The current version includes V1.1 Phase 3 closeout preparation on top of the V0.5 business-control milestone, V0.6 multi-currency foundation, V1.1 Phase 1 financial-integrity workflows, and V1.1 Phase 2 expense-control workflows.
 
 ## Latest Fixes
 
@@ -25,8 +25,10 @@ The current version includes V1.1 Phase 2 completion on top of the V0.5 business
 - Changed manual project budget adjustment into a controlled Budget Adjustment Request workflow; budget ledger `ADJUST` entries are posted only after Finance approval.
 - Added duplicate actual expense / invoice review detection based on vendor, date, amount, and reference matching.
 - Extended duplicate actual expense detection to compare linked receipt/invoice file hashes.
-- Added attachment retention controls: request attachments are soft-deleted for audit visibility, linked receipt/invoice evidence cannot be removed by normal requesters after posting/approval, and closed request attachments are retained.
-- Added Finance Reports drill-down links from project summaries to budget ledgers and review rows to Accounting Review Detail.
+- Added runtime duplicate candidate traceability on Accounting Review Detail. Candidate links are computed from current records and are not persisted as an immutable duplicate snapshot.
+- Added attachment retention controls: request attachments are soft-deleted for audit visibility, linked receipt/invoice evidence cannot be removed by normal requesters after posting/approval, Accounting/Admin void requires reason, closed request attachments are retained, and PR/TR detail pages show Attachment History.
+- Added Finance Reports link-based drill-down from project summaries to budget ledgers, review rows to Accounting Review Detail, open reserves to PR/TR detail, and unmatched card rows to card transaction detail. This is not an advanced reporting framework.
+- Removed tracked runtime media upload artifacts from the repository and kept `media/` ignored for future local uploads.
 - Hardened GoDaddy cPanel Git deployment script so deploy logs initialize correctly, Python virtualenv path is auto-detected, same-path rsync is skipped, migrations run during Deploy HEAD Commit, and Passenger is restarted.
 - Added Finance Reports CSV export with base and transaction currency columns.
 - Converted Approval Rule Step Editor from a wide table into step cards/accordion sections.
@@ -69,10 +71,12 @@ Latest targeted verification for the V1.1 Phase 3 setup and control changes:
 ```text
 python manage.py check
 python manage.py makemigrations --check --dry-run
-python manage.py test finance.tests.DuplicateActualExpenseReviewTest finance.tests.FinanceCurrencySetupViewTest projects.tests.ProjectBudgetLedgerRegressionTest approvals.tests.ApprovalSnapshotRegressionTest --keepdb -v 1
-Ran 34 tests
+python manage.py test finance.tests.DuplicateActualExpenseReviewTest purchase.tests travel.tests --keepdb -v 1
+Ran 138 tests
 OK
 ```
+
+Full regression remains pending user run before the Phase 3 checkpoint is treated as release-final.
 
 ## Recommended Pre-Push Checks
 
@@ -147,3 +151,7 @@ Phase 2 completion checkpoint:
 Phase 3 technical design:
 
 - [V1.1 Phase 3 Technical Design](v1.1-phase3-technical-design.md)
+
+Phase 3 completion checkpoint draft:
+
+- [V1.1 Phase 3 Completion Checkpoint](v1.1-phase3-completion.md)

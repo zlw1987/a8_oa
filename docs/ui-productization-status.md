@@ -330,6 +330,18 @@ Main behavior:
 - Approval Rule Step Editor uses step cards/accordion instead of a wide editable table.
 - Finance Reports include CSV export.
 
+## V1.1 Phase 3 Closeout UI Notes
+
+Phase 3 remains intentionally operational and low-risk. It does not introduce a large UI redesign.
+
+Delivered closeout-facing UI behavior:
+
+- System Setup shows currency setup shortcuts, active currency/base currency status, and current-year Department General Budget coverage.
+- PR/TR detail pages show Attachment History for soft-deleted or voided attachments.
+- Accounting/Admin void of posted or linked evidence requires a reason; this is a void-with-reason workflow, not a full attachment replacement workflow.
+- Accounting Review Detail shows duplicate actual expense candidates as runtime-computed links to PR/TR detail pages. These candidate links are not persisted as an immutable duplicate snapshot.
+- Finance Reports provide link-based drill-down to project budget ledger, Accounting Review Detail, PR/TR source records, and card transaction detail. This is not an advanced reporting framework.
+
 ## User Guide Maintenance Rule
 
 When UI or workflow behavior changes, update the formal user guides directly:
@@ -361,9 +373,10 @@ Full test suite was not run because full test execution is reserved for the user
 
 - Screenshots were not captured in Codex because the local browser connection was blocked in this environment.
 - The UI is still not a full mobile-first redesign.
-- Finance reports are still table-oriented.
-- Finance reports are currency-grouped, not exchange-rate converted.
-- Accounting Review Detail does not yet show line-level receipt attachment matching because line-level receipt matching is not implemented as a business feature.
+- Finance reports are still table-oriented and drill-down is link-based.
+- Finance reports are base-currency operational reports; advanced reporting and Excel export are outside this phase.
+- Duplicate actual expense candidate links are runtime-computed from current records, not persisted snapshots.
+- Attachment retention supports void-with-reason and history visibility, but not a full replacement workflow.
 - Card allocation front-end validation is convenience validation only. Server-side validation remains the source of truth.
 
 ## Recommended Next Review
