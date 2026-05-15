@@ -24,7 +24,9 @@ from common.choices import (
     ApprovalTaskStatus,
     RequestStatus,
 )
-from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus
+from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus, ProjectType
+from finance.models import ActualExpenseAttachmentType
+from finance.services import link_travel_attachment_to_actual
 from travel.models import (
     TravelRequest,
     TravelItinerary,
@@ -918,8 +920,120 @@ class TravelSmokeTest(TestCase):
         tr.refresh_from_db()
         attachment.refresh_from_db()
         self.assertTrue(attachment.is_deleted)
+        self.assertEqual(attachment.deleted_by, self.requester)
+        self.assertIsNotNone(attachment.deleted_at)
+        self.assertEqual(attachment.delete_reason, "Deleted from travel request detail.")
         self.assertEqual(tr.attachments.filter(is_deleted=False).count(), 0)
         self.assertEqual(TravelRequestAttachment.objects.filter(pk=attachment.id).count(), 1)
+
+    def test_travel_form_rejects_general_budget_project_for_other_department(self):
+        other_department = Department.objects.create(
+            dept_code="D-TRV-OTHER",
+            dept_name="Other Travel Dept",
+            dept_type=DepartmentType.GENERAL,
+        )
+        other_project = Project.objects.create(
+            project_code="D-TRV-OTHER-GEN",
+            project_name="Other Department General Budget",
+            owning_department=other_department,
+            project_type=ProjectType.DEPARTMENT_GENERAL,
+            budget_amount=Decimal("5000.00"),
+            is_active=True,
+        )
+        ProjectMember.objects.create(project=other_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        form = TravelRequestForm(
+            data={
+                "purpose": "Wrong Department General Travel",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": other_project.id,
+                "request_date": date.today(),
+                "start_date": date.today() + timedelta(days=3),
+                "end_date": date.today() + timedelta(days=5),
+                "origin_city": "San Jose",
+                "destination_city": "Seattle",
+                "currency": "USD",
+            },
+            user=self.requester,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("Department general spending must use the general project for the request department.", form.errors["project"])
+
+    def test_requester_cannot_delete_linked_receipt_after_actual_expense_posted(self):
+        accounting = User.objects.create_user(username="travel_accounting", password="testpass123", is_staff=True)
+        tr = TravelRequest.objects.create(
+            purpose="Posted Attachment Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.APPROVED,
+        )
+        actual = tr.record_actual_expense(
+            expense_type="HOTEL",
+            expense_date=date.today(),
+            actual_amount=Decimal("25.00"),
+            acting_user=accounting,
+            vendor_name="Hotel Vendor",
+            reference_no="HOTEL-1",
+            skip_finance_policy=True,
+        )
+        attachment = TravelRequestAttachment.objects.create(
+            travel_request=tr,
+            document_type="SUPPORT",
+            title="Posted Receipt",
+            file=SimpleUploadedFile("posted-travel-receipt.txt", b"posted receipt"),
+            uploaded_by=self.requester,
+        )
+        link_travel_attachment_to_actual(
+            actual_expense=actual,
+            travel_attachment=attachment,
+            attachment_type=ActualExpenseAttachmentType.RECEIPT,
+            acting_user=accounting,
+        )
+
+        self.client.login(username="req_travel", password="testpass123")
+        response = self.client.post(reverse("travel:tr_delete_attachment", args=[tr.id, attachment.id]))
+
+        self.assertEqual(response.status_code, 403)
+        attachment.refresh_from_db()
+        self.assertFalse(attachment.is_deleted)
+
+    def test_requester_cannot_delete_closed_travel_attachment(self):
+        tr = TravelRequest.objects.create(
+            purpose="Closed Attachment Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.CLOSED,
+        )
+        attachment = TravelRequestAttachment.objects.create(
+            travel_request=tr,
+            document_type="SUPPORT",
+            title="Closed Support",
+            file=SimpleUploadedFile("closed-travel-support.txt", b"closed support"),
+            uploaded_by=self.requester,
+        )
+
+        self.client.login(username="req_travel", password="testpass123")
+        response = self.client.post(reverse("travel:tr_delete_attachment", args=[tr.id, attachment.id]))
+
+        self.assertEqual(response.status_code, 403)
+        attachment.refresh_from_db()
+        self.assertFalse(attachment.is_deleted)
 
     def test_travel_create_generates_initial_content_audit(self):
         tr = TravelRequest.objects.create(

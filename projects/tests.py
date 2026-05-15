@@ -108,6 +108,35 @@ class DepartmentGeneralProjectSetupTest(TestCase):
         with self.assertRaisesMessage(ValidationError, "General project must belong to the selected department."):
             setup.full_clean()
 
+    def test_only_one_active_general_project_per_department_and_fiscal_year(self):
+        DepartmentGeneralProject.objects.create(
+            department=self.department,
+            fiscal_year=2026,
+            project=self.general_project,
+            budget_amount=Decimal("10000.00"),
+            is_active=True,
+            created_by=self.finance_admin,
+        )
+        second_project = Project.objects.create(
+            project_code="D-GEN-GENERAL-2026-B",
+            project_name="General Budget 2026 Backup",
+            owning_department=self.department,
+            project_type=ProjectType.DEPARTMENT_GENERAL,
+            budget_amount=Decimal("5000.00"),
+            is_active=True,
+        )
+        duplicate_setup = DepartmentGeneralProject(
+            department=self.department,
+            fiscal_year=2026,
+            project=second_project,
+            budget_amount=Decimal("5000.00"),
+            is_active=True,
+            created_by=self.finance_admin,
+        )
+
+        with self.assertRaises(ValidationError):
+            duplicate_setup.full_clean()
+
 
 class ProjectBudgetLedgerRegressionTest(TestCase):
     def setUp(self):

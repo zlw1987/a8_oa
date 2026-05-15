@@ -8,7 +8,7 @@ from django.urls import reverse
 from accounts.models import Department, UserDepartment
 from approvals.models import ApprovalRule, ApprovalRuleStep
 from common.choices import ApproverType, DepartmentType, RequestType
-from projects.models import Project
+from projects.models import DepartmentGeneralProject, Project, ProjectType
 from purchase.models import PurchaseRequest, PurchaseRequestLine
 from travel.models import TravelRequest, TravelItinerary, TravelEstimatedExpenseLine
 
@@ -89,6 +89,50 @@ class DashboardSmokeTest(TestCase):
         self.assertNotContains(response, reverse("admin:finance_currency_changelist"))
         self.assertNotContains(response, reverse("admin:finance_exchangerate_changelist"))
         self.assertNotContains(response, reverse("admin:finance_fxvariancepolicy_changelist"))
+
+    def test_system_setup_shows_current_year_missing_general_budget_warning(self):
+        admin_user = User.objects.create_superuser(
+            username="dashboard_dept_general_admin",
+            password="testpass123",
+            email="dashboard_dept_general_admin@example.com",
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(reverse("dashboard:system_setup"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Dept General Budgets")
+        self.assertContains(response, "1 missing")
+
+    def test_system_setup_general_budget_warning_clears_after_current_year_setup(self):
+        admin_user = User.objects.create_superuser(
+            username="dashboard_dept_general_complete_admin",
+            password="testpass123",
+            email="dashboard_dept_general_complete_admin@example.com",
+        )
+        general_project = Project.objects.create(
+            project_code="D-DASH-NAV-01-GENERAL",
+            project_name="Dashboard General Budget",
+            owning_department=self.department,
+            project_type=ProjectType.DEPARTMENT_GENERAL,
+            budget_amount=Decimal("1000.00"),
+            is_active=True,
+        )
+        DepartmentGeneralProject.objects.create(
+            department=self.department,
+            fiscal_year=date.today().year,
+            project=general_project,
+            budget_amount=Decimal("1000.00"),
+            is_active=True,
+            created_by=admin_user,
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(reverse("dashboard:system_setup"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Dept General Budgets")
+        self.assertContains(response, "Complete")
 
 
 class DashboardCrossRequestRegressionTest(TestCase):

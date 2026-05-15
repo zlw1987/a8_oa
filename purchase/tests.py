@@ -20,7 +20,9 @@ from common.choices import (
     BudgetEntryType,
     ApprovalTaskStatus,
 )
-from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus
+from projects.models import Project, ProjectBudgetEntry, ProjectMember, ProjectStatus, ProjectType
+from finance.models import ActualExpenseAttachmentType
+from finance.services import link_purchase_attachment_to_actual
 from purchase.forms import PurchaseRequestForm, PurchaseRequestLineCreateFormSet, PurchaseRequestLineEditFormSet
 from purchase.models import (
     PurchaseRequest,
@@ -653,8 +655,111 @@ class PurchaseSmokeTest(TestCase):
         pr.refresh_from_db()
         attachment.refresh_from_db()
         self.assertTrue(attachment.is_deleted)
+        self.assertEqual(attachment.deleted_by, self.requester)
+        self.assertIsNotNone(attachment.deleted_at)
+        self.assertEqual(attachment.delete_reason, "Deleted from purchase request detail.")
         self.assertEqual(pr.attachments.filter(is_deleted=False).count(), 0)
         self.assertEqual(PurchaseRequestAttachment.objects.filter(pk=attachment.id).count(), 1)
+
+    def test_purchase_form_rejects_general_budget_project_for_other_department(self):
+        other_department = Department.objects.create(
+            dept_code="D-PUR-OTHER",
+            dept_name="Other Purchase Dept",
+            dept_type=DepartmentType.GENERAL,
+        )
+        other_project = Project.objects.create(
+            project_code="D-PUR-OTHER-GEN",
+            project_name="Other Department General Budget",
+            owning_department=other_department,
+            project_type=ProjectType.DEPARTMENT_GENERAL,
+            budget_amount=Decimal("5000.00"),
+            is_active=True,
+        )
+        ProjectMember.objects.create(project=other_project, user=self.requester, is_active=True, added_by=self.manager)
+
+        form = PurchaseRequestForm(
+            data={
+                "title": "Wrong Department General Purchase",
+                "requester": self.requester.id,
+                "request_department": self.department.id,
+                "project": other_project.id,
+                "request_date": date.today(),
+                "needed_by_date": date.today() + timedelta(days=7),
+                "currency": "USD",
+                "justification": "Department general validation",
+            },
+            user=self.requester,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("Department general spending must use the general project for the request department.", form.errors["project"])
+
+    def test_requester_cannot_delete_linked_receipt_after_actual_spend_posted(self):
+        accounting = User.objects.create_user(username="purchase_accounting", password="testpass123", is_staff=True)
+        pr = PurchaseRequest.objects.create(
+            title="Posted Attachment Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            currency="USD",
+            justification="Linked attachment retention",
+            status=RequestStatus.APPROVED,
+        )
+        actual = pr.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("25.00"),
+            acting_user=accounting,
+            vendor_name="Receipt Vendor",
+            reference_no="RCPT-1",
+            skip_finance_policy=True,
+        )
+        attachment = PurchaseRequestAttachment.objects.create(
+            purchase_request=pr,
+            document_type="SUPPORT",
+            title="Posted Receipt",
+            file=SimpleUploadedFile("posted-receipt.txt", b"posted receipt"),
+            uploaded_by=self.requester,
+        )
+        link_purchase_attachment_to_actual(
+            actual_expense=actual,
+            purchase_attachment=attachment,
+            attachment_type=ActualExpenseAttachmentType.RECEIPT,
+            acting_user=accounting,
+        )
+
+        self.client.login(username="req_purchase", password="testpass123")
+        response = self.client.post(reverse("purchase:pr_delete_attachment", args=[pr.id, attachment.id]))
+
+        self.assertEqual(response.status_code, 403)
+        attachment.refresh_from_db()
+        self.assertFalse(attachment.is_deleted)
+
+    def test_requester_cannot_delete_closed_purchase_attachment(self):
+        pr = PurchaseRequest.objects.create(
+            title="Closed Attachment Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            currency="USD",
+            justification="Closed attachment retention",
+            status=RequestStatus.CLOSED,
+        )
+        attachment = PurchaseRequestAttachment.objects.create(
+            purchase_request=pr,
+            document_type="SUPPORT",
+            title="Closed Support",
+            file=SimpleUploadedFile("closed-support.txt", b"closed support"),
+            uploaded_by=self.requester,
+        )
+
+        self.client.login(username="req_purchase", password="testpass123")
+        response = self.client.post(reverse("purchase:pr_delete_attachment", args=[pr.id, attachment.id]))
+
+        self.assertEqual(response.status_code, 403)
+        attachment.refresh_from_db()
+        self.assertFalse(attachment.is_deleted)
 
     def test_purchase_create_generates_initial_content_audit(self):
         pr = PurchaseRequest.objects.create(

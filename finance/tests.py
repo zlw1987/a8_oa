@@ -1,11 +1,12 @@
 from datetime import date
 from decimal import Decimal
+import tempfile
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from accounts.models import Department
@@ -400,6 +401,7 @@ class OverBudgetPolicyServiceTest(TestCase):
         self.assertEqual(review_item.card_transaction, duplicate)
 
 
+@override_settings(MEDIA_ROOT=tempfile.gettempdir())
 class DuplicateActualExpenseReviewTest(TestCase):
     def setUp(self):
         self.accounting = User.objects.create_user(
@@ -461,6 +463,7 @@ class DuplicateActualExpenseReviewTest(TestCase):
                 status="PENDING_REVIEW",
             ).exists()
         )
+        self.assertEqual(PurchaseActualSpend.objects.filter(purchase_request=self.purchase).count(), 2)
 
     def test_same_receipt_hash_creates_duplicate_actual_review(self):
         first = self.purchase.record_actual_spend(
@@ -515,6 +518,36 @@ class DuplicateActualExpenseReviewTest(TestCase):
             ).exists()
         )
 
+    def test_duplicate_review_detail_shows_candidate_information_without_blocking_records(self):
+        first = self.purchase.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("130.00"),
+            acting_user=self.accounting,
+            vendor_name="Candidate Vendor",
+            reference_no="INV-CAND",
+        )
+        second = self.purchase.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("130.00"),
+            acting_user=self.accounting,
+            vendor_name="Candidate Vendor",
+            reference_no="INV-CAND",
+        )
+        review_item = AccountingReviewItem.objects.get(
+            purchase_actual_spend=second,
+            reason=AccountingReviewReason.DUPLICATE_EXPENSE,
+        )
+
+        self.client.force_login(self.accounting)
+        response = self.client.get(reverse("finance:accounting_review_detail", args=[review_item.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "matching field candidate line id")
+        self.assertContains(response, str(first.id))
+        self.assertEqual(PurchaseActualSpend.objects.filter(purchase_request=self.purchase).count(), 2)
+        self.assertTrue(PurchaseActualSpend.objects.filter(pk=first.pk).exists())
+        self.assertTrue(PurchaseActualSpend.objects.filter(pk=second.pk).exists())
+
 
 class FinanceReportCurrencyFormattingTest(TestCase):
     def setUp(self):
@@ -528,6 +561,76 @@ class FinanceReportCurrencyFormattingTest(TestCase):
         self.assertEqual(money(Decimal("12710"), "USD"), "USD 12,710.00")
         self.assertEqual(money(Decimal("100000"), "TWD"), "TWD 100,000.00")
         self.assertEqual(money(Decimal("-300"), "USD"), "USD -300.00")
+
+
+class FinanceReportDrillDownSmokeTest(TestCase):
+    def setUp(self):
+        self.accounting = User.objects.create_user(
+            username="finance_report_links",
+            password="testpass123",
+            is_staff=True,
+        )
+        self.requester = User.objects.create_user(username="finance_report_req", password="testpass123")
+        self.department = Department.objects.create(
+            dept_code="D-FIN-LINK",
+            dept_name="Finance Link Dept",
+            dept_type=DepartmentType.FIN,
+        )
+        self.project = Project.objects.create(
+            project_code="FIN-LINK-PRJ",
+            project_name="Finance Link Project",
+            owning_department=self.department,
+            budget_amount=Decimal("1000.00"),
+            is_active=True,
+        )
+        self.purchase = PurchaseRequest.objects.create(
+            title="Finance Link Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            status=RequestStatus.SUBMITTED,
+            estimated_total=Decimal("100.00"),
+            currency="USD",
+        )
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.RESERVE,
+            source_type=RequestType.PURCHASE,
+            source_id=self.purchase.id,
+            amount=Decimal("100.00"),
+            created_by=self.accounting,
+        )
+        self.review_item = AccountingReviewItem.objects.create(
+            source_type=RequestType.PURCHASE,
+            purchase_request=self.purchase,
+            reason=AccountingReviewReason.OVER_BUDGET,
+            status="PENDING_REVIEW",
+            amount=Decimal("25.00"),
+            over_amount=Decimal("25.00"),
+            title="Over budget report link",
+            description="Report drill-down review item.",
+            created_by=self.accounting,
+        )
+        self.card_transaction = CardTransaction.objects.create(
+            statement_date=date.today(),
+            transaction_date=date.today(),
+            merchant_name="Unmatched Merchant",
+            amount=Decimal("40.00"),
+            cardholder=self.requester,
+            reference_no="CARD-LINK-1",
+            imported_by=self.accounting,
+        )
+
+    def test_finance_reports_render_core_drill_down_links(self):
+        self.client.force_login(self.accounting)
+        response = self.client.get(reverse("finance:finance_reports"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("projects:project_budget_ledger", args=[self.project.id]))
+        self.assertContains(response, reverse("purchase:pr_detail", args=[self.purchase.id]))
+        self.assertContains(response, reverse("finance:accounting_review_detail", args=[self.review_item.id]))
+        self.assertContains(response, reverse("finance:card_transaction_detail", args=[self.card_transaction.id]))
 
 
 class FinanceCurrencySetupViewTest(TestCase):
