@@ -1006,6 +1006,94 @@ class TravelSmokeTest(TestCase):
         attachment.refresh_from_db()
         self.assertFalse(attachment.is_deleted)
 
+    def test_accounting_voids_linked_travel_evidence_only_with_reason(self):
+        accounting = User.objects.create_user(username="travel_void_accounting", password="testpass123", is_staff=True)
+        tr = TravelRequest.objects.create(
+            purpose="Void Linked Travel Evidence",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+            status=TravelRequestStatus.APPROVED,
+        )
+        actual = tr.record_actual_expense(
+            expense_type="HOTEL",
+            expense_date=date.today(),
+            actual_amount=Decimal("35.00"),
+            acting_user=accounting,
+            vendor_name="Void Hotel",
+            reference_no="VOID-TR-1",
+            skip_finance_policy=True,
+        )
+        attachment = TravelRequestAttachment.objects.create(
+            travel_request=tr,
+            document_type="SUPPORT",
+            title="Void Travel Receipt",
+            file=SimpleUploadedFile("void-travel-receipt.txt", b"void receipt"),
+            uploaded_by=self.requester,
+        )
+        link_travel_attachment_to_actual(
+            actual_expense=actual,
+            travel_attachment=attachment,
+            attachment_type=ActualExpenseAttachmentType.RECEIPT,
+            acting_user=accounting,
+        )
+
+        self.client.force_login(accounting)
+        response = self.client.post(reverse("travel:tr_delete_attachment", args=[tr.id, attachment.id]))
+
+        self.assertEqual(response.status_code, 302)
+        attachment.refresh_from_db()
+        self.assertFalse(attachment.is_deleted)
+
+        response = self.client.post(
+            reverse("travel:tr_delete_attachment", args=[tr.id, attachment.id]),
+            {"delete_reason": "Receipt attached to wrong travel line."},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        attachment.refresh_from_db()
+        self.assertTrue(attachment.is_deleted)
+        self.assertEqual(attachment.deleted_by, accounting)
+        self.assertIsNotNone(attachment.deleted_at)
+        self.assertEqual(attachment.delete_reason, "Receipt attached to wrong travel line.")
+        self.assertTrue(TravelRequestAttachment.objects.filter(pk=attachment.id).exists())
+
+    def test_travel_detail_renders_attachment_history_for_soft_deleted_attachment(self):
+        self.client.login(username="req_travel", password="testpass123")
+        tr = TravelRequest.objects.create(
+            purpose="Attachment History Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today() + timedelta(days=3),
+            end_date=date.today() + timedelta(days=5),
+            origin_city="San Jose",
+            destination_city="Seattle",
+            currency="USD",
+        )
+        attachment = TravelRequestAttachment.objects.create(
+            travel_request=tr,
+            document_type="SUPPORT",
+            title="History Travel Support",
+            file=SimpleUploadedFile("history-travel-support.txt", b"history support"),
+            uploaded_by=self.requester,
+        )
+        attachment.soft_delete(user=self.requester, reason="No longer needed for travel draft.")
+
+        response = self.client.get(reverse("travel:tr_detail", args=[tr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attachment History")
+        self.assertContains(response, "History Travel Support")
+        self.assertContains(response, "No longer needed for travel draft.")
+
     def test_requester_cannot_delete_closed_travel_attachment(self):
         tr = TravelRequest.objects.create(
             purpose="Closed Attachment Travel",

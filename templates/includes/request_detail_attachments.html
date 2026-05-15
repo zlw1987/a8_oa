@@ -35,10 +35,13 @@
                 <td>{{ attachment.uploaded_by }}</td>
                 <td>{{ attachment.uploaded_at }}</td>
                 <td>
-                    {% if attachments_ui.can_manage %}
+                    {% if attachments_ui.can_delete %}
                     <form method="post" action="{{ attachment.delete_url }}">
                         {% csrf_token %}
-                        <button type="submit">Delete</button>
+                        {% if attachment.requires_delete_reason %}
+                        <textarea name="delete_reason" rows="2" required placeholder="Void reason" aria-label="Void reason"></textarea>
+                        {% endif %}
+                        <button type="submit">{% if attachment.requires_delete_reason %}Void{% else %}Delete{% endif %}</button>
                     </form>
                     {% else %}
                     <span class="muted">Read Only</span>
@@ -52,4 +55,42 @@
             {% endfor %}
         </tbody>
     </table>
+
+    <details style="margin-top: 16px;">
+        <summary>Attachment History</summary>
+        <table style="margin-top: 12px;">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Title</th>
+                    <th>File</th>
+                    <th>Uploaded By</th>
+                    <th>Uploaded At</th>
+                    <th>Voided By</th>
+                    <th>Voided At</th>
+                    <th>Reason</th>
+                    <th>Linked Evidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for attachment in attachment_history %}
+                <tr>
+                    <td>{{ attachment.get_document_type_display }}</td>
+                    <td>{{ attachment.title }}</td>
+                    <td>{{ attachment.filename }}</td>
+                    <td>{{ attachment.uploaded_by }}</td>
+                    <td>{{ attachment.uploaded_at }}</td>
+                    <td>{{ attachment.deleted_by|default:"-" }}</td>
+                    <td>{{ attachment.deleted_at|default:"-" }}</td>
+                    <td>{{ attachment.delete_reason|default:"-" }}</td>
+                    <td>{% if attachment.is_linked_evidence %}Yes{% else %}No{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9">No voided attachments.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </details>
 </div>

@@ -26,6 +26,7 @@ from .forms import (
     PurchaseActualReviewAttachmentForm,
     PurchaseRefundForm,
     PurchaseReopenCorrectionForm,
+    PurchaseAttachmentVoidForm,
     PurchaseActualExpenseAttachmentUploadForm,
     PurchaseActualExpenseAttachmentLinkForm,
 )
@@ -212,6 +213,9 @@ def pr_detail(request, pk):
     attachments = attachments.exclude(
         document_type=PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
     )
+    attachment_history = purchase_request.attachments.filter(is_deleted=True).exclude(
+        document_type=PurchaseRequestAttachmentType.ACCOUNTING_APPROVAL
+    )
     actual_spend_entries = purchase_request.actual_spend_entries.all()
     for spend in actual_spend_entries:
         spend.review_items_ui = list(spend.accounting_review_items.all())
@@ -347,8 +351,11 @@ def pr_detail(request, pk):
         else None
     )
 
+    can_void_attachment = can_perform_accounting_work(request.user) and purchase_request.status != RequestStatus.CLOSED
+    can_delete_attachment = ui_flags["can_manage_attachments"] or can_void_attachment
     attachments_ui = {
         "can_manage": ui_flags["can_manage_attachments"],
+        "can_delete": can_delete_attachment,
         "upload_url": reverse("purchase:pr_upload_attachment", args=[purchase_request.id]),
     }
 
@@ -381,6 +388,16 @@ def pr_detail(request, pk):
             "purchase:pr_delete_attachment",
             args=[purchase_request.id, attachment.id],
         )
+        attachment.is_linked_evidence = attachment.actual_expense_links.exists()
+        attachment.requires_delete_reason = bool(
+            can_void_attachment
+            and (
+                attachment.is_linked_evidence
+                or purchase_request.status not in [RequestStatus.DRAFT, RequestStatus.RETURNED]
+            )
+        )
+    for attachment in attachment_history:
+        attachment.is_linked_evidence = attachment.actual_expense_links.exists()
 
     approval_workflow_ui = {
         "rows": [
@@ -462,6 +479,7 @@ def pr_detail(request, pk):
 
         "content_audits":content_audits,
         "attachments": attachments,
+        "attachment_history": attachment_history,
         "attachment_form": attachment_form,
         "actual_spend_entries": actual_spend_entries,
         "actual_spent_total": purchase_request.get_actual_spent_total(),
@@ -666,13 +684,16 @@ def pr_upload_attachment(request, pk):
 @login_required
 @require_POST
 def pr_delete_attachment(request, pk, attachment_id):
-    purchase_request = get_object_or_404(
-        PurchaseRequest.get_visible_queryset(request.user),
-        pk=pk,
+    request_queryset = (
+        PurchaseRequest.objects.all()
+        if can_perform_accounting_work(request.user)
+        else PurchaseRequest.get_visible_queryset(request.user)
     )
+    purchase_request = get_object_or_404(request_queryset, pk=pk)
 
+    can_void_as_accounting = can_perform_accounting_work(request.user)
     enforce_purchase_permission(
-        user_can_manage_attachment(request.user, purchase_request)
+        user_can_manage_attachment(request.user, purchase_request) or can_void_as_accounting
     )
 
     attachment = get_object_or_404(
@@ -683,24 +704,39 @@ def pr_delete_attachment(request, pk, attachment_id):
     )
 
     attachment_title = attachment.title or attachment.filename
-    if attachment.actual_expense_links.exists() and not can_perform_accounting_work(request.user):
+    is_linked_evidence = attachment.actual_expense_links.exists()
+    if is_linked_evidence and not can_void_as_accounting:
         messages.error(request, "Receipts or invoices linked to actual spend can only be removed by Accounting or Finance.")
         return redirect("purchase:pr_detail", pk=purchase_request.pk)
-    if purchase_request.status in [RequestStatus.APPROVED, RequestStatus.CLOSED] and not can_perform_accounting_work(request.user):
+    if purchase_request.status in [RequestStatus.APPROVED, RequestStatus.CLOSED] and not can_void_as_accounting:
         messages.error(request, "Attachments cannot be deleted by requester after approval or posting.")
         return redirect("purchase:pr_detail", pk=purchase_request.pk)
     if purchase_request.status == RequestStatus.CLOSED:
         messages.error(request, "Closed request attachments are retained for audit. Use a replacement/correction note instead.")
         return redirect("purchase:pr_detail", pk=purchase_request.pk)
+    requires_reason = bool(
+        can_void_as_accounting
+        and (
+            is_linked_evidence
+            or purchase_request.status not in [RequestStatus.DRAFT, RequestStatus.RETURNED]
+        )
+    )
+    delete_reason = "Deleted from purchase request detail."
+    if requires_reason:
+        form = PurchaseAttachmentVoidForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Void reason is required for posted or linked evidence.")
+            return redirect("purchase:pr_detail", pk=purchase_request.pk)
+        delete_reason = form.cleaned_data["delete_reason"]
     purchase_request._add_content_audit(
         "HEADER_UPDATED",
         changed_by=request.user,
         field_name="attachment",
         old_value=attachment_title,
-        notes=f"Attachment deleted: {attachment.document_type}",
+        notes=f"Attachment voided: {attachment.document_type}. Reason: {delete_reason}",
     )
-    attachment.soft_delete(user=request.user, reason="Deleted from purchase request detail.")
-    messages.success(request, f"Attachment '{attachment_title}' deleted successfully.")
+    attachment.soft_delete(user=request.user, reason=delete_reason)
+    messages.success(request, f"Attachment '{attachment_title}' voided successfully.")
 
     return redirect("purchase:pr_detail", pk=purchase_request.pk)
 

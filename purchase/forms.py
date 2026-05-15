@@ -320,6 +320,15 @@ class PurchaseReopenCorrectionForm(forms.Form):
     )
 
 
+class PurchaseAttachmentVoidForm(forms.Form):
+    delete_reason = forms.CharField(
+        required=True,
+        label="Void Reason",
+        widget=forms.Textarea(attrs={"rows": 2}),
+        help_text="Required when Accounting or Finance voids posted or linked evidence.",
+    )
+
+
 class PurchaseActualExpenseAttachmentUploadForm(forms.Form):
     actual_spend_id = forms.IntegerField(widget=forms.HiddenInput)
     attachment_type = forms.ChoiceField(choices=ActualExpenseAttachmentType.choices)

@@ -735,6 +735,87 @@ class PurchaseSmokeTest(TestCase):
         attachment.refresh_from_db()
         self.assertFalse(attachment.is_deleted)
 
+    def test_accounting_voids_linked_purchase_evidence_only_with_reason(self):
+        accounting = User.objects.create_user(username="purchase_void_accounting", password="testpass123", is_staff=True)
+        pr = PurchaseRequest.objects.create(
+            title="Void Linked Purchase Evidence",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            currency="USD",
+            justification="Void linked attachment retention",
+            status=RequestStatus.APPROVED,
+        )
+        actual = pr.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("35.00"),
+            acting_user=accounting,
+            vendor_name="Void Vendor",
+            reference_no="VOID-1",
+            skip_finance_policy=True,
+        )
+        attachment = PurchaseRequestAttachment.objects.create(
+            purchase_request=pr,
+            document_type="SUPPORT",
+            title="Void Receipt",
+            file=SimpleUploadedFile("void-receipt.txt", b"void receipt"),
+            uploaded_by=self.requester,
+        )
+        link_purchase_attachment_to_actual(
+            actual_expense=actual,
+            purchase_attachment=attachment,
+            attachment_type=ActualExpenseAttachmentType.RECEIPT,
+            acting_user=accounting,
+        )
+
+        self.client.force_login(accounting)
+        response = self.client.post(reverse("purchase:pr_delete_attachment", args=[pr.id, attachment.id]))
+
+        self.assertEqual(response.status_code, 302)
+        attachment.refresh_from_db()
+        self.assertFalse(attachment.is_deleted)
+
+        response = self.client.post(
+            reverse("purchase:pr_delete_attachment", args=[pr.id, attachment.id]),
+            {"delete_reason": "Duplicate receipt replaced by corrected support."},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        attachment.refresh_from_db()
+        self.assertTrue(attachment.is_deleted)
+        self.assertEqual(attachment.deleted_by, accounting)
+        self.assertIsNotNone(attachment.deleted_at)
+        self.assertEqual(attachment.delete_reason, "Duplicate receipt replaced by corrected support.")
+        self.assertTrue(PurchaseRequestAttachment.objects.filter(pk=attachment.id).exists())
+
+    def test_purchase_detail_renders_attachment_history_for_soft_deleted_attachment(self):
+        self.client.login(username="req_purchase", password="testpass123")
+        pr = PurchaseRequest.objects.create(
+            title="Attachment History Purchase",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            currency="USD",
+            justification="Attachment history",
+        )
+        attachment = PurchaseRequestAttachment.objects.create(
+            purchase_request=pr,
+            document_type="SUPPORT",
+            title="History Support",
+            file=SimpleUploadedFile("history-support.txt", b"history support"),
+            uploaded_by=self.requester,
+        )
+        attachment.soft_delete(user=self.requester, reason="No longer needed for draft.")
+
+        response = self.client.get(reverse("purchase:pr_detail", args=[pr.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Attachment History")
+        self.assertContains(response, "History Support")
+        self.assertContains(response, "No longer needed for draft.")
+
     def test_requester_cannot_delete_closed_purchase_attachment(self):
         pr = PurchaseRequest.objects.create(
             title="Closed Attachment Purchase",

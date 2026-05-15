@@ -209,7 +209,7 @@ class OverBudgetPolicyServiceTest(TestCase):
         attachment = PurchaseRequestAttachment.objects.create(
             purchase_request=self.purchase_request,
             document_type=PurchaseRequestAttachmentType.SUPPORT,
-            file="purchase_attachments/receipt.pdf",
+            file=SimpleUploadedFile("receipt.pdf", b"receipt bytes", content_type="application/pdf"),
             title="receipt.pdf",
             uploaded_by=self.accounting,
         )

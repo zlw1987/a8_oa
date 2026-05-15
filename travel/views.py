@@ -27,6 +27,7 @@ from .forms import (
     TravelActualReviewAttachmentForm,
     TravelRefundForm,
     TravelReopenCorrectionForm,
+    TravelAttachmentVoidForm,
     TravelActualExpenseAttachmentUploadForm,
     TravelActualExpenseAttachmentLinkForm,
 )
@@ -317,6 +318,9 @@ def tr_detail(request, pk):
     attachments = attachments.exclude(
         document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
     )
+    attachment_history = travel_request.attachments.filter(is_deleted=True).exclude(
+        document_type=TravelAttachmentType.ACCOUNTING_APPROVAL
+    )
 
     can_review_actual = user_can_close_travel(request.user, travel_request)
 
@@ -372,9 +376,22 @@ def tr_detail(request, pk):
             "travel:tr_delete_attachment",
             args=[travel_request.id, attachment.id],
         )
+        attachment.is_linked_evidence = attachment.actual_expense_links.exists()
+        attachment.requires_delete_reason = bool(
+            can_perform_accounting_work(request.user)
+            and travel_request.status != TravelRequestStatus.CLOSED
+            and (
+                attachment.is_linked_evidence
+                or travel_request.status not in [TravelRequestStatus.DRAFT, TravelRequestStatus.RETURNED]
+            )
+        )
+    for attachment in attachment_history:
+        attachment.is_linked_evidence = attachment.actual_expense_links.exists()
 
+    can_void_attachment = can_perform_accounting_work(request.user) and travel_request.status != TravelRequestStatus.CLOSED
     attachments_ui = {
         "can_manage": ui_flags["can_manage_attachments"],
+        "can_delete": ui_flags["can_manage_attachments"] or can_void_attachment,
         "upload_url": reverse("travel:tr_upload_attachment", args=[travel_request.id]),
     }
     request_ct = ContentType.objects.get_for_model(travel_request.__class__)
@@ -427,6 +444,7 @@ def tr_detail(request, pk):
         "expense_lines": expense_lines,
         "actual_expense_lines": actual_expense_lines,
         "attachments": attachments,
+        "attachment_history": attachment_history,
         "attachment_form": attachment_form,
         "actual_expense_form": actual_expense_form,
         "histories": histories,
@@ -731,13 +749,16 @@ def tr_upload_attachment(request, pk):
     if request.method != "POST":
         return redirect("travel:tr_detail", pk=pk)
 
-    travel_request = get_object_or_404(
-        TravelRequest.get_visible_queryset(request.user),
-        pk=pk,
+    request_queryset = (
+        TravelRequest.objects.all()
+        if can_perform_accounting_work(request.user)
+        else TravelRequest.get_visible_queryset(request.user)
     )
+    travel_request = get_object_or_404(request_queryset, pk=pk)
 
+    can_void_as_accounting = can_perform_accounting_work(request.user)
     enforce_travel_permission(
-        user_can_manage_travel_attachment(request.user, travel_request)
+        user_can_manage_travel_attachment(request.user, travel_request) or can_void_as_accounting
     )
 
     form = TravelRequestAttachmentForm(request.POST, request.FILES)
@@ -769,13 +790,16 @@ def tr_delete_attachment(request, pk, attachment_id):
     if request.method != "POST":
         return redirect("travel:tr_detail", pk=pk)
 
-    travel_request = get_object_or_404(
-        TravelRequest.get_visible_queryset(request.user),
-        pk=pk,
+    request_queryset = (
+        TravelRequest.objects.all()
+        if can_perform_accounting_work(request.user)
+        else TravelRequest.get_visible_queryset(request.user)
     )
+    travel_request = get_object_or_404(request_queryset, pk=pk)
 
+    can_void_as_accounting = can_perform_accounting_work(request.user)
     enforce_travel_permission(
-        user_can_manage_travel_attachment(request.user, travel_request)
+        user_can_manage_travel_attachment(request.user, travel_request) or can_void_as_accounting
     )
 
     attachment = get_object_or_404(
@@ -786,25 +810,40 @@ def tr_delete_attachment(request, pk, attachment_id):
     )
 
     attachment_title = attachment.title or attachment.filename
-    if attachment.actual_expense_links.exists() and not can_perform_accounting_work(request.user):
+    is_linked_evidence = attachment.actual_expense_links.exists()
+    if is_linked_evidence and not can_void_as_accounting:
         messages.error(request, "Receipts or invoices linked to actual expense can only be removed by Accounting or Finance.")
         return redirect("travel:tr_detail", pk=travel_request.pk)
-    if travel_request.status in [TravelRequestStatus.APPROVED, TravelRequestStatus.CLOSED] and not can_perform_accounting_work(request.user):
+    if travel_request.status in [TravelRequestStatus.APPROVED, TravelRequestStatus.CLOSED] and not can_void_as_accounting:
         messages.error(request, "Attachments cannot be deleted by requester after approval or posting.")
         return redirect("travel:tr_detail", pk=travel_request.pk)
     if travel_request.status == TravelRequestStatus.CLOSED:
         messages.error(request, "Closed request attachments are retained for audit. Use a replacement/correction note instead.")
         return redirect("travel:tr_detail", pk=travel_request.pk)
+    requires_reason = bool(
+        can_void_as_accounting
+        and (
+            is_linked_evidence
+            or travel_request.status not in [TravelRequestStatus.DRAFT, TravelRequestStatus.RETURNED]
+        )
+    )
+    delete_reason = "Deleted from travel request detail."
+    if requires_reason:
+        form = TravelAttachmentVoidForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Void reason is required for posted or linked evidence.")
+            return redirect("travel:tr_detail", pk=travel_request.pk)
+        delete_reason = form.cleaned_data["delete_reason"]
     travel_request._add_content_audit(
         "HEADER_UPDATED",
         changed_by=request.user,
         section="attachment",
         field_name="attachment",
         old_value=attachment_title,
-        notes=f"Attachment deleted: {attachment.document_type}",
+        notes=f"Attachment voided: {attachment.document_type}. Reason: {delete_reason}",
     )
-    attachment.soft_delete(user=request.user, reason="Deleted from travel request detail.")
-    messages.success(request, f"Attachment '{attachment_title}' deleted successfully.")
+    attachment.soft_delete(user=request.user, reason=delete_reason)
+    messages.success(request, f"Attachment '{attachment_title}' voided successfully.")
 
     return redirect("travel:tr_detail", pk=travel_request.pk)
 
