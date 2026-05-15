@@ -358,18 +358,6 @@ Accounting 录入 actual expense 时，系统会根据 vendor / merchant、expen
 
 - Duplicate candidates 是打开 review detail 时根据当前记录计算出来的，不是不可变的 persisted duplicate snapshot。
 
-### 13.3.1 Finance Reports Drill-Down
-
-Finance Reports 现在提供 link-based drill-down 链接：
-
-- Project Budget Summary 可打开 project budget ledger。
-- Over-Budget Exceptions 可打开 Accounting Review Detail。
-- Accounting Review Aging 可打开 Accounting Review Detail。
-- Open Reserve 行可打开来源 PR/TR。
-- Unmatched Card 行可打开 card transaction detail。
-
-这是 operational drill-down，不是 advanced reporting / BI framework。
-
 ### 13.4 Attachment Retention
 
 附件是审计证据。
@@ -386,6 +374,18 @@ Finance Reports 现在提供 link-based drill-down 链接：
 当前限制：
 
 - 目前是 void-with-reason workflow，还不是完整的 attachment replacement workflow。
+
+### 13.5 Finance Reports Drill-Down
+
+Finance Reports 现在提供 link-based drill-down 链接：
+
+- Project Budget Summary 可打开 project budget ledger。
+- Over-Budget Exceptions 可打开 Accounting Review Detail。
+- Accounting Review Aging 可打开 Accounting Review Detail。
+- Open Reserve 行可打开来源 PR/TR。
+- Unmatched Card 行可打开 card transaction detail。
+
+这是 operational drill-down，不是 advanced reporting / BI framework。
 
 ## 14. 常见问题
 

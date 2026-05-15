@@ -2,7 +2,7 @@
 
 ## Status
 
-The current version includes V1.1 Phase 3 closeout preparation on top of the V0.5 business-control milestone, V0.6 multi-currency foundation, V1.1 Phase 1 financial-integrity workflows, and V1.1 Phase 2 expense-control workflows.
+The current version includes V1.1 Phase 3 completed and closed on top of the V0.5 business-control milestone, V0.6 multi-currency foundation, V1.1 Phase 1 financial-integrity workflows, and V1.1 Phase 2 expense-control workflows.
 
 ## Latest Fixes
 
@@ -66,7 +66,7 @@ The current version includes V1.1 Phase 3 closeout preparation on top of the V0.
 
 ## Verification
 
-Latest targeted verification for the V1.1 Phase 3 setup and control changes:
+Latest verification for the V1.1 Phase 3 setup and control changes:
 
 ```text
 python manage.py check
@@ -76,7 +76,20 @@ Ran 138 tests
 OK
 ```
 
-Full regression remains pending user run before the Phase 3 checkpoint is treated as release-final.
+Full regression:
+
+```text
+python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py test --keepdb -v 1
+Result: passed, reported by user. Exact test count/output was not provided in the closeout request.
+```
+
+Phase 3 UAT / accounting validation:
+
+```text
+Result: passed, reported by user. Detailed validation notes were not provided in the closeout request.
+```
 
 ## Recommended Pre-Push Checks
 
@@ -124,7 +137,7 @@ See [V0.6 Multi-Currency Foundation](v0.6-multi-currency-foundation.md).
 
 ## V1.1 Roadmap Progress
 
-The selected production-control roadmap has started. V1.1 Phase 1 and Phase 2 are completed and closed. Phase 3 technical design is prepared as the next controlled development phase.
+The selected production-control roadmap has started. V1.1 Phase 1, Phase 2, and Phase 3 are completed and closed.
 
 See [V1.1 Production Control Roadmap](v1.1-production-control-roadmap.md).
 
@@ -152,6 +165,15 @@ Phase 3 technical design:
 
 - [V1.1 Phase 3 Technical Design](v1.1-phase3-technical-design.md)
 
-Phase 3 completion checkpoint draft:
+Phase 3 completion checkpoint:
 
 - [V1.1 Phase 3 Completion Checkpoint](v1.1-phase3-completion.md)
+
+## Current Accepted Limitations
+
+- Duplicate candidate links are runtime-computed from current records, not persisted immutable snapshots.
+- There is no dedicated invoice number field yet; reference number remains the invoice/reference proxy.
+- Duplicate detection creates review items but does not implement a duplicate `BLOCK` policy.
+- Department General Budget does not yet include a PR/TR "general spend" flag or auto-default behavior.
+- Attachment Retention supports void-with-reason and Attachment History, but not a full replacement workflow.
+- Finance Report drill-down is link-based only; advanced reporting and Excel export remain future work.

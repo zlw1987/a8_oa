@@ -18,7 +18,7 @@ This directory tracks major functional versions of A8 OA.
 - [V1.1 Phase 2 Implementation Status](v1.1-phase2-implementation.md): implemented Phase 2 expense-control and approval-operations workflows.
 - [V1.1 Phase 2 Completion Checkpoint](v1.1-phase2-completion.md): formal Phase 2 closure checklist and validation summary.
 - [V1.1 Phase 3 Technical Design](v1.1-phase3-technical-design.md): technical design for remaining go-live control closure.
-- [V1.1 Phase 3 Completion Checkpoint](v1.1-phase3-completion.md): Phase 3 closeout preparation, targeted verification summary, UAT checklist, and accepted risks.
+- [V1.1 Phase 3 Completion Checkpoint](v1.1-phase3-completion.md): formal Phase 3 closure, targeted/full regression verification summary, UAT checklist, and accepted risks.
 - [Current Version](current.md): latest implemented state and verification snapshot.
 
 ## Update Rule

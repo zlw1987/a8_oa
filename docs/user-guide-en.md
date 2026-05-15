@@ -343,7 +343,7 @@ If a required attachment is missing:
 - Request closeout is blocked.
 - The user should upload the attachment, or accounting should approve an exception / resolve the review item.
 
-Current version checks request-level attachments. It does not yet match receipts to individual actual expense lines.
+Request-level attachments still exist for quotes, contracts, and general support. Receipt and invoice evidence can now be linked to the exact actual expense line from the PR/TR detail page. Missing receipt reviews point accounting users to the specific actual expense line that needs support.
 
 ## 9. Accounting Review Queue
 
@@ -653,18 +653,6 @@ Important limitation:
 
 - Duplicate candidates are calculated from current records when the review detail page is opened. They are not stored as an immutable duplicate snapshot.
 
-### 13.6 Finance Report Drill-Down
-
-Finance Reports include link-based drill-down:
-
-- Project Budget Summary opens the project budget ledger.
-- Over-Budget Exceptions open Accounting Review Detail.
-- Accounting Review Aging opens Accounting Review Detail.
-- Open Reserve rows open the source PR/TR.
-- Unmatched Card rows open the card transaction detail.
-
-This is an operational drill-down pattern, not an advanced reporting or BI framework.
-
 ### 13.5 Attachment Retention
 
 Attachments are audit evidence.
@@ -681,6 +669,18 @@ Current rules:
 Current limitation:
 
 - This is a void-with-reason workflow. A full attachment replacement workflow is not implemented yet.
+
+### 13.6 Finance Report Drill-Down
+
+Finance Reports include link-based drill-down:
+
+- Project Budget Summary opens the project budget ledger.
+- Over-Budget Exceptions open Accounting Review Detail.
+- Accounting Review Aging opens Accounting Review Detail.
+- Open Reserve rows open the source PR/TR.
+- Unmatched Card rows open the card transaction detail.
+
+This is an operational drill-down pattern, not an advanced reporting or BI framework.
 
 ## 14. FAQ
 
