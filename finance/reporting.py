@@ -1,13 +1,14 @@
 from decimal import Decimal
 
 from django.db.models import Sum
+from django.urls import reverse
 from django.utils import timezone
 
 from common.choices import BudgetEntryType, RequestStatus
 from common.currency import COMPANY_BASE_CURRENCY
 from projects.models import Project, ProjectBudgetEntry
-from purchase.models import PurchaseRequest
-from travel.models import TravelRequest, TravelRequestStatus
+from purchase.models import PurchaseActualSpend, PurchaseRequest
+from travel.models import TravelActualExpenseLine, TravelRequest, TravelRequestStatus
 
 from .models import (
     AccountingReviewItem,
@@ -62,7 +63,46 @@ def build_department_spending_summary():
         key = department.id
         rows.setdefault(key, {"department": department, "currency": COMPANY_BASE_CURRENCY, "consumed": Decimal("0.00")})
         rows[key]["consumed"] += entry.amount
+    for row in rows.values():
+        row["detail_url"] = reverse("finance:department_spending_drilldown", args=[row["department"].id])
     return sorted(rows.values(), key=lambda row: row["department"].dept_code)
+
+
+def build_department_spending_drilldown(department):
+    projects = list(Project.objects.filter(owning_department=department).order_by("project_code"))
+    purchase_requests = list(
+        PurchaseRequest.objects.select_related("project", "requester")
+        .filter(request_department=department)
+        .order_by("-request_date", "-id")
+    )
+    travel_requests = list(
+        TravelRequest.objects.select_related("project", "requester")
+        .filter(request_department=department)
+        .order_by("-request_date", "-id")
+    )
+    purchase_actuals = list(
+        PurchaseActualSpend.objects.select_related("purchase_request", "purchase_request__project", "created_by")
+        .filter(purchase_request__request_department=department)
+        .order_by("-spend_date", "-id")
+    )
+    travel_actuals = list(
+        TravelActualExpenseLine.objects.select_related("travel_request", "travel_request__project", "created_by")
+        .filter(travel_request__request_department=department)
+        .order_by("-expense_date", "-id")
+    )
+    return {
+        "department": department,
+        "projects": projects,
+        "purchase_requests": purchase_requests,
+        "travel_requests": travel_requests,
+        "purchase_actuals": purchase_actuals,
+        "travel_actuals": travel_actuals,
+        "consumed_total": sum(
+            (project.get_consumed_amount() for project in projects),
+            Decimal("0.00"),
+        ),
+        "currency": COMPANY_BASE_CURRENCY,
+    }
 
 
 def build_reserved_vs_consumed_summary():

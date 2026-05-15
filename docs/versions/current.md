@@ -80,9 +80,16 @@ Full regression:
 
 ```text
 python manage.py check
+System check identified no issues (0 silenced).
+
 python manage.py makemigrations --check --dry-run
+No changes detected
+
 python manage.py test --keepdb -v 1
-Result: passed, reported by user. Exact test count/output was not provided in the closeout request.
+Found 281 test(s).
+System check identified no issues (0 silenced).
+Ran 281 tests in 683.732s
+OK
 ```
 
 Phase 3 UAT / accounting validation:

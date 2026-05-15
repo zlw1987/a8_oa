@@ -66,7 +66,13 @@
         <thead><tr><th>Department</th><th>Consumed</th></tr></thead>
         <tbody>
             {% for row in department_spending_rows %}
-            <tr><td>{{ row.department }}</td><td>{{ row.consumed|money:row.currency }}</td></tr>
+            <tr>
+                <td>
+                    <a href="{{ row.detail_url }}">{{ row.department }}</a>
+                    <br><span class="muted">Open department spending drill-down</span>
+                </td>
+                <td>{{ row.consumed|money:row.currency }}</td>
+            </tr>
             {% empty %}
             <tr><td colspan="2">No consumed budget.</td></tr>
             {% endfor %}

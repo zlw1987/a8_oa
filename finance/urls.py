@@ -29,6 +29,7 @@ urlpatterns = [
     path("accounting-periods/<int:pk>/close/", views.accounting_period_close, name="accounting_period_close"),
     path("accounting-periods/<int:pk>/reopen/", views.accounting_period_reopen, name="accounting_period_reopen"),
     path("reports/", views.finance_reports, name="finance_reports"),
+    path("reports/departments/<int:department_id>/", views.department_spending_drilldown, name="department_spending_drilldown"),
     path("accounting-review/", views.accounting_review_queue, name="accounting_review_queue"),
     path("accounting-review/<int:pk>/", views.accounting_review_detail, name="accounting_review_detail"),
     path("accounting-review/<int:pk>/decide/", views.accounting_review_decide, name="accounting_review_decide"),

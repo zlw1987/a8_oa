@@ -42,7 +42,7 @@ from .models import (
     OverBudgetPolicy,
     ReceiptPolicy,
 )
-from .reporting import build_finance_report_context
+from .reporting import build_department_spending_drilldown, build_finance_report_context
 from .presentation import (
     apply_accounting_review_tab,
     build_accounting_review_tab_counts,
@@ -805,3 +805,13 @@ def finance_reports(request):
             ])
         return response
     return render(request, "finance/reports.html", context)
+
+
+@login_required
+def department_spending_drilldown(request, department_id):
+    _enforce_accounting_permission(request.user)
+    from accounts.models import Department
+
+    department = get_object_or_404(Department, pk=department_id)
+    context = build_department_spending_drilldown(department)
+    return render(request, "finance/department_spending_drilldown.html", context)

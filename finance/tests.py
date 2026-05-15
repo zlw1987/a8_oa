@@ -14,7 +14,7 @@ from common.choices import BudgetEntryType, DepartmentType, RequestStatus, Reque
 from projects.models import Project, ProjectBudgetEntry
 from purchase.models import PurchaseActualSpend, PurchaseRequest, PurchaseRequestLine
 from purchase.models import PurchaseRequestAttachment, PurchaseRequestAttachmentType
-from travel.models import TravelRequest, TravelRequestStatus
+from travel.models import TravelActualExpenseLine, TravelActualExpenseType, TravelRequest, TravelRequestStatus
 
 from common.templatetags.money import money
 from .reporting import build_project_budget_summary, build_reserved_vs_consumed_summary
@@ -684,6 +684,50 @@ class FinanceReportDrillDownSmokeTest(TestCase):
             amount=Decimal("100.00"),
             created_by=self.accounting,
         )
+        ProjectBudgetEntry.objects.create(
+            project=self.project,
+            entry_type=BudgetEntryType.CONSUME,
+            source_type=RequestType.PURCHASE,
+            source_id=self.purchase.id,
+            amount=Decimal("75.00"),
+            created_by=self.accounting,
+        )
+        self.purchase_actual = PurchaseActualSpend.objects.create(
+            purchase_request=self.purchase,
+            spend_date=date.today(),
+            amount=Decimal("75.00"),
+            transaction_amount=Decimal("75.00"),
+            base_amount=Decimal("75.00"),
+            vendor_name="Department Vendor",
+            reference_no="PR-ACT-LINK",
+            created_by=self.accounting,
+        )
+        self.travel = TravelRequest.objects.create(
+            purpose="Finance Link Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            origin_city="Taipei",
+            destination_city="Los Angeles",
+            start_date=date.today(),
+            end_date=date.today(),
+            status=TravelRequestStatus.APPROVED,
+            estimated_total=Decimal("200.00"),
+            currency="USD",
+        )
+        self.travel_actual = TravelActualExpenseLine.objects.create(
+            travel_request=self.travel,
+            line_no=1,
+            expense_type=TravelActualExpenseType.MEAL,
+            expense_date=date.today(),
+            actual_amount=Decimal("35.00"),
+            transaction_amount=Decimal("35.00"),
+            base_amount=Decimal("35.00"),
+            vendor_name="Department Travel Vendor",
+            reference_no="TR-ACT-LINK",
+            created_by=self.accounting,
+        )
         self.review_item = AccountingReviewItem.objects.create(
             source_type=RequestType.PURCHASE,
             purchase_request=self.purchase,
@@ -711,9 +755,33 @@ class FinanceReportDrillDownSmokeTest(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, reverse("projects:project_budget_ledger", args=[self.project.id]))
+        self.assertContains(response, reverse("finance:department_spending_drilldown", args=[self.department.id]))
         self.assertContains(response, reverse("purchase:pr_detail", args=[self.purchase.id]))
         self.assertContains(response, reverse("finance:accounting_review_detail", args=[self.review_item.id]))
         self.assertContains(response, reverse("finance:card_transaction_detail", args=[self.card_transaction.id]))
+
+    def test_department_spending_drilldown_returns_source_records(self):
+        self.client.force_login(self.accounting)
+        response = self.client.get(reverse("finance:department_spending_drilldown", args=[self.department.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, self.department.dept_code)
+        self.assertContains(response, self.project.project_code)
+        self.assertContains(response, reverse("projects:project_budget_ledger", args=[self.project.id]))
+        self.assertContains(response, self.purchase.pr_no)
+        self.assertContains(response, reverse("purchase:pr_detail", args=[self.purchase.id]))
+        self.assertContains(response, self.travel.travel_no)
+        self.assertContains(response, reverse("travel:tr_detail", args=[self.travel.id]))
+        self.assertContains(response, "Department Vendor")
+        self.assertContains(response, "Department Travel Vendor")
+        self.assertContains(response, "USD 75.00")
+        self.assertContains(response, "USD 35.00")
+
+    def test_requester_cannot_access_department_spending_drilldown_directly(self):
+        self.client.force_login(self.requester)
+        response = self.client.get(reverse("finance:department_spending_drilldown", args=[self.department.id]))
+
+        self.assertEqual(response.status_code, 403)
 
 
 class FinanceCurrencySetupViewTest(TestCase):
