@@ -412,21 +412,25 @@ Do not create a separate temporary instruction-update document unless it is spec
 
 ## Current Verification
 
-Latest targeted checks run by Codex:
+Latest targeted and full checks run by Codex:
 
 ```text
 python manage.py check
-Result: passed
+System check identified no issues (0 silenced).
 
-Django template loader check:
-includes/top_nav.html
-finance/accounting_review_queue.html
-finance/accounting_review_detail.html
-finance/card_transaction_detail.html
-Result: passed
+python manage.py makemigrations --check --dry-run
+No changes detected.
+
+python manage.py test dashboard.tests finance.tests --keepdb -v 1
+Found 49 test(s).
+Ran 49 tests in 93.443s
+OK.
+
+python manage.py test --keepdb -v 1
+Found 288 test(s).
+Ran 288 tests in 686.734s
+OK.
 ```
-
-Full test suite was not run because full test execution is reserved for the user.
 
 ## Current Known Limitations
 
