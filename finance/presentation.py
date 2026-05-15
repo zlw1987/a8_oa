@@ -1,5 +1,6 @@
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from common.presentation import get_status_badge_tone
 from .models import (
@@ -18,30 +19,30 @@ OPEN_STATUS_FILTER = [
 
 def get_review_aging_bucket(aging_days):
     if aging_days >= 8:
-        return {"label": "Aging 8+ days", "tone": "danger"}
+        return {"label": _("Aging 8+ days"), "tone": "danger"}
     if aging_days >= 3:
-        return {"label": "Aging 3-7 days", "tone": "warning"}
-    return {"label": "Aging 0-2 days", "tone": "success"}
+        return {"label": _("Aging 3-7 days"), "tone": "warning"}
+    return {"label": _("Aging 0-2 days"), "tone": "success"}
 
 
 def get_review_severity(item):
     if item.policy_action in [OverBudgetAction.BLOCK, OverBudgetAction.AMENDMENT_REQUIRED]:
-        return {"label": "Critical", "tone": "danger"}
+        return {"label": _("Critical"), "tone": "danger"}
     if item.reason in [AccountingReviewReason.OVER_BUDGET, AccountingReviewReason.DUPLICATE_CARD]:
-        return {"label": "High", "tone": "attention"}
-    return {"label": "Normal", "tone": "info"}
+        return {"label": _("High"), "tone": "attention"}
+    return {"label": _("Normal"), "tone": "info"}
 
 
 def get_review_required_action(item):
     if item.reason == AccountingReviewReason.MISSING_RECEIPT:
-        return "Upload required receipt/invoice or approve an exception."
+        return _("Upload required receipt/invoice or approve an exception.")
     if item.reason == AccountingReviewReason.DUPLICATE_CARD:
-        return "Confirm duplicate status and resolve review."
+        return _("Confirm duplicate status and resolve review.")
     if item.policy_action == OverBudgetAction.AMENDMENT_REQUIRED:
-        return "Create/approve amendment or approve accounting exception."
+        return _("Create/approve amendment or approve accounting exception.")
     if item.reason == AccountingReviewReason.OVER_BUDGET:
-        return "Review over-budget exception."
-    return "Review and resolve."
+        return _("Review over-budget exception.")
+    return _("Review and resolve.")
 
 
 def build_review_source_links(item):
@@ -94,13 +95,13 @@ def enrich_review_items(items):
 
 
 ACCOUNTING_REVIEW_TAB_DEFS = [
-    ("pending", "All Pending"),
-    ("over_budget", "Over-Budget"),
-    ("missing_receipt", "Missing Receipt"),
-    ("amendment", "Amendment Required"),
-    ("duplicate_card", "Duplicate Card"),
-    ("returned", "Returned"),
-    ("resolved", "Resolved"),
+    ("pending", _("All Pending")),
+    ("over_budget", _("Over-Budget")),
+    ("missing_receipt", _("Missing Receipt")),
+    ("amendment", _("Amendment Required")),
+    ("duplicate_card", _("Duplicate Card")),
+    ("returned", _("Returned")),
+    ("resolved", _("Resolved")),
 ]
 
 

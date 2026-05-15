@@ -1,24 +1,25 @@
 {% extends "purchase/base.html" %}
+{% load i18n %}
 
-{% block title %}System Setup{% endblock %}
-{% block page_title %}System Setup{% endblock %}
+{% block title %}{% trans "System Setup" %}{% endblock %}
+{% block page_title %}{% trans "System Setup" %}{% endblock %}
 
 {% block content %}
 <div class="page-header">
     <div>
-        <h1>System Setup</h1>
-        <p class="muted">Business setup hub for permissions, policies, currencies, and production readiness.</p>
+        <h1>{% trans "System Setup" %}</h1>
+        <p class="muted">{% trans "Business setup hub for permissions, policies, currencies, and production readiness." %}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-secondary" href="{% url 'admin:index' %}">Open Django Admin</a>
+        <a class="btn btn-secondary" href="{% url 'admin:index' %}">{% trans "Open Django Admin" %}</a>
     </div>
 </div>
 
 <div class="card">
     <div class="section-header">
         <div>
-            <h2>Setup Health</h2>
-            <p class="muted">Review the configuration areas that affect finance controls and go-live readiness.</p>
+            <h2>{% trans "Setup Health" %}</h2>
+            <p class="muted">{% trans "Review the configuration areas that affect finance controls and go-live readiness." %}</p>
         </div>
     </div>
     <div class="summary-cards">
@@ -48,18 +49,18 @@
 </div>
 
 <div class="card">
-    <h2>Role / Permission Matrix</h2>
+    <h2>{% trans "Role / Permission Matrix" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Action</th>
-                    <th>Requester</th>
-                    <th>Approver</th>
-                    <th>Accounting Clerk</th>
-                    <th>Accounting Manager</th>
-                    <th>Finance Admin</th>
-                    <th>System Admin</th>
+                    <th>{% trans "Action" %}</th>
+                    <th>{% trans "Requester" %}</th>
+                    <th>{% trans "Approver" %}</th>
+                    <th>{% trans "Accounting Clerk" %}</th>
+                    <th>{% trans "Accounting Manager" %}</th>
+                    <th>{% trans "Finance Admin" %}</th>
+                    <th>{% trans "System Admin" %}</th>
                 </tr>
             </thead>
             <tbody>

@@ -777,6 +777,26 @@ class FinanceReportDrillDownSmokeTest(TestCase):
         self.assertContains(response, "USD 75.00")
         self.assertContains(response, "USD 35.00")
 
+    def test_finance_reports_render_chinese_shell_when_requested(self):
+        self.client.force_login(self.accounting)
+        response = self.client.get(reverse("finance:finance_reports"), HTTP_ACCEPT_LANGUAGE="zh-hans")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "财务报表")
+        self.assertContains(response, "部门支出摘要")
+        self.assertContains(response, reverse("finance:department_spending_drilldown", args=[self.department.id]))
+
+    def test_department_spending_drilldown_renders_chinese_shell_when_requested(self):
+        self.client.force_login(self.accounting)
+        response = self.client.get(
+            reverse("finance:department_spending_drilldown", args=[self.department.id]),
+            HTTP_ACCEPT_LANGUAGE="zh-hans",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "部门支出明细")
+        self.assertContains(response, "返回财务报表")
+
     def test_requester_cannot_access_department_spending_drilldown_directly(self):
         self.client.force_login(self.requester)
         response = self.client.get(reverse("finance:department_spending_drilldown", args=[self.department.id]))

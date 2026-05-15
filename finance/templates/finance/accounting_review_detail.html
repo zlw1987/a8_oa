@@ -1,18 +1,19 @@
 {% extends "purchase/base.html" %}
+{% load i18n %}
 
-{% block title %}Accounting Review Detail{% endblock %}
-{% block page_title %}Accounting Review Detail{% endblock %}
+{% block title %}{% trans "Accounting Review Detail" %}{% endblock %}
+{% block page_title %}{% trans "Accounting Review Detail" %}{% endblock %}
 
 {% block content %}
 <div class="card">
     <div class="action-row">
-        <a class="btn btn-secondary" href="{% url 'finance:accounting_review_queue' %}">Back to Queue</a>
+        <a class="btn btn-secondary" href="{% url 'finance:accounting_review_queue' %}">{% trans "Back to Queue" %}</a>
     </div>
 </div>
 
 <div class="card request-hero">
     <div class="request-hero-main">
-        <div class="muted">Accounting Review Item</div>
+        <div class="muted">{% trans "Accounting Review Item" %}</div>
         <h2>{{ item.title|default:item.get_reason_display }}</h2>
         <div class="request-hero-meta">
             {% include "includes/status_badge.html" with label=item.get_status_display tone=item.status_tone %}
@@ -21,16 +22,16 @@
         </div>
     </div>
     <div class="request-hero-side">
-        <div class="summary-label">Amount</div>
+        <div class="summary-label">{% trans "Amount" %}</div>
         <div class="request-hero-amount">{{ item.amount }}</div>
     </div>
 </div>
 
 <div class="detail-two-column">
     <div class="card">
-        <h2>Issue Summary</h2>
+        <h2>{% trans "Issue Summary" %}</h2>
         <div class="summary-grid">
-            <div class="summary-label">Source</div>
+            <div class="summary-label">{% trans "Source" %}</div>
             <div>
                 {% for link in item.source_links %}
                 <a href="{{ link.url }}">{{ link.label }}</a>{% if not forloop.last %}<br>{% endif %}
@@ -39,19 +40,19 @@
                 {% endfor %}
             </div>
 
-            <div class="summary-label">Requester</div>
+            <div class="summary-label">{% trans "Requester" %}</div>
             <div>{{ item.requester_display }}</div>
 
-            <div class="summary-label">Department</div>
+            <div class="summary-label">{% trans "Department" %}</div>
             <div>{{ item.department_display }}</div>
 
-            <div class="summary-label">Project</div>
+            <div class="summary-label">{% trans "Project" %}</div>
             <div>{{ item.project_display }}</div>
 
-            <div class="summary-label">Reason</div>
+            <div class="summary-label">{% trans "Reason" %}</div>
             <div>{% include "includes/status_badge.html" with label=item.get_reason_display tone=item.reason_tone %}</div>
 
-            <div class="summary-label">Policy Action</div>
+            <div class="summary-label">{% trans "Policy Action" %}</div>
             <div>
                 {% if item.policy_action %}
                 {% include "includes/status_badge.html" with label=item.get_policy_action_display tone=item.policy_action_tone %}
@@ -60,19 +61,19 @@
                 {% endif %}
             </div>
 
-            <div class="summary-label">Variance</div>
+            <div class="summary-label">{% trans "Variance" %}</div>
             <div>{{ item.over_amount }} / {{ item.over_percent }}</div>
 
-            <div class="summary-label">Required Action</div>
+            <div class="summary-label">{% trans "Required Action" %}</div>
             <div>{{ item.required_action_display }}</div>
 
-            <div class="summary-label">Description</div>
+            <div class="summary-label">{% trans "Description" %}</div>
             <div>{{ item.description|default:"-" }}</div>
         </div>
     </div>
 
     <div class="card">
-        <h2>Review Decision</h2>
+        <h2>{% trans "Review Decision" %}</h2>
         {% if can_decide %}
         <form method="post" action="{% url 'finance:accounting_review_decide' item.id %}">
             {% csrf_token %}
@@ -80,22 +81,22 @@
             {% include "includes/form_field.html" with field=form.decision %}
             {% include "includes/form_field.html" with field=form.comment %}
             <div class="action-row">
-                <button type="submit" class="btn btn-primary">Save Decision</button>
+                <button type="submit" class="btn btn-primary">{% trans "Save Decision" %}</button>
             </div>
         </form>
         {% elif item.is_unresolved %}
         <div class="alert alert-warning">
-            You cannot resolve this item. Requester self-review is not allowed.
+            {% trans "You cannot resolve this item. Requester self-review is not allowed." %}
         </div>
         {% else %}
         <div class="summary-grid">
-            <div class="summary-label">Decision</div>
+            <div class="summary-label">{% trans "Decision" %}</div>
             <div>{{ item.get_decision_display|default:"-" }}</div>
-            <div class="summary-label">Reviewed By</div>
+            <div class="summary-label">{% trans "Reviewed By" %}</div>
             <div>{{ item.reviewed_by|default:"-" }}</div>
-            <div class="summary-label">Reviewed At</div>
+            <div class="summary-label">{% trans "Reviewed At" %}</div>
             <div>{{ item.reviewed_at|default:"-" }}</div>
-            <div class="summary-label">Comment</div>
+            <div class="summary-label">{% trans "Comment" %}</div>
             <div>{{ item.comment|default:"-" }}</div>
         </div>
         {% endif %}
@@ -104,66 +105,66 @@
 
 <div class="detail-two-column">
     <div class="card">
-        <h2>Financial Impact</h2>
+        <h2>{% trans "Financial Impact" %}</h2>
         <div class="summary-grid">
-            <div class="summary-label">Amount</div>
+            <div class="summary-label">{% trans "Amount" %}</div>
             <div>{{ item.amount }}</div>
-            <div class="summary-label">Over Amount</div>
+            <div class="summary-label">{% trans "Over Amount" %}</div>
             <div>{{ item.over_amount }}</div>
-            <div class="summary-label">Over Percent</div>
+            <div class="summary-label">{% trans "Over Percent" %}</div>
             <div>{{ item.over_percent }}</div>
-            <div class="summary-label">Policy</div>
+            <div class="summary-label">{% trans "Policy" %}</div>
             <div>{{ item.policy|default:"Default" }}</div>
         </div>
     </div>
 
     <div class="card">
-        <h2>Receipt / Attachment Status</h2>
+        <h2>{% trans "Receipt / Attachment Status" %}</h2>
         {% if item.reason == "MISSING_RECEIPT" %}
         <div class="alert alert-warning">
-            Receipt or invoice support is missing or has not been accepted for the exact actual expense line below.
+            {% trans "Receipt or invoice support is missing or has not been accepted for the exact actual expense line below." %}
         </div>
         {% if actual_expense %}
         <div class="summary-grid">
-            <div class="summary-label">Actual Date</div>
+            <div class="summary-label">{% trans "Actual Date" %}</div>
             <div>{{ actual_expense.spend_date|default:actual_expense.expense_date }}</div>
-            <div class="summary-label">Actual Amount</div>
+            <div class="summary-label">{% trans "Actual Amount" %}</div>
             <div>{{ actual_expense.base_amount }} {{ actual_expense.base_currency }}</div>
-            <div class="summary-label">Reference</div>
+            <div class="summary-label">{% trans "Reference" %}</div>
             <div>{{ actual_expense.reference_no|default:"-" }}</div>
-            <div class="summary-label">Receipt Status</div>
+            <div class="summary-label">{% trans "Receipt Status" %}</div>
             <div>{{ evidence_status.receipt_status }}</div>
-            <div class="summary-label">Invoice Status</div>
+            <div class="summary-label">{% trans "Invoice Status" %}</div>
             <div>{{ evidence_status.invoice_status }}</div>
-            <div class="summary-label">Linked Evidence</div>
+            <div class="summary-label">{% trans "Linked Evidence" %}</div>
             <div>
                 {% for link in evidence_status.all_links %}
                     {{ link.get_attachment_type_display }}{% if not forloop.last %}<br>{% endif %}
                 {% empty %}
-                    No linked line-level evidence.
+                    {% trans "No linked line-level evidence." %}
                 {% endfor %}
             </div>
         </div>
         {% endif %}
         {% else %}
-        <p class="muted">No receipt-specific blocker is recorded for this review item.</p>
+        <p class="muted">{% trans "No receipt-specific blocker is recorded for this review item." %}</p>
         {% endif %}
     </div>
 </div>
 
 {% if item.reason == "DUPLICATE_EXPENSE" %}
 <div class="card">
-    <h2>Duplicate Candidate Review</h2>
-    <p class="muted">Possible duplicate candidates are calculated from vendor, date, amount, reference, and linked receipt or invoice hash.</p>
+    <h2>{% trans "Duplicate Candidate Review" %}</h2>
+    <p class="muted">{% trans "Possible duplicate candidates are calculated from vendor, date, amount, reference, and linked receipt or invoice hash." %}</p>
     <table>
         <thead>
             <tr>
-                <th>Candidate</th>
-                <th>Match Type</th>
-                <th>Date</th>
-                <th>Amount</th>
-                <th>Vendor</th>
-                <th>Reference</th>
+                <th>{% trans "Candidate" %}</th>
+                <th>{% trans "Match Type" %}</th>
+                <th>{% trans "Date" %}</th>
+                <th>{% trans "Amount" %}</th>
+                <th>{% trans "Vendor" %}</th>
+                <th>{% trans "Reference" %}</th>
             </tr>
         </thead>
         <tbody>
@@ -178,7 +179,7 @@
             </tr>
             {% empty %}
             <tr>
-                <td colspan="6">No active duplicate candidate could be resolved from current records. Review the description for original detection notes.</td>
+                <td colspan="6">{% trans "No active duplicate candidate could be resolved from current records. Review the description for original detection notes." %}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -187,21 +188,21 @@
 {% endif %}
 
 <div class="card">
-    <h2>Decision History / Audit Context</h2>
+    <h2>{% trans "Decision History / Audit Context" %}</h2>
     <div class="summary-grid">
-        <div class="summary-label">Created By</div>
+        <div class="summary-label">{% trans "Created By" %}</div>
         <div>{{ item.created_by|default:"-" }}</div>
-        <div class="summary-label">Created At</div>
+        <div class="summary-label">{% trans "Created At" %}</div>
         <div>{{ item.created_at }}</div>
-        <div class="summary-label">Assigned Reviewer</div>
+        <div class="summary-label">{% trans "Assigned Reviewer" %}</div>
         <div>{{ item.assigned_reviewer|default:"-" }}</div>
-        <div class="summary-label">Decision</div>
+        <div class="summary-label">{% trans "Decision" %}</div>
         <div>{{ item.get_decision_display|default:"-" }}</div>
-        <div class="summary-label">Reviewed By</div>
+        <div class="summary-label">{% trans "Reviewed By" %}</div>
         <div>{{ item.reviewed_by|default:"-" }}</div>
-        <div class="summary-label">Reviewed At</div>
+        <div class="summary-label">{% trans "Reviewed At" %}</div>
         <div>{{ item.reviewed_at|default:"-" }}</div>
-        <div class="summary-label">Comment</div>
+        <div class="summary-label">{% trans "Comment" %}</div>
         <div>{{ item.comment|default:"-" }}</div>
     </div>
 </div>

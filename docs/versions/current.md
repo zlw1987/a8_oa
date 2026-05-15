@@ -2,11 +2,12 @@
 
 ## Status
 
-The current version includes V1.1 Phase 3 completed and closed on top of the V0.5 business-control milestone, V0.6 multi-currency foundation, V1.1 Phase 1 financial-integrity workflows, and V1.1 Phase 2 expense-control workflows.
+The current version includes V1.2A Finance Reports drill-down enhancement on top of V1.1 Phase 3 completed and closed, the V0.5 business-control milestone, V0.6 multi-currency foundation, V1.1 Phase 1 financial-integrity workflows, and V1.1 Phase 2 expense-control workflows.
 
 ## Latest Fixes
 
 - Cleaned up Accounting Review Queue filters with visible labels, Basic/Advanced sections, tab counts, preserved-tab reset behavior, and clearer empty states.
+- Added V1.2A Finance Reports Department Spending drill-down. Department Spending Summary rows now open a department detail page with related projects, PRs, TRs, purchase actual spend, and travel actual expenses.
 - Stabilized Dashboard information hierarchy with My Work Today, Approval Summary, My Requests, oversight, and collapsible setup sections.
 - Added V1.1A System Setup landing page, shared role/permission helpers, and Admin dropdown cleanup.
 - Added V1.1B/V1.1C foundation models for accounting periods, refund/correction, line-level receipt links, direct project cost policy, and approval delegation/escalation.
@@ -67,6 +68,23 @@ The current version includes V1.1 Phase 3 completed and closed on top of the V0.
 ## Verification
 
 Latest verification for the V1.1 Phase 3 setup and control changes:
+
+Latest V1.2A targeted verification:
+
+```text
+python manage.py check
+System check identified no issues (0 silenced).
+
+python manage.py makemigrations --check --dry-run
+No changes detected.
+
+python manage.py test finance.tests --keepdb -v 1
+Found 35 test(s).
+Ran 35 tests in 57.308s
+OK
+```
+
+V1.1 Phase 3 setup and control verification:
 
 ```text
 python manage.py check
@@ -176,6 +194,10 @@ Phase 3 completion checkpoint:
 
 - [V1.1 Phase 3 Completion Checkpoint](v1.1-phase3-completion.md)
 
+V1.2A completion note:
+
+- [V1.2A Finance Report Drill-Down](v1.2a-finance-report-drilldown.md)
+
 ## Current Accepted Limitations
 
 - Duplicate candidate links are runtime-computed from current records, not persisted immutable snapshots.
@@ -183,4 +205,4 @@ Phase 3 completion checkpoint:
 - Duplicate detection creates review items but does not implement a duplicate `BLOCK` policy.
 - Department General Budget does not yet include a PR/TR "general spend" flag or auto-default behavior.
 - Attachment Retention supports void-with-reason and Attachment History, but not a full replacement workflow.
-- Finance Report drill-down is link-based only; advanced reporting and Excel export remain future work.
+- Finance Report drill-down is link/detail based only; advanced reporting, Excel export, saved filters, and date/department/project report filters remain future work.

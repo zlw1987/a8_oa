@@ -1,4 +1,5 @@
 from django import forms
+from django.utils.translation import gettext_lazy as _
 
 from projects.models import Project
 from purchase.models import PurchaseRequest
@@ -302,10 +303,10 @@ class CardTransactionAllocationForm(forms.ModelForm):
 class AccountingReviewDecisionForm(forms.Form):
     decision = forms.ChoiceField(
         choices=[
-            (AccountingReviewDecision.APPROVE_EXCEPTION, "Approve Exception"),
-            (AccountingReviewDecision.RETURN, "Return"),
-            (AccountingReviewDecision.REJECT, "Reject"),
-            (AccountingReviewDecision.RESOLVE, "Resolve"),
+            (AccountingReviewDecision.APPROVE_EXCEPTION, _("Approve Exception")),
+            (AccountingReviewDecision.RETURN, _("Return")),
+            (AccountingReviewDecision.REJECT, _("Reject")),
+            (AccountingReviewDecision.RESOLVE, _("Resolve")),
         ]
     )
     comment = forms.CharField(required=False, widget=forms.Textarea)
@@ -314,47 +315,47 @@ class AccountingReviewDecisionForm(forms.Form):
 class AccountingReviewFilterForm(forms.Form):
     q = forms.CharField(
         required=False,
-        label="Keyword",
-        widget=forms.TextInput(attrs={"placeholder": "Search keyword...", "aria-label": "Keyword search"}),
+        label=_("Keyword"),
+        widget=forms.TextInput(attrs={"placeholder": _("Search keyword..."), "aria-label": _("Keyword search")}),
     )
     status = forms.ChoiceField(
         required=False,
-        choices=[("", "All Statuses")] + list(AccountingReviewItem._meta.get_field("status").choices),
-        widget=forms.Select(attrs={"aria-label": "Status"}),
+        choices=[("", _("All Statuses"))] + list(AccountingReviewItem._meta.get_field("status").choices),
+        widget=forms.Select(attrs={"aria-label": _("Status")}),
     )
     reason = forms.ChoiceField(
         required=False,
-        choices=[("", "All Reasons")] + list(AccountingReviewItem._meta.get_field("reason").choices),
-        widget=forms.Select(attrs={"aria-label": "Reason"}),
+        choices=[("", _("All Reasons"))] + list(AccountingReviewItem._meta.get_field("reason").choices),
+        widget=forms.Select(attrs={"aria-label": _("Reason")}),
     )
     source_type = forms.ChoiceField(
         required=False,
-        choices=[("", "All Sources")] + list(AccountingReviewItem._meta.get_field("source_type").choices),
-        widget=forms.Select(attrs={"aria-label": "Source type"}),
+        choices=[("", _("All Sources"))] + list(AccountingReviewItem._meta.get_field("source_type").choices),
+        widget=forms.Select(attrs={"aria-label": _("Source type")}),
     )
     policy_action = forms.ChoiceField(
         required=False,
-        choices=[("", "All Policy Actions")] + list(OverBudgetAction.choices),
-        widget=forms.Select(attrs={"aria-label": "Policy action"}),
+        choices=[("", _("All Policy Actions"))] + list(OverBudgetAction.choices),
+        widget=forms.Select(attrs={"aria-label": _("Policy action")}),
     )
     requester = forms.CharField(
         required=False,
-        label="Requester",
-        widget=forms.TextInput(attrs={"placeholder": "Requester username or name...", "aria-label": "Requester"}),
+        label=_("Requester"),
+        widget=forms.TextInput(attrs={"placeholder": _("Requester username or name..."), "aria-label": _("Requester")}),
     )
     department = forms.CharField(
         required=False,
-        label="Department",
-        widget=forms.TextInput(attrs={"placeholder": "Department...", "aria-label": "Department"}),
+        label=_("Department"),
+        widget=forms.TextInput(attrs={"placeholder": _("Department..."), "aria-label": _("Department")}),
     )
     project = forms.CharField(
         required=False,
-        label="Project",
-        widget=forms.TextInput(attrs={"placeholder": "Project...", "aria-label": "Project"}),
+        label=_("Project"),
+        widget=forms.TextInput(attrs={"placeholder": _("Project..."), "aria-label": _("Project")}),
     )
     min_age_days = forms.IntegerField(
         required=False,
         min_value=0,
-        label="Minimum Aging Days",
-        widget=forms.NumberInput(attrs={"placeholder": "Min aging days...", "aria-label": "Minimum aging days"}),
+        label=_("Minimum Aging Days"),
+        widget=forms.NumberInput(attrs={"placeholder": _("Min aging days..."), "aria-label": _("Minimum aging days")}),
     )

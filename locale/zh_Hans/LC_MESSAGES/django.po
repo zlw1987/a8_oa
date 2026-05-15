@@ -1,0 +1,706 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: A8 OA V1.2B\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-05-15 00:00+0000\n"
+"PO-Revision-Date: 2026-05-15 00:00+0000\n"
+"Last-Translator: A8 OA Team\n"
+"Language-Team: A8 OA Team\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Dashboard"
+msgstr "仪表板"
+
+msgid "Work"
+msgstr "工作"
+
+msgid "Purchase Requests"
+msgstr "采购申请"
+
+msgid "Travel Requests"
+msgstr "差旅申请"
+
+msgid "My Tasks"
+msgstr "我的任务"
+
+msgid "My Approval History"
+msgstr "我的审批历史"
+
+msgid "My Delegations"
+msgstr "我的授权代理"
+
+msgid "Finance"
+msgstr "财务"
+
+msgid "Accounting Review Queue"
+msgstr "会计复核队列"
+
+msgid "Card Transactions"
+msgstr "公司卡交易"
+
+msgid "Accounting Periods"
+msgstr "会计期间"
+
+msgid "Finance Reports"
+msgstr "财务报表"
+
+msgid "Variance Report"
+msgstr "差异报表"
+
+msgid "Setup"
+msgstr "设置"
+
+msgid "Projects"
+msgstr "项目"
+
+msgid "Create Project"
+msgstr "创建项目"
+
+msgid "Department General Budgets"
+msgstr "部门通用预算"
+
+msgid "Departments"
+msgstr "部门"
+
+msgid "Approval Rules"
+msgstr "审批规则"
+
+msgid "Over-Budget Policies"
+msgstr "超预算政策"
+
+msgid "Receipt Policies"
+msgstr "收据政策"
+
+msgid "Direct Project Cost Policies"
+msgstr "项目直接成本政策"
+
+msgid "FX Variance Policies"
+msgstr "汇率差异政策"
+
+msgid "Currencies"
+msgstr "币种"
+
+msgid "Exchange Rates"
+msgstr "汇率"
+
+msgid "Admin"
+msgstr "管理"
+
+msgid "Django Admin"
+msgstr "Django 管理后台"
+
+msgid "User / Department Setup"
+msgstr "用户 / 部门设置"
+
+msgid "System Setup"
+msgstr "系统设置"
+
+msgid "Signed in as:"
+msgstr "当前登录："
+
+msgid "Login"
+msgstr "登录"
+
+msgid "Logout"
+msgstr "退出"
+
+msgid "My Work Today"
+msgstr "今日待办"
+
+msgid "Pending Approval Tasks"
+msgstr "待审批任务"
+
+msgid "Overdue Approval Tasks"
+msgstr "逾期审批任务"
+
+msgid "Returned to Me"
+msgstr "退回给我"
+
+msgid "Requests returned for correction."
+msgstr "需要你修正的退回申请。"
+
+msgid "Missing Receipt / Need Action"
+msgstr "缺少收据 / 需要处理"
+
+msgid "Receipt issues connected to your requests."
+msgstr "与你的申请相关的收据问题。"
+
+msgid "Pending Accounting Reviews"
+msgstr "待会计复核"
+
+msgid "Unmatched Card Transactions"
+msgstr "未匹配公司卡交易"
+
+msgid "Approval Summary"
+msgstr "审批摘要"
+
+msgid "My Pending Approval Tasks"
+msgstr "我的待审批任务"
+
+msgid "Claimable Pool Tasks"
+msgstr "可领取池任务"
+
+msgid "Recently Approved"
+msgstr "最近已审批"
+
+msgid "Returned / Rejected Items"
+msgstr "已退回 / 已拒绝项目"
+
+msgid "My Requests / My Recent Activity"
+msgstr "我的申请 / 最近活动"
+
+msgid "My Draft Requests"
+msgstr "我的草稿申请"
+
+msgid "Draft PR/TR items you can continue."
+msgstr "你可以继续编辑的采购/差旅草稿。"
+
+msgid "Pending Approval"
+msgstr "等待审批"
+
+msgid "Requests currently waiting for approval."
+msgstr "当前等待审批的申请。"
+
+msgid "Approved Not Closed"
+msgstr "已批准未关闭"
+
+msgid "Approved requests still open."
+msgstr "仍未关闭的已批准申请。"
+
+msgid "Create Purchase Request"
+msgstr "创建采购申请"
+
+msgid "Create Travel Request"
+msgstr "创建差旅申请"
+
+msgid "Team / Department / Finance Oversight"
+msgstr "团队 / 部门 / 财务监督"
+
+msgid "Missing Receipt Items"
+msgstr "缺少收据项目"
+
+msgid "Over-Budget Reviews"
+msgstr "超预算复核"
+
+msgid "Amendment Required Items"
+msgstr "需要补充申请项目"
+
+msgid "Duplicate Card Reviews"
+msgstr "重复公司卡复核"
+
+msgid "Requests Ready to Close"
+msgstr "可关闭申请"
+
+msgid "Admin / Setup Shortcuts"
+msgstr "管理 / 设置快捷入口"
+
+msgid "Open Review Aging"
+msgstr "未结复核账龄"
+
+msgid "Projects Near Budget Limit"
+msgstr "接近预算上限的项目"
+
+msgid "Over-Budget Exceptions"
+msgstr "超预算例外"
+
+msgid "Unmatched Card Count"
+msgstr "未匹配公司卡数量"
+
+msgid "Receipt Policy Issues"
+msgstr "收据政策问题"
+
+msgid "Policy Setup"
+msgstr "政策设置"
+
+msgid "System Admin"
+msgstr "系统管理员"
+
+msgid "Approval Rule Setup"
+msgstr "审批规则设置"
+
+msgid "Finance Policy Setup"
+msgstr "财务政策设置"
+
+msgid "System Notes"
+msgstr "系统备注"
+
+msgid "No feed"
+msgstr "暂无动态"
+
+msgid "My Recent Requests"
+msgstr "我的最近申请"
+
+msgid "Request Type"
+msgstr "申请类型"
+
+msgid "Request No"
+msgstr "申请编号"
+
+msgid "Title"
+msgstr "标题"
+
+msgid "Status"
+msgstr "状态"
+
+msgid "Project"
+msgstr "项目"
+
+msgid "Amount"
+msgstr "金额"
+
+msgid "Open"
+msgstr "打开"
+
+msgid "No recent requests."
+msgstr "没有最近申请。"
+
+msgid "Assigned to Me"
+msgstr "分配给我"
+
+msgid "Step"
+msgstr "步骤"
+
+msgid "Due At"
+msgstr "到期时间"
+
+msgid "Due Status"
+msgstr "到期状态"
+
+msgid "Request Status"
+msgstr "申请状态"
+
+msgid "Unavailable"
+msgstr "不可用"
+
+msgid "No assigned tasks."
+msgstr "没有分配任务。"
+
+msgid "Available Pool Tasks"
+msgstr "可用池任务"
+
+msgid "No available pool tasks."
+msgstr "没有可用池任务。"
+
+msgid "Report Actions"
+msgstr "报表操作"
+
+msgid "Export CSV"
+msgstr "导出 CSV"
+
+msgid "Reserved"
+msgstr "已预留"
+
+msgid "Released"
+msgstr "已释放"
+
+msgid "Consumed"
+msgstr "已消耗"
+
+msgid "Open Reviews"
+msgstr "未结复核"
+
+msgid "Project Budget Summary"
+msgstr "项目预算摘要"
+
+msgid "Budget"
+msgstr "预算"
+
+msgid "Available"
+msgstr "可用"
+
+msgid "Open budget ledger"
+msgstr "打开预算台账"
+
+msgid "No projects."
+msgstr "没有项目。"
+
+msgid "Department Spending Summary"
+msgstr "部门支出摘要"
+
+msgid "Department"
+msgstr "部门"
+
+msgid "Open department spending drill-down"
+msgstr "打开部门支出明细"
+
+msgid "No consumed budget."
+msgstr "没有已消耗预算。"
+
+msgid "Open Requests With Remaining Reserve"
+msgstr "仍有预留余额的未结申请"
+
+msgid "Type"
+msgstr "类型"
+
+msgid "Request"
+msgstr "申请"
+
+msgid "Remaining Reserve"
+msgstr "剩余预留"
+
+msgid "No open reserve."
+msgstr "没有未结预留。"
+
+msgid "Created"
+msgstr "创建时间"
+
+msgid "Source"
+msgstr "来源"
+
+msgid "Base Amount"
+msgstr "基准金额"
+
+msgid "Over"
+msgstr "超出"
+
+msgid "Transaction Amount"
+msgstr "交易金额"
+
+msgid "Policy Action"
+msgstr "政策动作"
+
+msgid "No over-budget exceptions."
+msgstr "没有超预算例外。"
+
+msgid "Company Card Unmatched Transactions"
+msgstr "未匹配公司卡交易"
+
+msgid "Date"
+msgstr "日期"
+
+msgid "Merchant"
+msgstr "商户"
+
+msgid "Posted/Base Amount"
+msgstr "入账/基准金额"
+
+msgid "Original Amount"
+msgstr "原始金额"
+
+msgid "Reference"
+msgstr "参考号"
+
+msgid "No unmatched transactions."
+msgstr "没有未匹配交易。"
+
+msgid "Accounting Review Aging"
+msgstr "会计复核账龄"
+
+msgid "Aging Days"
+msgstr "账龄天数"
+
+msgid "Reason"
+msgstr "原因"
+
+msgid "Description"
+msgstr "说明"
+
+msgid "No open review items."
+msgstr "没有未结复核项目。"
+
+msgid "Department Spending Drill-Down"
+msgstr "部门支出明细"
+
+msgid "Back to Finance Reports"
+msgstr "返回财务报表"
+
+msgid "Consumed Total"
+msgstr "消耗合计"
+
+msgid "Related Projects"
+msgstr "相关项目"
+
+msgid "Ledger"
+msgstr "台账"
+
+msgid "Open ledger"
+msgstr "打开台账"
+
+msgid "No related projects."
+msgstr "没有相关项目。"
+
+msgid "Related Purchase Requests"
+msgstr "相关采购申请"
+
+msgid "PR No"
+msgstr "采购编号"
+
+msgid "Estimated Total"
+msgstr "预估合计"
+
+msgid "Open PR"
+msgstr "打开采购申请"
+
+msgid "No related purchase requests."
+msgstr "没有相关采购申请。"
+
+msgid "Related Travel Requests"
+msgstr "相关差旅申请"
+
+msgid "TR No"
+msgstr "差旅编号"
+
+msgid "Purpose"
+msgstr "目的"
+
+msgid "Open TR"
+msgstr "打开差旅申请"
+
+msgid "No related travel requests."
+msgstr "没有相关差旅申请。"
+
+msgid "Purchase Actual Spend"
+msgstr "采购实际支出"
+
+msgid "Vendor"
+msgstr "供应商"
+
+msgid "No purchase actual spend records."
+msgstr "没有采购实际支出记录。"
+
+msgid "Travel Actual Expenses"
+msgstr "差旅实际费用"
+
+msgid "No travel actual expense records."
+msgstr "没有差旅实际费用记录。"
+
+msgid "Current Tab"
+msgstr "当前标签"
+
+msgid "Pending Items"
+msgstr "待处理项目"
+
+msgid "Filters"
+msgstr "筛选"
+
+msgid "Basic Filters"
+msgstr "基础筛选"
+
+msgid "Show Advanced Filters"
+msgstr "显示高级筛选"
+
+msgid "Filter"
+msgstr "筛选"
+
+msgid "Reset"
+msgstr "重置"
+
+msgid "Review Workbench"
+msgstr "复核工作台"
+
+msgid "Requester / Department / Project"
+msgstr "申请人 / 部门 / 项目"
+
+msgid "Variance"
+msgstr "差异"
+
+msgid "Aging / Severity"
+msgstr "账龄 / 严重性"
+
+msgid "Required Action"
+msgstr "需要动作"
+
+msgid "Actions"
+msgstr "操作"
+
+msgid "No linked source"
+msgstr "没有关联来源"
+
+msgid "View"
+msgstr "查看"
+
+msgid "Resolve"
+msgstr "解决"
+
+msgid "Approve Exception"
+msgstr "批准例外"
+
+msgid "Return"
+msgstr "退回"
+
+msgid "Reject"
+msgstr "拒绝"
+
+msgid "No review items match the current filters."
+msgstr "没有符合当前筛选条件的复核项目。"
+
+msgid "Try clearing filters or switching to another quick tab."
+msgstr "请尝试清除筛选或切换到其他快捷标签。"
+
+msgid "Clear Filters"
+msgstr "清除筛选"
+
+msgid "No pending review items for this tab."
+msgstr "此标签下没有待处理复核项目。"
+
+msgid "Try switching to another tab, clearing filters, or checking Resolved items."
+msgstr "请尝试切换标签、清除筛选或查看已解决项目。"
+
+msgid "Previous"
+msgstr "上一页"
+
+msgid "Next"
+msgstr "下一页"
+
+msgid "Accounting Review Detail"
+msgstr "会计复核详情"
+
+msgid "Back to Queue"
+msgstr "返回队列"
+
+msgid "Accounting Review Item"
+msgstr "会计复核项目"
+
+msgid "Issue Summary"
+msgstr "问题摘要"
+
+msgid "Review Decision"
+msgstr "复核决定"
+
+msgid "Save Decision"
+msgstr "保存决定"
+
+msgid "Financial Impact"
+msgstr "财务影响"
+
+msgid "Over Amount"
+msgstr "超出金额"
+
+msgid "Over Percent"
+msgstr "超出比例"
+
+msgid "Policy"
+msgstr "政策"
+
+msgid "Receipt / Attachment Status"
+msgstr "收据 / 附件状态"
+
+msgid "Actual Date"
+msgstr "实际日期"
+
+msgid "Actual Amount"
+msgstr "实际金额"
+
+msgid "Receipt Status"
+msgstr "收据状态"
+
+msgid "Invoice Status"
+msgstr "发票状态"
+
+msgid "Linked Evidence"
+msgstr "关联凭证"
+
+msgid "No linked line-level evidence."
+msgstr "没有关联的行级凭证。"
+
+msgid "Duplicate Candidate Review"
+msgstr "重复候选复核"
+
+msgid "Candidate"
+msgstr "候选项"
+
+msgid "Match Type"
+msgstr "匹配类型"
+
+msgid "Decision History / Audit Context"
+msgstr "决定历史 / 审计上下文"
+
+msgid "Created By"
+msgstr "创建人"
+
+msgid "Created At"
+msgstr "创建时间"
+
+msgid "Assigned Reviewer"
+msgstr "分配复核人"
+
+msgid "Decision"
+msgstr "决定"
+
+msgid "Reviewed By"
+msgstr "复核人"
+
+msgid "Reviewed At"
+msgstr "复核时间"
+
+msgid "Comment"
+msgstr "备注"
+
+msgid "Setup Health"
+msgstr "设置健康状态"
+
+msgid "Role / Permission Matrix"
+msgstr "角色 / 权限矩阵"
+
+msgid "Action"
+msgstr "动作"
+
+msgid "Requester"
+msgstr "申请人"
+
+msgid "Approver"
+msgstr "审批人"
+
+msgid "Accounting Clerk"
+msgstr "会计经办"
+
+msgid "Accounting Manager"
+msgstr "会计经理"
+
+msgid "Finance Admin"
+msgstr "财务管理员"
+
+msgid "User & Permission Setup"
+msgstr "用户与权限设置"
+
+msgid "Approval And Finance Policy"
+msgstr "审批与财务政策"
+
+msgid "Currency And Exchange Rates"
+msgstr "币种与汇率"
+
+msgid "System Health"
+msgstr "系统健康"
+
+msgid "All Pending"
+msgstr "全部待处理"
+
+msgid "Over-Budget"
+msgstr "超预算"
+
+msgid "Missing Receipt"
+msgstr "缺少收据"
+
+msgid "Amendment Required"
+msgstr "需要补充申请"
+
+msgid "Duplicate Card"
+msgstr "重复公司卡"
+
+msgid "Returned"
+msgstr "已退回"
+
+msgid "Resolved"
+msgstr "已解决"
+
+msgid "Keyword"
+msgstr "关键字"
+
+msgid "All Statuses"
+msgstr "全部状态"
+
+msgid "All Reasons"
+msgstr "全部原因"
+
+msgid "All Sources"
+msgstr "全部来源"
+
+msgid "All Policy Actions"
+msgstr "全部政策动作"
+
+msgid "Minimum Aging Days"
+msgstr "最小账龄天数"

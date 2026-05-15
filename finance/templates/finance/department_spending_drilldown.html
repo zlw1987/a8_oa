@@ -1,51 +1,52 @@
 {% extends "purchase/base.html" %}
+{% load i18n %}
 {% load money %}
 
-{% block title %}Department Spending Drill-Down{% endblock %}
-{% block page_title %}Department Spending Drill-Down{% endblock %}
+{% block title %}{% trans "Department Spending Drill-Down" %}{% endblock %}
+{% block page_title %}{% trans "Department Spending Drill-Down" %}{% endblock %}
 
 {% block content %}
 <div class="card page-action-card">
     <div class="section-header">
         <div>
             <h2>{{ department.dept_code }} - {{ department.dept_name }}</h2>
-            <p class="muted">Source records connected to this department's spending and budget activity.</p>
+            <p class="muted">{% trans "Source records connected to this department's spending and budget activity." %}</p>
         </div>
-        <a class="btn btn-secondary" href="{% url 'finance:finance_reports' %}">Back to Finance Reports</a>
+        <a class="btn btn-secondary" href="{% url 'finance:finance_reports' %}">{% trans "Back to Finance Reports" %}</a>
     </div>
 </div>
 
 <div class="summary-cards">
     <div class="summary-card">
-        <div class="label">Consumed Total</div>
+        <div class="label">{% trans "Consumed Total" %}</div>
         <div class="value">{{ consumed_total|money:currency }}</div>
     </div>
     <div class="summary-card">
-        <div class="label">Projects</div>
+        <div class="label">{% trans "Projects" %}</div>
         <div class="value">{{ projects|length }}</div>
     </div>
     <div class="summary-card">
-        <div class="label">Purchase Requests</div>
+        <div class="label">{% trans "Purchase Requests" %}</div>
         <div class="value">{{ purchase_requests|length }}</div>
     </div>
     <div class="summary-card">
-        <div class="label">Travel Requests</div>
+        <div class="label">{% trans "Travel Requests" %}</div>
         <div class="value">{{ travel_requests|length }}</div>
     </div>
 </div>
 
 <div class="card">
-    <h2>Related Projects</h2>
+    <h2>{% trans "Related Projects" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Project</th>
-                    <th>Status</th>
-                    <th>Budget</th>
-                    <th>Consumed</th>
-                    <th>Available</th>
-                    <th>Ledger</th>
+                    <th>{% trans "Project" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th>{% trans "Budget" %}</th>
+                    <th>{% trans "Consumed" %}</th>
+                    <th>{% trans "Available" %}</th>
+                    <th>{% trans "Ledger" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -56,10 +57,10 @@
                     <td>{{ project.get_effective_budget_amount|money:currency }}</td>
                     <td>{{ project.get_consumed_amount|money:currency }}</td>
                     <td>{{ project.get_available_amount|money:currency }}</td>
-                    <td><a href="{% url 'projects:project_budget_ledger' project.id %}">Open ledger</a></td>
+                    <td><a href="{% url 'projects:project_budget_ledger' project.id %}">{% trans "Open ledger" %}</a></td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6">No related projects.</td></tr>
+                <tr><td colspan="6">{% trans "No related projects." %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -67,17 +68,17 @@
 </div>
 
 <div class="card">
-    <h2>Related Purchase Requests</h2>
+    <h2>{% trans "Related Purchase Requests" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>PR No</th>
-                    <th>Title</th>
-                    <th>Status</th>
-                    <th>Project</th>
-                    <th>Estimated Total</th>
-                    <th>Open</th>
+                    <th>{% trans "PR No" %}</th>
+                    <th>{% trans "Title" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th>{% trans "Project" %}</th>
+                    <th>{% trans "Estimated Total" %}</th>
+                    <th>{% trans "Open" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -88,10 +89,10 @@
                     <td>{{ request_obj.get_status_display }}</td>
                     <td>{{ request_obj.project }}</td>
                     <td>{{ request_obj.estimated_total|money:request_obj.currency }}</td>
-                    <td><a href="{% url 'purchase:pr_detail' request_obj.id %}">Open PR</a></td>
+                    <td><a href="{% url 'purchase:pr_detail' request_obj.id %}">{% trans "Open PR" %}</a></td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6">No related purchase requests.</td></tr>
+                <tr><td colspan="6">{% trans "No related purchase requests." %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -99,17 +100,17 @@
 </div>
 
 <div class="card">
-    <h2>Related Travel Requests</h2>
+    <h2>{% trans "Related Travel Requests" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>TR No</th>
-                    <th>Purpose</th>
-                    <th>Status</th>
-                    <th>Project</th>
-                    <th>Estimated Total</th>
-                    <th>Open</th>
+                    <th>{% trans "TR No" %}</th>
+                    <th>{% trans "Purpose" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th>{% trans "Project" %}</th>
+                    <th>{% trans "Estimated Total" %}</th>
+                    <th>{% trans "Open" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -120,10 +121,10 @@
                     <td>{{ request_obj.get_status_display }}</td>
                     <td>{{ request_obj.project }}</td>
                     <td>{{ request_obj.estimated_total|money:request_obj.currency }}</td>
-                    <td><a href="{% url 'travel:tr_detail' request_obj.id %}">Open TR</a></td>
+                    <td><a href="{% url 'travel:tr_detail' request_obj.id %}">{% trans "Open TR" %}</a></td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6">No related travel requests.</td></tr>
+                <tr><td colspan="6">{% trans "No related travel requests." %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -131,17 +132,17 @@
 </div>
 
 <div class="card">
-    <h2>Purchase Actual Spend</h2>
+    <h2>{% trans "Purchase Actual Spend" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Date</th>
-                    <th>PR</th>
-                    <th>Vendor</th>
-                    <th>Reference</th>
-                    <th>Base Amount</th>
-                    <th>Original Amount</th>
+                    <th>{% trans "Date" %}</th>
+                    <th>{% trans "PR" %}</th>
+                    <th>{% trans "Vendor" %}</th>
+                    <th>{% trans "Reference" %}</th>
+                    <th>{% trans "Base Amount" %}</th>
+                    <th>{% trans "Original Amount" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -155,7 +156,7 @@
                     <td>{{ actual.transaction_amount|money:actual.transaction_currency }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6">No purchase actual spend records.</td></tr>
+                <tr><td colspan="6">{% trans "No purchase actual spend records." %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -163,18 +164,18 @@
 </div>
 
 <div class="card">
-    <h2>Travel Actual Expenses</h2>
+    <h2>{% trans "Travel Actual Expenses" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Date</th>
-                    <th>TR</th>
-                    <th>Type</th>
-                    <th>Vendor</th>
-                    <th>Reference</th>
-                    <th>Base Amount</th>
-                    <th>Original Amount</th>
+                    <th>{% trans "Date" %}</th>
+                    <th>{% trans "TR" %}</th>
+                    <th>{% trans "Type" %}</th>
+                    <th>{% trans "Vendor" %}</th>
+                    <th>{% trans "Reference" %}</th>
+                    <th>{% trans "Base Amount" %}</th>
+                    <th>{% trans "Original Amount" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -189,7 +190,7 @@
                     <td>{{ actual.transaction_amount|money:actual.transaction_currency }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="7">No travel actual expense records.</td></tr>
+                <tr><td colspan="7">{% trans "No travel actual expense records." %}</td></tr>
                 {% endfor %}
             </tbody>
         </table>

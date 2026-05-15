@@ -6,6 +6,7 @@ from django.core.exceptions import PermissionDenied
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from approvals.models import ApprovalTask
 from common.choices import ApprovalTaskStatus, RequestStatus
@@ -166,37 +167,37 @@ def _build_role_dashboard_sections(user):
 
     sections = [
         _dashboard_section(
-            "My Work Today",
+            _("My Work Today"),
             [
-                _priority_card("Pending Approval Tasks", assigned_pending.count(), reverse("approvals:my_tasks"), tone="attention"),
+                _priority_card(_("Pending Approval Tasks"), assigned_pending.count(), reverse("approvals:my_tasks"), tone="attention"),
                 _priority_card(
-                    "Overdue Approval Tasks",
+                    _("Overdue Approval Tasks"),
                     overdue_assigned.count(),
                     reverse("approvals:my_tasks") + "?due_state=overdue",
                     tone="danger",
                 ),
                 _priority_card(
-                    "Returned to Me",
+                    _("Returned to Me"),
                     returned_count,
                     reverse("purchase:pr_list") + "?status=RETURNED",
                     tone="attention",
-                    description="Requests returned for correction.",
+                    description=_("Requests returned for correction."),
                 ),
                 _priority_card(
-                    "Missing Receipt / Need Action",
+                    _("Missing Receipt / Need Action"),
                     missing_receipt_count,
                     reverse("purchase:pr_list"),
                     tone="warning",
-                    description="Receipt issues connected to your requests.",
+                    description=_("Receipt issues connected to your requests."),
                 ),
                 _priority_card(
-                    "Pending Accounting Reviews",
+                    _("Pending Accounting Reviews"),
                     open_reviews.count() if user.is_staff else 0,
                     reverse("finance:accounting_review_queue") if user.is_staff else "",
                     tone="attention",
                 ),
                 _priority_card(
-                    "Unmatched Card Transactions",
+                    _("Unmatched Card Transactions"),
                     unmatched_cards.count() if user.is_staff else 0,
                     reverse("finance:card_transaction_list") + "?status=UNMATCHED" if user.is_staff else "",
                     tone="warning",
@@ -204,17 +205,17 @@ def _build_role_dashboard_sections(user):
             ],
         ),
         _dashboard_section(
-            "Approval Summary",
+            _("Approval Summary"),
             [
-                _dashboard_card("My Pending Approval Tasks", assigned_pending.count(), reverse("approvals:my_tasks")),
-                _dashboard_card("Claimable Pool Tasks", pool_pending.count(), reverse("approvals:my_tasks")),
+                _dashboard_card(_("My Pending Approval Tasks"), assigned_pending.count(), reverse("approvals:my_tasks")),
+                _dashboard_card(_("Claimable Pool Tasks"), pool_pending.count(), reverse("approvals:my_tasks")),
                 _dashboard_card(
-                    "Recently Approved",
+                    _("Recently Approved"),
                     ApprovalTask.objects.filter(status=ApprovalTaskStatus.APPROVED, acted_by=user).count(),
                     reverse("approvals:my_history"),
                 ),
                 _dashboard_card(
-                    "Returned / Rejected Items",
+                    _("Returned / Rejected Items"),
                     ApprovalTask.objects.filter(
                         status__in=[ApprovalTaskStatus.RETURNED, ApprovalTaskStatus.REJECTED],
                         acted_by=user,
@@ -225,24 +226,24 @@ def _build_role_dashboard_sections(user):
             secondary=True,
         ),
         _dashboard_section(
-            "My Requests / My Recent Activity",
+            _("My Requests / My Recent Activity"),
             [
                 _dashboard_card(
-                    "My Draft Requests",
+                    _("My Draft Requests"),
                     requester_purchase.filter(status=RequestStatus.DRAFT).count()
                     + requester_travel.filter(status=TravelRequestStatus.DRAFT).count(),
                     reverse("purchase:pr_list") + "?status=DRAFT",
-                    description="Draft PR/TR items you can continue.",
+                    description=_("Draft PR/TR items you can continue."),
                 ),
                 _dashboard_card(
-                    "Pending Approval",
+                    _("Pending Approval"),
                     requester_purchase.filter(status__in=[RequestStatus.SUBMITTED, RequestStatus.PENDING]).count()
                     + requester_travel.filter(status=TravelRequestStatus.PENDING_APPROVAL).count(),
                     reverse("purchase:pr_list") + "?status=PENDING",
-                    description="Requests currently waiting for approval.",
+                    description=_("Requests currently waiting for approval."),
                 ),
                 _dashboard_card(
-                    "Approved Not Closed",
+                    _("Approved Not Closed"),
                     requester_purchase.filter(status=RequestStatus.APPROVED).count()
                     + requester_travel.filter(
                         status__in=[
@@ -253,10 +254,10 @@ def _build_role_dashboard_sections(user):
                         ]
                     ).count(),
                     reverse("purchase:pr_list") + "?status=APPROVED",
-                    description="Approved requests still open.",
+                    description=_("Approved requests still open."),
                 ),
-                _dashboard_card("Create Purchase Request", "+", reverse("purchase:pr_create"), tone="action"),
-                _dashboard_card("Create Travel Request", "+", reverse("travel:tr_create"), tone="action"),
+                _dashboard_card(_("Create Purchase Request"), "+", reverse("purchase:pr_create"), tone="action"),
+                _dashboard_card(_("Create Travel Request"), "+", reverse("travel:tr_create"), tone="action"),
             ],
             secondary=True,
         ),
@@ -265,35 +266,35 @@ def _build_role_dashboard_sections(user):
     if user.is_staff:
         sections.append(
             _dashboard_section(
-                "Team / Department / Finance Oversight",
+                _("Team / Department / Finance Oversight"),
                 [
-                    _dashboard_card("Pending Accounting Reviews", open_reviews.count(), reverse("finance:accounting_review_queue"), tone="attention"),
+                    _dashboard_card(_("Pending Accounting Reviews"), open_reviews.count(), reverse("finance:accounting_review_queue"), tone="attention"),
                     _dashboard_card(
-                        "Missing Receipt Items",
+                        _("Missing Receipt Items"),
                         open_reviews.filter(reason=AccountingReviewReason.MISSING_RECEIPT).count(),
                         reverse("finance:accounting_review_queue") + "?tab=missing_receipt",
                         tone="warning",
                     ),
                     _dashboard_card(
-                        "Over-Budget Reviews",
+                        _("Over-Budget Reviews"),
                         open_reviews.filter(reason=AccountingReviewReason.OVER_BUDGET).count(),
                         reverse("finance:accounting_review_queue") + "?tab=over_budget",
                         tone="attention",
                     ),
                     _dashboard_card(
-                        "Amendment Required Items",
+                        _("Amendment Required Items"),
                         open_reviews.filter(policy_action=OverBudgetAction.AMENDMENT_REQUIRED).count(),
                         reverse("finance:accounting_review_queue") + "?tab=amendment",
                         tone="danger",
                     ),
-                    _dashboard_card("Unmatched Card Transactions", unmatched_cards.count(), reverse("finance:card_transaction_list") + "?status=UNMATCHED"),
+                    _dashboard_card(_("Unmatched Card Transactions"), unmatched_cards.count(), reverse("finance:card_transaction_list") + "?status=UNMATCHED"),
                     _dashboard_card(
-                        "Duplicate Card Reviews",
+                        _("Duplicate Card Reviews"),
                         open_reviews.filter(reason=AccountingReviewReason.DUPLICATE_CARD).count(),
                         reverse("finance:accounting_review_queue") + "?tab=duplicate_card",
                     ),
                     _dashboard_card(
-                        "Requests Ready to Close",
+                        _("Requests Ready to Close"),
                         PurchaseRequest.objects.filter(status=RequestStatus.APPROVED).count()
                         + TravelRequest.objects.filter(
                             status__in=[
@@ -310,20 +311,20 @@ def _build_role_dashboard_sections(user):
         )
         sections.append(
             _dashboard_section(
-                "Admin / Setup Shortcuts",
+                _("Admin / Setup Shortcuts"),
                 [
                     _dashboard_card(
-                        "Open Review Aging",
+                        _("Open Review Aging"),
                         open_reviews.filter(created_at__lte=now - timedelta(days=8)).count(),
                         reverse("finance:accounting_review_queue") + "?tab=pending&min_age_days=8",
                         tone="danger",
                     ),
-                    _dashboard_card("Projects Near Budget Limit", _projects_near_budget_limit_count(), reverse("finance:finance_reports")),
-                    _dashboard_card("Over-Budget Exceptions", open_reviews.filter(reason=AccountingReviewReason.OVER_BUDGET).count(), reverse("finance:accounting_review_queue") + "?tab=over_budget"),
-                    _dashboard_card("Unmatched Card Count", unmatched_cards.count(), reverse("finance:card_transaction_list") + "?status=UNMATCHED"),
-                    _dashboard_card("Receipt Policy Issues", open_reviews.filter(reason=AccountingReviewReason.MISSING_RECEIPT).count(), reverse("finance:accounting_review_queue") + "?tab=missing_receipt"),
-                    _dashboard_card("Finance Reports", "Open", reverse("finance:finance_reports"), tone="action"),
-                    _dashboard_card("Policy Setup", "Open", reverse("finance:over_budget_policy_list"), tone="action"),
+                    _dashboard_card(_("Projects Near Budget Limit"), _projects_near_budget_limit_count(), reverse("finance:finance_reports")),
+                    _dashboard_card(_("Over-Budget Exceptions"), open_reviews.filter(reason=AccountingReviewReason.OVER_BUDGET).count(), reverse("finance:accounting_review_queue") + "?tab=over_budget"),
+                    _dashboard_card(_("Unmatched Card Count"), unmatched_cards.count(), reverse("finance:card_transaction_list") + "?status=UNMATCHED"),
+                    _dashboard_card(_("Receipt Policy Issues"), open_reviews.filter(reason=AccountingReviewReason.MISSING_RECEIPT).count(), reverse("finance:accounting_review_queue") + "?tab=missing_receipt"),
+                    _dashboard_card(_("Finance Reports"), _("Open"), reverse("finance:finance_reports"), tone="action"),
+                    _dashboard_card(_("Policy Setup"), _("Open"), reverse("finance:over_budget_policy_list"), tone="action"),
                 ],
                 secondary=True,
                 collapsible=True,
@@ -333,12 +334,12 @@ def _build_role_dashboard_sections(user):
     if user.is_superuser:
         sections.append(
             _dashboard_section(
-                "System Admin",
+                _("System Admin"),
                 [
-                    _dashboard_card("User / Department Setup", "Open", reverse("accounts:department_list"), tone="action"),
-                    _dashboard_card("Approval Rule Setup", "Open", reverse("approvals:rule_list"), tone="action"),
-                    _dashboard_card("Finance Policy Setup", "Open", reverse("finance:over_budget_policy_list"), tone="action"),
-                    _dashboard_card("System Notes", "No feed", reverse("admin:index")),
+                    _dashboard_card(_("User / Department Setup"), _("Open"), reverse("accounts:department_list"), tone="action"),
+                    _dashboard_card(_("Approval Rule Setup"), _("Open"), reverse("approvals:rule_list"), tone="action"),
+                    _dashboard_card(_("Finance Policy Setup"), _("Open"), reverse("finance:over_budget_policy_list"), tone="action"),
+                    _dashboard_card(_("System Notes"), _("No feed"), reverse("admin:index")),
                 ],
                 secondary=True,
                 collapsible=True,
@@ -501,63 +502,63 @@ def system_setup(request):
     ).values_list("department_id", flat=True)
     missing_general_budget_count = active_departments.exclude(id__in=configured_department_ids).count()
     setup_cards = [
-        _setup_card("Base Currency", COMPANY_BASE_CURRENCY, description="Used for budget control and finance reports."),
-        _setup_card("Active Currencies", ", ".join(active_currencies) if active_currencies else "Not configured", tone="warning" if not active_currencies else "neutral"),
+        _setup_card(_("Base Currency"), COMPANY_BASE_CURRENCY, description=_("Used for budget control and finance reports.")),
+        _setup_card(_("Active Currencies"), ", ".join(active_currencies) if active_currencies else _("Not configured"), tone="warning" if not active_currencies else "neutral"),
         _setup_card(
-            "Dept General Budgets",
-            "Complete" if missing_general_budget_count == 0 else f"{missing_general_budget_count} missing",
+            _("Dept General Budgets"),
+            _("Complete") if missing_general_budget_count == 0 else _("%(count)s missing") % {"count": missing_general_budget_count},
             reverse("projects:department_general_project_list"),
             tone="warning" if missing_general_budget_count else "neutral",
-            description=f"Fiscal year {current_year} setup coverage.",
+            description=_("Fiscal year %(year)s setup coverage.") % {"year": current_year},
         ),
-        _setup_card("Departments", Department.objects.count(), reverse("accounts:department_list")),
-        _setup_card("Projects", Project.objects.count(), reverse("projects:project_list")),
-        _setup_card("Approval Rules", ApprovalRule.objects.filter(is_active=True).count(), reverse("approvals:rule_list")),
-        _setup_card("Over-Budget Policies", OverBudgetPolicy.objects.filter(is_active=True).count(), reverse("finance:over_budget_policy_list")),
-        _setup_card("Receipt Policies", ReceiptPolicy.objects.filter(is_active=True).count(), reverse("finance:receipt_policy_list")),
-        _setup_card("Direct Project Cost Policies", DirectProjectCostPolicy.objects.filter(is_active=True).count(), reverse("finance:direct_project_cost_policy_list")),
-        _setup_card("Accounting Periods", "Month-End Close", reverse("finance:accounting_period_list")),
-        _setup_card("FX Variance Policies", FXVariancePolicy.objects.filter(is_active=True).count(), reverse("finance:fx_variance_policy_list")),
-        _setup_card("Exchange Rates", ExchangeRate.objects.count(), reverse("finance:exchange_rate_list")),
-        _setup_card("Current Version", "V1.1 Phase 3", reverse("dashboard:system_setup")),
-        _setup_card("Seed Finance Defaults", "Manual command", "", description="Run seed_finance_defaults from the server when setup data needs to be refreshed."),
-        _setup_card("Static / Media Check", "Review deployment", "", description="Confirm static and media paths during deployment checklist."),
+        _setup_card(_("Departments"), Department.objects.count(), reverse("accounts:department_list")),
+        _setup_card(_("Projects"), Project.objects.count(), reverse("projects:project_list")),
+        _setup_card(_("Approval Rules"), ApprovalRule.objects.filter(is_active=True).count(), reverse("approvals:rule_list")),
+        _setup_card(_("Over-Budget Policies"), OverBudgetPolicy.objects.filter(is_active=True).count(), reverse("finance:over_budget_policy_list")),
+        _setup_card(_("Receipt Policies"), ReceiptPolicy.objects.filter(is_active=True).count(), reverse("finance:receipt_policy_list")),
+        _setup_card(_("Direct Project Cost Policies"), DirectProjectCostPolicy.objects.filter(is_active=True).count(), reverse("finance:direct_project_cost_policy_list")),
+        _setup_card(_("Accounting Periods"), _("Month-End Close"), reverse("finance:accounting_period_list")),
+        _setup_card(_("FX Variance Policies"), FXVariancePolicy.objects.filter(is_active=True).count(), reverse("finance:fx_variance_policy_list")),
+        _setup_card(_("Exchange Rates"), ExchangeRate.objects.count(), reverse("finance:exchange_rate_list")),
+        _setup_card(_("Current Version"), "V1.1 Phase 3", reverse("dashboard:system_setup")),
+        _setup_card(_("Seed Finance Defaults"), _("Manual command"), "", description=_("Run seed_finance_defaults from the server when setup data needs to be refreshed.")),
+        _setup_card(_("Static / Media Check"), _("Review deployment"), "", description=_("Confirm static and media paths during deployment checklist.")),
     ]
     user_model = get_user_model()
     setup_sections = [
         {
-            "title": "User & Permission Setup",
+            "title": _("User & Permission Setup"),
             "links": [
-                  {"label": "Departments", "url": reverse("accounts:department_list")},
-                  {"label": "Projects", "url": reverse("projects:project_list")},
-                  {"label": "Department General Budgets", "url": reverse("projects:department_general_project_list")},
-                  {"label": "Django Admin Users", "url": _admin_changelist_url(user_model)},
-                {"label": "Django Admin Groups", "url": reverse("admin:auth_group_changelist")},
+                  {"label": _("Departments"), "url": reverse("accounts:department_list")},
+                  {"label": _("Projects"), "url": reverse("projects:project_list")},
+                  {"label": _("Department General Budgets"), "url": reverse("projects:department_general_project_list")},
+                  {"label": _("Django Admin Users"), "url": _admin_changelist_url(user_model)},
+                {"label": _("Django Admin Groups"), "url": reverse("admin:auth_group_changelist")},
             ],
         },
         {
-            "title": "Approval And Finance Policy",
+            "title": _("Approval And Finance Policy"),
             "links": [
-                {"label": "Approval Rules", "url": reverse("approvals:rule_list")},
-                {"label": "Over-Budget Policies", "url": reverse("finance:over_budget_policy_list")},
-                {"label": "Receipt Policies", "url": reverse("finance:receipt_policy_list")},
-                {"label": "Direct Project Cost Policies", "url": reverse("finance:direct_project_cost_policy_list")},
-                  {"label": "FX Variance Policies", "url": reverse("finance:fx_variance_policy_list")},
-                  {"label": "Accounting Periods", "url": reverse("finance:accounting_period_list")},
+                {"label": _("Approval Rules"), "url": reverse("approvals:rule_list")},
+                {"label": _("Over-Budget Policies"), "url": reverse("finance:over_budget_policy_list")},
+                {"label": _("Receipt Policies"), "url": reverse("finance:receipt_policy_list")},
+                {"label": _("Direct Project Cost Policies"), "url": reverse("finance:direct_project_cost_policy_list")},
+                  {"label": _("FX Variance Policies"), "url": reverse("finance:fx_variance_policy_list")},
+                  {"label": _("Accounting Periods"), "url": reverse("finance:accounting_period_list")},
               ],
           },
           {
-              "title": "Currency And Exchange Rates",
+              "title": _("Currency And Exchange Rates"),
               "links": [
-                  {"label": "Currencies", "url": reverse("finance:currency_list")},
-                  {"label": "Exchange Rates", "url": reverse("finance:exchange_rate_list")},
+                  {"label": _("Currencies"), "url": reverse("finance:currency_list")},
+                  {"label": _("Exchange Rates"), "url": reverse("finance:exchange_rate_list")},
               ],
           },
         {
-            "title": "System Health",
+            "title": _("System Health"),
             "links": [
-                {"label": "Finance Reports", "url": reverse("finance:finance_reports")},
-                {"label": "Django Admin", "url": reverse("admin:index")},
+                {"label": _("Finance Reports"), "url": reverse("finance:finance_reports")},
+                {"label": _("Django Admin"), "url": reverse("admin:index")},
             ],
         },
     ]

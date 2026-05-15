@@ -1,51 +1,51 @@
 {% extends "purchase/base.html" %}
+{% load i18n %}
 {% load money %}
 
-{% block title %}Finance Reports{% endblock %}
-{% block page_title %}Finance Reports{% endblock %}
+{% block title %}{% trans "Finance Reports" %}{% endblock %}
+{% block page_title %}{% trans "Finance Reports" %}{% endblock %}
 
 {% block content %}
 <div class="alert alert-info">
-    Finance Reports use the company base currency: {{ base_currency }}. Foreign-currency transaction details are preserved
-    on source records and review items, but management totals are reported in base currency.
+    {% blocktrans with base_currency=base_currency %}Finance Reports use the company base currency: {{ base_currency }}. Foreign-currency transaction details are preserved on source records and review items, but management totals are reported in base currency.{% endblocktrans %}
 </div>
 
 <div class="card page-action-card">
     <div class="section-header">
         <div>
-            <h2>Report Actions</h2>
-            <p class="muted">Export preserves base currency and original transaction currency columns where available.</p>
+            <h2>{% trans "Report Actions" %}</h2>
+            <p class="muted">{% trans "Export preserves base currency and original transaction currency columns where available." %}</p>
         </div>
-        <a class="btn btn-primary" href="?export=csv">Export CSV</a>
+        <a class="btn btn-primary" href="?export=csv">{% trans "Export CSV" %}</a>
     </div>
 </div>
 
 <div class="summary-cards">
     <div class="summary-card">
-        <div class="label">Reserved</div>
+        <div class="label">{% trans "Reserved" %}</div>
         <div class="value">{{ reserved_vs_consumed.reserved|money:reserved_vs_consumed.currency }}</div>
     </div>
     <div class="summary-card">
-        <div class="label">Released</div>
+        <div class="label">{% trans "Released" %}</div>
         <div class="value">{{ reserved_vs_consumed.released|money:reserved_vs_consumed.currency }}</div>
     </div>
     <div class="summary-card">
-        <div class="label">Consumed</div>
+        <div class="label">{% trans "Consumed" %}</div>
         <div class="value">{{ reserved_vs_consumed.consumed|money:reserved_vs_consumed.currency }}</div>
     </div>
-    <div class="summary-card"><div class="label">Open Reviews</div><div class="value">{{ review_aging_rows|length }}</div></div>
+    <div class="summary-card"><div class="label">{% trans "Open Reviews" %}</div><div class="value">{{ review_aging_rows|length }}</div></div>
 </div>
 
 <div class="card">
-    <h2>Project Budget Summary</h2>
+    <h2>{% trans "Project Budget Summary" %}</h2>
     <table>
-        <thead><tr><th>Project</th><th>Department</th><th>Budget</th><th>Reserved</th><th>Consumed</th><th>Available</th></tr></thead>
+        <thead><tr><th>{% trans "Project" %}</th><th>{% trans "Department" %}</th><th>{% trans "Budget" %}</th><th>{% trans "Reserved" %}</th><th>{% trans "Consumed" %}</th><th>{% trans "Available" %}</th></tr></thead>
         <tbody>
             {% for row in project_budget_rows %}
             <tr>
                 <td>
                     <a href="{% url 'projects:project_budget_ledger' row.project.id %}">{{ row.project.project_code }}</a>
-                    <br><span class="muted">Open budget ledger</span>
+                    <br><span class="muted">{% trans "Open budget ledger" %}</span>
                 </td>
                 <td>{{ row.project.owning_department }}</td>
                 <td>{{ row.budget|money:row.currency }}</td>
@@ -54,36 +54,36 @@
                 <td>{{ row.available|money:row.currency }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="6">No projects.</td></tr>
+            <tr><td colspan="6">{% trans "No projects." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
 <div class="card">
-    <h2>Department Spending Summary</h2>
+    <h2>{% trans "Department Spending Summary" %}</h2>
     <table>
-        <thead><tr><th>Department</th><th>Consumed</th></tr></thead>
+        <thead><tr><th>{% trans "Department" %}</th><th>{% trans "Consumed" %}</th></tr></thead>
         <tbody>
             {% for row in department_spending_rows %}
             <tr>
                 <td>
                     <a href="{{ row.detail_url }}">{{ row.department }}</a>
-                    <br><span class="muted">Open department spending drill-down</span>
+                    <br><span class="muted">{% trans "Open department spending drill-down" %}</span>
                 </td>
                 <td>{{ row.consumed|money:row.currency }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="2">No consumed budget.</td></tr>
+            <tr><td colspan="2">{% trans "No consumed budget." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
 <div class="card">
-    <h2>Open Requests With Remaining Reserve</h2>
+    <h2>{% trans "Open Requests With Remaining Reserve" %}</h2>
     <table>
-        <thead><tr><th>Type</th><th>Request</th><th>Status</th><th>Project</th><th>Remaining Reserve</th></tr></thead>
+        <thead><tr><th>{% trans "Type" %}</th><th>{% trans "Request" %}</th><th>{% trans "Status" %}</th><th>{% trans "Project" %}</th><th>{% trans "Remaining Reserve" %}</th></tr></thead>
         <tbody>
             {% for row in open_reserve_rows %}
             <tr>
@@ -97,16 +97,16 @@
                 <td>{{ row.remaining|money:row.currency }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5">No open reserve.</td></tr>
+            <tr><td colspan="5">{% trans "No open reserve." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
 <div class="card">
-    <h2>Over-Budget Exceptions</h2>
+    <h2>{% trans "Over-Budget Exceptions" %}</h2>
     <table>
-        <thead><tr><th>Created</th><th>Source</th><th>Status</th><th>Base Amount</th><th>Over</th><th>Transaction Amount</th><th>Policy Action</th></tr></thead>
+        <thead><tr><th>{% trans "Created" %}</th><th>{% trans "Source" %}</th><th>{% trans "Status" %}</th><th>{% trans "Base Amount" %}</th><th>{% trans "Over" %}</th><th>{% trans "Transaction Amount" %}</th><th>{% trans "Policy Action" %}</th></tr></thead>
         <tbody>
             {% for item in over_budget_items %}
             <tr>
@@ -125,16 +125,16 @@
                 <td>{{ item.policy_action }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="7">No over-budget exceptions.</td></tr>
+            <tr><td colspan="7">{% trans "No over-budget exceptions." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
 <div class="card">
-    <h2>Company Card Unmatched Transactions</h2>
+    <h2>{% trans "Company Card Unmatched Transactions" %}</h2>
     <table>
-        <thead><tr><th>Date</th><th>Merchant</th><th>Posted/Base Amount</th><th>Original Amount</th><th>Status</th><th>Reference</th></tr></thead>
+        <thead><tr><th>{% trans "Date" %}</th><th>{% trans "Merchant" %}</th><th>{% trans "Posted/Base Amount" %}</th><th>{% trans "Original Amount" %}</th><th>{% trans "Status" %}</th><th>{% trans "Reference" %}</th></tr></thead>
         <tbody>
             {% for transaction in unmatched_card_transactions %}
             <tr>
@@ -152,16 +152,16 @@
                 <td>{{ transaction.reference_no }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="6">No unmatched transactions.</td></tr>
+            <tr><td colspan="6">{% trans "No unmatched transactions." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
 
 <div class="card">
-    <h2>Accounting Review Aging</h2>
+    <h2>{% trans "Accounting Review Aging" %}</h2>
     <table>
-        <thead><tr><th>Created</th><th>Aging Days</th><th>Reason</th><th>Status</th><th>Description</th></tr></thead>
+        <thead><tr><th>{% trans "Created" %}</th><th>{% trans "Aging Days" %}</th><th>{% trans "Reason" %}</th><th>{% trans "Status" %}</th><th>{% trans "Description" %}</th></tr></thead>
         <tbody>
             {% for row in review_aging_rows %}
             <tr>
@@ -172,7 +172,7 @@
                 <td>{{ row.item.description }}</td>
             </tr>
             {% empty %}
-            <tr><td colspan="5">No open review items.</td></tr>
+            <tr><td colspan="5">{% trans "No open review items." %}</td></tr>
             {% endfor %}
         </tbody>
     </table>

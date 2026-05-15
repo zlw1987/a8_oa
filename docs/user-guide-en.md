@@ -499,6 +499,8 @@ Use Export CSV to download a finance report extract. The export includes base cu
 
 These reports are operational tables for daily use and UAT, not advanced BI dashboards.
 
+Department Spending Summary rows can be opened to view department-level source records. The drill-down page shows related projects, PRs, TRs, purchase actual spend, and travel actual expenses for that department.
+
 Money values on Finance Reports always show:
 
 - Currency code.
@@ -675,12 +677,13 @@ Current limitation:
 Finance Reports include link-based drill-down:
 
 - Project Budget Summary opens the project budget ledger.
+- Department Spending Summary opens department-level source records.
 - Over-Budget Exceptions open Accounting Review Detail.
 - Accounting Review Aging opens Accounting Review Detail.
 - Open Reserve rows open the source PR/TR.
 - Unmatched Card rows open the card transaction detail.
 
-This is an operational drill-down pattern, not an advanced reporting or BI framework.
+This is an operational drill-down pattern, not an advanced reporting or BI framework. Excel export, saved filters, and date/department/project report filters are not implemented yet.
 
 ## 14. FAQ
 

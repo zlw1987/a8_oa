@@ -233,6 +233,8 @@ Unallocated Amount 是最重要的数字，表示还未分配的金额。
 
 可以使用 Export CSV 下载报表。导出会包含基准币金额字段，并在有资料时包含原始交易币种和原始交易金额字段。
 
+Department Spending Summary 行可以打开部门支出明细页。该 drill-down 页面会显示该部门相关的 projects、PR、TR、purchase actual spend 和 travel actual expenses。
+
 所有金额会统一显示：
 
 - 币种代码。
@@ -380,12 +382,13 @@ Accounting 录入 actual expense 时，系统会根据 vendor / merchant、expen
 Finance Reports 现在提供 link-based drill-down 链接：
 
 - Project Budget Summary 可打开 project budget ledger。
+- Department Spending Summary 可打开部门层级来源记录。
 - Over-Budget Exceptions 可打开 Accounting Review Detail。
 - Accounting Review Aging 可打开 Accounting Review Detail。
 - Open Reserve 行可打开来源 PR/TR。
 - Unmatched Card 行可打开 card transaction detail。
 
-这是 operational drill-down，不是 advanced reporting / BI framework。
+这是 operational drill-down，不是 advanced reporting / BI framework。Excel export、saved filters、date/department/project report filters 目前尚未实现。
 
 ## 14. 常见问题
 

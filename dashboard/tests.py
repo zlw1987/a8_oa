@@ -41,6 +41,32 @@ class DashboardSmokeTest(TestCase):
         self.client.login(username="dashboard_user", password="testpass123")
         response = self.client.get(reverse("dashboard:home"))
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Dashboard")
+
+    def test_language_switcher_renders_and_set_language_endpoint_exists(self):
+        self.client.login(username="dashboard_user", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("set_language"))
+        self.assertContains(response, "English")
+        self.assertContains(response, "中文")
+
+        switch_response = self.client.post(
+            reverse("set_language"),
+            {"language": "zh-hans", "next": reverse("dashboard:home")},
+        )
+        self.assertEqual(switch_response.status_code, 302)
+        zh_response = self.client.get(reverse("dashboard:home"))
+        self.assertContains(zh_response, "仪表板")
+
+    def test_dashboard_renders_chinese_shell_when_requested(self):
+        self.client.login(username="dashboard_user", password="testpass123")
+        response = self.client.get(reverse("dashboard:home"), HTTP_ACCEPT_LANGUAGE="zh-hans")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "仪表板")
+        self.assertContains(response, "审批摘要")
 
     def test_dashboard_nav_shows_projects_link_for_authenticated_user(self):
         self.client.login(username="dashboard_user", password="testpass123")

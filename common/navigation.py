@@ -1,4 +1,5 @@
 from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
 
 from projects.access import user_can_create_project
 from .permissions import (
@@ -69,51 +70,51 @@ def build_navigation_for_user(user, request=None):
         else getattr(resolver_match, "url_name", "")
     )
 
-    dashboard = _item("Dashboard", "dashboard:home", active_names=["dashboard:home"])
+    dashboard = _item(_("Dashboard"), "dashboard:home", active_names=["dashboard:home"])
 
     groups = [
         _group(
-            "Work",
+            _("Work"),
             [
-                _item("Purchase Requests", "purchase:pr_list", active_names=["purchase:pr_list", "purchase:pr_detail", "purchase:pr_create", "purchase:pr_edit"]),
-                _item("Travel Requests", "travel:tr_list", active_names=["travel:tr_list", "travel:tr_detail", "travel:tr_create", "travel:tr_edit"]),
-                _item("My Tasks", "approvals:my_tasks"),
-                _item("My Approval History", "approvals:my_history"),
-                _item("My Delegations", "approvals:my_delegations", active_names=["approvals:my_delegations", "approvals:delegation_create", "approvals:delegation_edit"]),
+                _item(_("Purchase Requests"), "purchase:pr_list", active_names=["purchase:pr_list", "purchase:pr_detail", "purchase:pr_create", "purchase:pr_edit"]),
+                _item(_("Travel Requests"), "travel:tr_list", active_names=["travel:tr_list", "travel:tr_detail", "travel:tr_create", "travel:tr_edit"]),
+                _item(_("My Tasks"), "approvals:my_tasks"),
+                _item(_("My Approval History"), "approvals:my_history"),
+                _item(_("My Delegations"), "approvals:my_delegations", active_names=["approvals:my_delegations", "approvals:delegation_create", "approvals:delegation_edit"]),
             ],
         ),
         _group(
-            "Finance",
+            _("Finance"),
             [
-                _item("Accounting Review Queue", "finance:accounting_review_queue", permission=_can_accounting, active_names=["finance:accounting_review_queue", "finance:accounting_review_detail"]),
-                _item("Card Transactions", "finance:card_transaction_list", permission=_can_accounting, active_names=["finance:card_transaction_list", "finance:card_transaction_detail", "finance:card_transaction_create"]),
-                _item("Accounting Periods", "finance:accounting_period_list", permission=_can_accounting, active_names=["finance:accounting_period_list", "finance:accounting_period_detail", "finance:accounting_period_create"]),
-                _item("Finance Reports", "finance:finance_reports", permission=_can_accounting),
-                _item("Variance Report", "approvals:variance_exception_report", permission=_can_accounting),
+                _item(_("Accounting Review Queue"), "finance:accounting_review_queue", permission=_can_accounting, active_names=["finance:accounting_review_queue", "finance:accounting_review_detail"]),
+                _item(_("Card Transactions"), "finance:card_transaction_list", permission=_can_accounting, active_names=["finance:card_transaction_list", "finance:card_transaction_detail", "finance:card_transaction_create"]),
+                _item(_("Accounting Periods"), "finance:accounting_period_list", permission=_can_accounting, active_names=["finance:accounting_period_list", "finance:accounting_period_detail", "finance:accounting_period_create"]),
+                _item(_("Finance Reports"), "finance:finance_reports", permission=_can_accounting),
+                _item(_("Variance Report"), "approvals:variance_exception_report", permission=_can_accounting),
             ],
         ),
         _group(
-            "Setup",
+            _("Setup"),
             [
-                _item("Projects", "projects:project_list", permission=_can_work, active_names=["projects:project_list", "projects:project_detail", "projects:project_budget_ledger", "projects:project_members"]),
-                _item("Create Project", "projects:project_create", permission=_can_create_project, active_names=["projects:project_create"]),
-                _item("Department General Budgets", "projects:department_general_project_list", permission=_can_setup, active_names=["projects:department_general_project_list", "projects:department_general_project_create", "projects:department_general_project_edit"]),
-                _item("Departments", "accounts:department_list", permission=_can_setup),
-                _item("Approval Rules", "approvals:rule_list", permission=_can_setup),
-                _item("Over-Budget Policies", "finance:over_budget_policy_list", permission=_can_setup),
-                _item("Receipt Policies", "finance:receipt_policy_list", permission=_can_setup),
-                _item("Direct Project Cost Policies", "finance:direct_project_cost_policy_list", permission=_can_setup),
-                _item("FX Variance Policies", "finance:fx_variance_policy_list", permission=_can_setup),
-                _item("Currencies", "finance:currency_list", permission=_can_setup),
-                _item("Exchange Rates", "finance:exchange_rate_list", permission=_can_setup),
+                _item(_("Projects"), "projects:project_list", permission=_can_work, active_names=["projects:project_list", "projects:project_detail", "projects:project_budget_ledger", "projects:project_members"]),
+                _item(_("Create Project"), "projects:project_create", permission=_can_create_project, active_names=["projects:project_create"]),
+                _item(_("Department General Budgets"), "projects:department_general_project_list", permission=_can_setup, active_names=["projects:department_general_project_list", "projects:department_general_project_create", "projects:department_general_project_edit"]),
+                _item(_("Departments"), "accounts:department_list", permission=_can_setup),
+                _item(_("Approval Rules"), "approvals:rule_list", permission=_can_setup),
+                _item(_("Over-Budget Policies"), "finance:over_budget_policy_list", permission=_can_setup),
+                _item(_("Receipt Policies"), "finance:receipt_policy_list", permission=_can_setup),
+                _item(_("Direct Project Cost Policies"), "finance:direct_project_cost_policy_list", permission=_can_setup),
+                _item(_("FX Variance Policies"), "finance:fx_variance_policy_list", permission=_can_setup),
+                _item(_("Currencies"), "finance:currency_list", permission=_can_setup),
+                _item(_("Exchange Rates"), "finance:exchange_rate_list", permission=_can_setup),
             ],
         ),
         _group(
-            "Admin",
+            _("Admin"),
             [
-                _item("Django Admin", "admin:index", permission=_can_admin),
-                _item("User / Department Setup", "accounts:department_list", permission=_can_setup),
-                _item("System Setup", "dashboard:system_setup", permission=_can_system_setup, active_names=["dashboard:system_setup"]),
+                _item(_("Django Admin"), "admin:index", permission=_can_admin),
+                _item(_("User / Department Setup"), "accounts:department_list", permission=_can_setup),
+                _item(_("System Setup"), "dashboard:system_setup", permission=_can_system_setup, active_names=["dashboard:system_setup"]),
             ],
         ),
     ]

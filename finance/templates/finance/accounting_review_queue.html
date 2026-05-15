@@ -1,24 +1,25 @@
 {% extends "purchase/base.html" %}
+{% load i18n %}
 
-{% block title %}Accounting Review Queue{% endblock %}
-{% block page_title %}Accounting Review Queue{% endblock %}
+{% block title %}{% trans "Accounting Review Queue" %}{% endblock %}
+{% block page_title %}{% trans "Accounting Review Queue" %}{% endblock %}
 
 {% block content %}
 <div class="card">
     <div class="summary-cards">
         <div class="summary-card">
-            <div class="label">Current Tab</div>
+            <div class="label">{% trans "Current Tab" %}</div>
             <div class="value">{{ active_tab|title }}</div>
         </div>
         <div class="summary-card {% if pending_count %}summary-card-attention{% else %}summary-card-success{% endif %}">
-            <div class="label">Pending Items</div>
+            <div class="label">{% trans "Pending Items" %}</div>
             <div class="value">{{ pending_count }}</div>
         </div>
     </div>
 </div>
 
 <div class="card">
-    <div class="tab-row" role="tablist" aria-label="Accounting review filters">
+    <div class="tab-row" role="tablist" aria-label="{% trans 'Accounting review filters' %}">
         {% for tab in review_tabs %}
         <a
             href="{{ tab.url }}"
@@ -32,11 +33,11 @@
 </div>
 
 <div class="card">
-    <h2>Filters</h2>
+    <h2>{% trans "Filters" %}</h2>
     <form method="get" class="filter-panel">
         <input type="hidden" name="tab" value="{{ active_tab }}">
         <div class="filter-section">
-            <div class="filter-section-title">Basic Filters</div>
+            <div class="filter-section-title">{% trans "Basic Filters" %}</div>
             <div class="filter-grid">
                 {% include "includes/form_field.html" with field=filter_form.q %}
                 {% include "includes/form_field.html" with field=filter_form.status %}
@@ -46,7 +47,7 @@
             </div>
         </div>
         <details class="filter-advanced" {% if advanced_filters_open %}open{% endif %}>
-            <summary>Show Advanced Filters</summary>
+            <summary>{% trans "Show Advanced Filters" %}</summary>
             <div class="filter-grid">
                 {% include "includes/form_field.html" with field=filter_form.requester %}
                 {% include "includes/form_field.html" with field=filter_form.department %}
@@ -55,29 +56,29 @@
             </div>
         </details>
         <div class="action-row filter-actions">
-            <button type="submit" class="btn-primary">Filter</button>
-            <a class="btn btn-secondary" href="{{ reset_url }}">Reset</a>
+            <button type="submit" class="btn-primary">{% trans "Filter" %}</button>
+            <a class="btn btn-secondary" href="{{ reset_url }}">{% trans "Reset" %}</a>
         </div>
     </form>
 </div>
 
 <div class="card">
-    <h2>Review Workbench</h2>
+    <h2>{% trans "Review Workbench" %}</h2>
     {% if page_obj.object_list %}
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Source</th>
-                    <th>Requester / Department / Project</th>
-                    <th>Reason</th>
-                    <th>Policy Action</th>
-                    <th>Amount</th>
-                    <th>Variance</th>
-                    <th>Aging / Severity</th>
-                    <th>Required Action</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th>{% trans "Source" %}</th>
+                    <th>{% trans "Requester / Department / Project" %}</th>
+                    <th>{% trans "Reason" %}</th>
+                    <th>{% trans "Policy Action" %}</th>
+                    <th>{% trans "Amount" %}</th>
+                    <th>{% trans "Variance" %}</th>
+                    <th>{% trans "Aging / Severity" %}</th>
+                    <th>{% trans "Required Action" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th>{% trans "Actions" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -88,7 +89,7 @@
                         {% for link in item.source_links %}
                         <a href="{{ link.url }}">{{ link.label }}</a>{% if not forloop.last %}<br>{% endif %}
                         {% empty %}
-                        <span class="muted">No linked source</span>
+                        <span class="muted">{% trans "No linked source" %}</span>
                         {% endfor %}
                     </td>
                     <td>
@@ -120,12 +121,12 @@
                     <td>{% include "includes/status_badge.html" with label=item.get_status_display tone=item.status_tone %}</td>
                     <td>
                         <div class="action-row">
-                            <a class="btn btn-secondary" href="{{ item.detail_url }}">View</a>
+                            <a class="btn btn-secondary" href="{{ item.detail_url }}">{% trans "View" %}</a>
                             {% if item.is_unresolved %}
-                            <a class="btn btn-primary" href="{{ item.detail_url }}?decision=RESOLVE">Resolve</a>
-                            <a class="btn btn-secondary" href="{{ item.detail_url }}?decision=APPROVE_EXCEPTION">Approve Exception</a>
-                            <a class="btn btn-secondary" href="{{ item.detail_url }}?decision=RETURN">Return</a>
-                            <a class="btn btn-danger" href="{{ item.detail_url }}?decision=REJECT">Reject</a>
+                            <a class="btn btn-primary" href="{{ item.detail_url }}?decision=RESOLVE">{% trans "Resolve" %}</a>
+                            <a class="btn btn-secondary" href="{{ item.detail_url }}?decision=APPROVE_EXCEPTION">{% trans "Approve Exception" %}</a>
+                            <a class="btn btn-secondary" href="{{ item.detail_url }}?decision=RETURN">{% trans "Return" %}</a>
+                            <a class="btn btn-danger" href="{{ item.detail_url }}?decision=REJECT">{% trans "Reject" %}</a>
                             {% endif %}
                         </div>
                     </td>
@@ -137,12 +138,12 @@
     {% else %}
     <div class="empty-state">
         {% if has_active_filters %}
-        <h3>No review items match the current filters.</h3>
-        <p class="muted">Try clearing filters or switching to another quick tab.</p>
-        <a class="btn btn-secondary" href="{{ reset_url }}">Clear Filters</a>
+        <h3>{% trans "No review items match the current filters." %}</h3>
+        <p class="muted">{% trans "Try clearing filters or switching to another quick tab." %}</p>
+        <a class="btn btn-secondary" href="{{ reset_url }}">{% trans "Clear Filters" %}</a>
         {% else %}
-        <h3>No pending review items for this tab.</h3>
-        <p class="muted">Try switching to another tab, clearing filters, or checking Resolved items.</p>
+        <h3>{% trans "No pending review items for this tab." %}</h3>
+        <p class="muted">{% trans "Try switching to another tab, clearing filters, or checking Resolved items." %}</p>
         {% endif %}
     </div>
     {% endif %}
@@ -150,11 +151,11 @@
     {% if page_obj.has_other_pages %}
     <div class="pagination" style="margin-top: 16px;">
         {% if page_obj.has_previous %}
-        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.previous_page_number }}">{% trans "Previous" %}</a>
         {% endif %}
-        <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        <span>{% blocktrans with number=page_obj.number total=page_obj.paginator.num_pages %}Page {{ number }} of {{ total }}{% endblocktrans %}</span>
         {% if page_obj.has_next %}
-        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+        <a href="?{% if pagination_querystring %}{{ pagination_querystring }}&{% endif %}page={{ page_obj.next_page_number }}">{% trans "Next" %}</a>
         {% endif %}
     </div>
     {% endif %}

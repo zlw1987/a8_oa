@@ -1,8 +1,9 @@
 {% extends "purchase/base.html" %}
+{% load i18n %}
 {% load money %}
 
-{% block title %}Dashboard{% endblock %}
-{% block page_title %}Dashboard{% endblock %}
+{% block title %}{% trans "Dashboard" %}{% endblock %}
+{% block page_title %}{% trans "Dashboard" %}{% endblock %}
 
 {% block content %}
 {% for section in dashboard_sections %}
@@ -32,18 +33,18 @@
 {% endfor %}
 
 <div class="card">
-    <h2>My Recent Requests</h2>
+    <h2>{% trans "My Recent Requests" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Request Type</th>
-                    <th>Request No</th>
-                    <th>Title</th>
-                    <th>Status</th>
-                    <th>Project</th>
-                    <th>Amount</th>
-                    <th>Open</th>
+                    <th>{% trans "Request Type" %}</th>
+                    <th>{% trans "Request No" %}</th>
+                    <th>{% trans "Title" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th>{% trans "Project" %}</th>
+                    <th>{% trans "Amount" %}</th>
+                    <th>{% trans "Open" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -61,11 +62,11 @@
                         {% endif %}
                     </td>
                     <td>{{ req.amount|money:req.currency }}</td>
-                    <td><a href="{{ req.detail_url }}">Open</a></td>
+                    <td><a href="{{ req.detail_url }}">{% trans "Open" %}</a></td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7">No recent requests.</td>
+                    <td colspan="7">{% trans "No recent requests." %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -74,20 +75,20 @@
 </div>
 
 <div class="card">
-    <h2>Assigned to Me</h2>
+    <h2>{% trans "Assigned to Me" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Request Type</th>
-                    <th>Request No</th>
-                    <th>Title</th>
-                    <th>Step</th>
-                    <th>Due At</th>
-                    <th>Due Status</th>
-                    <th>Request Status</th>
-                    <th>Amount</th>
-                    <th>Open</th>
+                    <th>{% trans "Request Type" %}</th>
+                    <th>{% trans "Request No" %}</th>
+                    <th>{% trans "Title" %}</th>
+                    <th>{% trans "Step" %}</th>
+                    <th>{% trans "Due At" %}</th>
+                    <th>{% trans "Due Status" %}</th>
+                    <th>{% trans "Request Status" %}</th>
+                    <th>{% trans "Amount" %}</th>
+                    <th>{% trans "Open" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -109,15 +110,15 @@
                     <td>{{ task.request_amount|money:task.request_currency }}</td>
                     <td>
                         {% if task.request_detail_url %}
-                        <a href="{{ task.request_detail_url }}">Open</a>
+                        <a href="{{ task.request_detail_url }}">{% trans "Open" %}</a>
                         {% else %}
-                        <span class="muted">Unavailable</span>
+                        <span class="muted">{% trans "Unavailable" %}</span>
                         {% endif %}
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="9">No assigned tasks.</td>
+                    <td colspan="9">{% trans "No assigned tasks." %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -126,20 +127,20 @@
 </div>
 
 <div class="card">
-    <h2>Available Pool Tasks</h2>
+    <h2>{% trans "Available Pool Tasks" %}</h2>
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Request Type</th>
-                    <th>Request No</th>
-                    <th>Title</th>
-                    <th>Step</th>
-                    <th>Due At</th>
-                    <th>Due Status</th>
-                    <th>Request Status</th>
-                    <th>Amount</th>
-                    <th>Open</th>
+                    <th>{% trans "Request Type" %}</th>
+                    <th>{% trans "Request No" %}</th>
+                    <th>{% trans "Title" %}</th>
+                    <th>{% trans "Step" %}</th>
+                    <th>{% trans "Due At" %}</th>
+                    <th>{% trans "Due Status" %}</th>
+                    <th>{% trans "Request Status" %}</th>
+                    <th>{% trans "Amount" %}</th>
+                    <th>{% trans "Open" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -161,15 +162,15 @@
                     <td>{{ task.request_amount|money:task.request_currency }}</td>
                     <td>
                         {% if task.request_detail_url %}
-                        <a href="{{ task.request_detail_url }}">Open</a>
+                        <a href="{{ task.request_detail_url }}">{% trans "Open" %}</a>
                         {% else %}
-                        <span class="muted">Unavailable</span>
+                        <span class="muted">{% trans "Unavailable" %}</span>
                         {% endif %}
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="9">No available pool tasks.</td>
+                    <td colspan="9">{% trans "No available pool tasks." %}</td>
                 </tr>
                 {% endfor %}
             </tbody>
