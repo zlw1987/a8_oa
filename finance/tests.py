@@ -803,6 +803,15 @@ class FinanceReportDrillDownSmokeTest(TestCase):
 
         self.assertEqual(response.status_code, 403)
 
+    def test_requester_cannot_access_department_spending_drilldown_in_chinese(self):
+        self.client.force_login(self.requester)
+        response = self.client.get(
+            reverse("finance:department_spending_drilldown", args=[self.department.id]),
+            HTTP_ACCEPT_LANGUAGE="zh-hans",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
 
 class FinanceCurrencySetupViewTest(TestCase):
     def setUp(self):

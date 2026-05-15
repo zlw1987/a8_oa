@@ -77,6 +77,15 @@ System Setup 会显示：
 
 Finance/Admin 用户可以通过 System Setup 进入常用设置页面，不需要把 Django Admin 当成主要业务入口。
 
+## 3.2 中文模式 / English UI Toggle
+
+- 顶部导航提供 English 和 中文 按钮。
+- English 是默认语言。
+- 中文 会把已支持的系统外壳页面和高频工作台页面切换为简体中文。
+- 第一批翻译范围包括 top navigation、Dashboard shell/cards、Finance Reports、Department Spending drill-down、Accounting Review Queue/Detail key labels、System Setup key labels。
+- 这还不是完整全系统本地化。完整 PR/TR detail pages、大部分 setup forms、许多 Python validation/messages、Django Admin 仍可能显示英文。
+- 数据库存储的 code、status value、enum value 和用户自己输入的内容不会被翻译或改变。
+
 ## 4. 采购申请流程
 
 ### 4.1 创建采购申请

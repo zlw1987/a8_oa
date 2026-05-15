@@ -52,6 +52,15 @@ Visible menus depend on your permissions. Empty menu groups are hidden.
 
 On desktop, hover over Work, Finance, Setup, or Admin to open the dropdown. You can also click the menu group. Click outside the menu or press Escape to close it.
 
+Language switcher:
+
+- The top navigation includes English and 中文 buttons.
+- English is the default language.
+- 中文 switches supported shell pages and high-traffic workbench pages into Simplified Chinese.
+- The first translated batch includes top navigation, Dashboard shell/cards, Finance Reports, Department Spending drill-down, Accounting Review Queue/Detail key labels, and System Setup key labels.
+- This is not full product-wide localization yet. Full PR/TR detail pages, most setup forms, many Python validation/messages, and Django Admin may still show English.
+- Database codes, status values, enum values, and user-entered text are not translated or changed.
+
 List and setup pages follow a consistent layout:
 
 1. Page title and primary action, such as Create Rule or New Project.

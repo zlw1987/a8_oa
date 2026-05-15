@@ -2,11 +2,12 @@
 
 ## Status
 
-The current version includes V1.2A Finance Reports drill-down enhancement on top of V1.1 Phase 3 completed and closed, the V0.5 business-control milestone, V0.6 multi-currency foundation, V1.1 Phase 1 financial-integrity workflows, and V1.1 Phase 2 expense-control workflows.
+The current version includes V1.2B Chinese UI Mode foundation and V1.2A Finance Reports drill-down enhancement on top of V1.1 Phase 3 completed and closed, the V0.5 business-control milestone, V0.6 multi-currency foundation, V1.1 Phase 1 financial-integrity workflows, and V1.1 Phase 2 expense-control workflows.
 
 ## Latest Fixes
 
 - Cleaned up Accounting Review Queue filters with visible labels, Basic/Advanced sections, tab counts, preserved-tab reset behavior, and clearer empty states.
+- Added V1.2B Chinese UI Mode foundation: Django i18n infrastructure, English / 中文 switcher, and first translation batch for top navigation, Dashboard shell/cards, Finance Reports, Department Spending drill-down, Accounting Review Queue/Detail key labels, and System Setup key labels.
 - Added V1.2A Finance Reports Department Spending drill-down. Department Spending Summary rows now open a department detail page with related projects, PRs, TRs, purchase actual spend, and travel actual expenses.
 - Stabilized Dashboard information hierarchy with My Work Today, Approval Summary, My Requests, oversight, and collapsible setup sections.
 - Added V1.1A System Setup landing page, shared role/permission helpers, and Admin dropdown cleanup.
@@ -67,9 +68,22 @@ The current version includes V1.2A Finance Reports drill-down enhancement on top
 
 ## Verification
 
-Latest verification for the V1.1 Phase 3 setup and control changes:
+Latest verification for the V1.2B Chinese UI Mode foundation:
 
-Latest V1.2A targeted verification:
+```text
+python manage.py check
+System check identified no issues (0 silenced).
+
+python manage.py makemigrations --check --dry-run
+No changes detected.
+
+python manage.py test dashboard.tests finance.tests --keepdb -v 1
+Found 48 test(s).
+Ran 48 tests in 87.548s
+OK
+```
+
+V1.2A targeted verification:
 
 ```text
 python manage.py check
@@ -198,6 +212,10 @@ V1.2A completion note:
 
 - [V1.2A Finance Report Drill-Down](v1.2a-finance-report-drilldown.md)
 
+V1.2B completion note:
+
+- [V1.2B Chinese UI Mode Foundation](v1.2b-chinese-ui-mode.md)
+
 ## Current Accepted Limitations
 
 - Duplicate candidate links are runtime-computed from current records, not persisted immutable snapshots.
@@ -206,3 +224,4 @@ V1.2A completion note:
 - Department General Budget does not yet include a PR/TR "general spend" flag or auto-default behavior.
 - Attachment Retention supports void-with-reason and Attachment History, but not a full replacement workflow.
 - Finance Report drill-down is link/detail based only; advanced reporting, Excel export, saved filters, and date/department/project report filters remain future work.
+- Chinese UI Mode is a foundation and first translation batch only. Full PR/TR detail pages, most setup forms, many validation/messages in Python, and Django Admin are not fully translated yet.

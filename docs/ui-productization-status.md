@@ -342,6 +342,65 @@ Delivered closeout-facing UI behavior:
 - Accounting Review Detail shows duplicate actual expense candidates as runtime-computed links to PR/TR detail pages. These candidate links are not persisted as an immutable duplicate snapshot.
 - Finance Reports provide link-based drill-down to project budget ledger, Accounting Review Detail, PR/TR source records, and card transaction detail. This is not an advanced reporting framework.
 
+## V1.2A Completed: Finance Reports Drill-Down Enhancement
+
+Department Spending Summary now supports an operational drill-down detail page.
+
+Changed areas:
+
+- `finance/reporting.py`
+- `finance/views.py`
+- `finance/urls.py`
+- `finance/templates/finance/reports.html`
+- `finance/templates/finance/department_spending_drilldown.html`
+- `finance/tests.py`
+
+Main behavior:
+
+- Department Spending Summary rows open a department drill-down page.
+- The drill-down page shows related projects, PRs, TRs, purchase actual spend, and travel actual expenses.
+- Money values use the shared money formatter.
+- Direct URL access uses the same accounting/report permission guard as Finance Reports.
+- This remains link/detail based and is not an advanced BI/reporting framework.
+
+## V1.2B Completed: Chinese UI Mode Foundation
+
+Chinese UI Mode is now available as a first controlled localization foundation.
+
+Changed areas:
+
+- `config/settings.py`
+- `config/urls.py`
+- `purchase/templates/purchase/base.html`
+- `templates/includes/top_nav.html`
+- `common/navigation.py`
+- `dashboard/views.py`
+- `dashboard/templates/dashboard/home.html`
+- `dashboard/templates/dashboard/system_setup.html`
+- `finance/forms.py`
+- `finance/presentation.py`
+- `finance/templates/finance/reports.html`
+- `finance/templates/finance/department_spending_drilldown.html`
+- `finance/templates/finance/accounting_review_queue.html`
+- `finance/templates/finance/accounting_review_detail.html`
+- `locale/zh_Hans/LC_MESSAGES/django.po`
+- `locale/zh_Hans/LC_MESSAGES/django.mo`
+
+Main behavior:
+
+- English remains the default language.
+- The top navigation includes English / 中文 buttons.
+- Language switching uses Django i18n and `/i18n/setlang/`.
+- The active HTML `lang` attribute follows the current language.
+- The first translation batch covers top navigation, Dashboard shell/cards, Finance Reports, Department Spending drill-down, Accounting Review Queue/Detail key labels, and System Setup key labels.
+- Database enum/status values, stored codes, and user-entered data are not translated or changed.
+
+Deployment note:
+
+- `django.po` and `django.mo` are both committed intentionally because the current local/Codex environment does not have GNU gettext tools.
+- If translations change, install GNU gettext and run `python manage.py makemessages -l zh_Hans` and `python manage.py compilemessages`.
+- In the current environment, Django reported missing `msguniq` and `msgfmt`.
+
 ## User Guide Maintenance Rule
 
 When UI or workflow behavior changes, update the formal user guides directly:
