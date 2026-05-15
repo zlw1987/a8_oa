@@ -59,6 +59,7 @@ from .services import (
     allocate_card_transaction,
     build_actual_expense_evidence_status,
     build_accounting_period_close_checklist,
+    build_duplicate_actual_expense_candidates,
     create_duplicate_card_review_item,
     enforce_accounting_period_open,
     mark_card_transaction_reviewed,
@@ -571,6 +572,11 @@ def accounting_review_detail(request, pk):
     enrich_review_item(item)
     actual_expense = item.purchase_actual_spend or item.travel_actual_expense
     evidence_status = build_actual_expense_evidence_status(actual_expense) if actual_expense else None
+    duplicate_candidates = (
+        build_duplicate_actual_expense_candidates(actual_expense)
+        if item.reason == "DUPLICATE_EXPENSE" and actual_expense
+        else []
+    )
     initial_decision = request.GET.get("decision") or ""
     form = AccountingReviewDecisionForm(initial={"decision": initial_decision})
     requester_id = None
@@ -588,6 +594,7 @@ def accounting_review_detail(request, pk):
             "can_decide": can_decide,
             "actual_expense": actual_expense,
             "evidence_status": evidence_status,
+            "duplicate_candidates": duplicate_candidates,
         },
     )
 

@@ -14,6 +14,7 @@ from common.choices import BudgetEntryType, DepartmentType, RequestStatus, Reque
 from projects.models import Project, ProjectBudgetEntry
 from purchase.models import PurchaseActualSpend, PurchaseRequest, PurchaseRequestLine
 from purchase.models import PurchaseRequestAttachment, PurchaseRequestAttachmentType
+from travel.models import TravelRequest, TravelRequestStatus
 
 from common.templatetags.money import money
 from .reporting import build_project_budget_summary, build_reserved_vs_consumed_summary
@@ -40,6 +41,7 @@ from .models import (
 )
 from .services import (
     allocate_card_transaction,
+    build_duplicate_actual_expense_candidates,
     build_money_snapshot,
     create_duplicate_card_review_item,
     evaluate_actual_expense_policy,
@@ -439,6 +441,20 @@ class DuplicateActualExpenseReviewTest(TestCase):
             quantity=Decimal("1"),
             unit_price=Decimal("1000.00"),
         )
+        self.travel = TravelRequest.objects.create(
+            purpose="Duplicate Actual Travel",
+            requester=self.requester,
+            request_department=self.department,
+            project=self.project,
+            request_date=date.today(),
+            start_date=date.today(),
+            end_date=date.today(),
+            origin_city="San Jose",
+            destination_city="Taipei",
+            status=TravelRequestStatus.APPROVED,
+            estimated_total=Decimal("1000.00"),
+            currency="USD",
+        )
 
     def test_same_vendor_date_amount_reference_creates_duplicate_actual_review(self):
         self.purchase.record_actual_spend(
@@ -517,8 +533,39 @@ class DuplicateActualExpenseReviewTest(TestCase):
                 description__icontains="hash",
             ).exists()
         )
+        candidates = build_duplicate_actual_expense_candidates(second)
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["object_id"], first.id)
+        self.assertEqual(candidates[0]["match_type"], "Receipt/Invoice Hash")
 
-    def test_duplicate_review_detail_shows_candidate_information_without_blocking_records(self):
+    def test_duplicate_candidate_helper_returns_structured_purchase_candidate(self):
+        first = self.purchase.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("130.00"),
+            acting_user=self.accounting,
+            vendor_name="Candidate Vendor",
+            reference_no="INV-CAND",
+        )
+        second = self.purchase.record_actual_spend(
+            spend_date=date.today(),
+            amount=Decimal("130.00"),
+            acting_user=self.accounting,
+            vendor_name="Candidate Vendor",
+            reference_no="INV-CAND",
+        )
+        candidates = build_duplicate_actual_expense_candidates(second)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["type"], "PURCHASE_ACTUAL")
+        self.assertEqual(candidates[0]["object_id"], first.id)
+        self.assertEqual(candidates[0]["request_no"], self.purchase.pr_no)
+        self.assertEqual(candidates[0]["amount"], Decimal("130.00"))
+        self.assertEqual(candidates[0]["vendor"], "Candidate Vendor")
+        self.assertEqual(candidates[0]["reference"], "INV-CAND")
+        self.assertEqual(candidates[0]["match_type"], "Vendor/Date/Amount/Reference")
+        self.assertEqual(candidates[0]["url"], reverse("purchase:pr_detail", args=[self.purchase.id]))
+
+    def test_duplicate_review_detail_shows_clickable_purchase_candidate_without_blocking_records(self):
         first = self.purchase.record_actual_spend(
             spend_date=date.today(),
             amount=Decimal("130.00"),
@@ -542,11 +589,47 @@ class DuplicateActualExpenseReviewTest(TestCase):
         response = self.client.get(reverse("finance:accounting_review_detail", args=[review_item.id]))
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "matching field candidate line id")
-        self.assertContains(response, str(first.id))
+        self.assertContains(response, "Duplicate Candidate Review")
+        self.assertContains(response, "Vendor/Date/Amount/Reference")
+        self.assertContains(response, reverse("purchase:pr_detail", args=[self.purchase.id]))
+        self.assertContains(response, f"{self.purchase.pr_no} actual #{first.id}")
         self.assertEqual(PurchaseActualSpend.objects.filter(purchase_request=self.purchase).count(), 2)
         self.assertTrue(PurchaseActualSpend.objects.filter(pk=first.pk).exists())
         self.assertTrue(PurchaseActualSpend.objects.filter(pk=second.pk).exists())
+
+    def test_duplicate_review_detail_shows_clickable_travel_candidate(self):
+        first = self.travel.record_actual_expense(
+            expense_type="HOTEL",
+            expense_date=date.today(),
+            actual_amount=Decimal("140.00"),
+            acting_user=self.accounting,
+            vendor_name="Travel Candidate Vendor",
+            reference_no="TR-INV-CAND",
+            skip_finance_policy=True,
+        )
+        second = self.travel.record_actual_expense(
+            expense_type="HOTEL",
+            expense_date=date.today(),
+            actual_amount=Decimal("140.00"),
+            acting_user=self.accounting,
+            vendor_name="Travel Candidate Vendor",
+            reference_no="TR-INV-CAND",
+            skip_finance_policy=True,
+        )
+        review_item = AccountingReviewItem.objects.get(
+            travel_actual_expense=second,
+            reason=AccountingReviewReason.DUPLICATE_EXPENSE,
+        )
+
+        self.client.force_login(self.accounting)
+        response = self.client.get(reverse("finance:accounting_review_detail", args=[review_item.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Duplicate Candidate Review")
+        self.assertContains(response, "Vendor/Date/Amount/Reference")
+        self.assertContains(response, reverse("travel:tr_detail", args=[self.travel.id]))
+        self.assertContains(response, f"{self.travel.travel_no} actual #{first.id}")
+        self.assertEqual(self.travel.actual_expense_lines.count(), 2)
 
 
 class FinanceReportCurrencyFormattingTest(TestCase):

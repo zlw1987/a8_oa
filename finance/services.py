@@ -5,6 +5,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
+from django.urls import reverse
 from django.utils import timezone
 
 from common.choices import BudgetEntryType, RequestType
@@ -1045,7 +1046,39 @@ def create_duplicate_card_review_item(card_transaction, *, created_by=None):
     )
 
 
-def _duplicate_attachment_hash_candidate_ids(actual_expense):
+def _duplicate_candidate_payload(candidate, *, match_type):
+    request_obj = getattr(candidate, "purchase_request", None) or getattr(candidate, "travel_request", None)
+    if not request_obj:
+        return None
+
+    if hasattr(candidate, "purchase_request_id"):
+        candidate_type = "PURCHASE_ACTUAL"
+        amount = candidate.amount
+        expense_date = candidate.spend_date
+        detail_url = reverse("purchase:pr_detail", args=[candidate.purchase_request_id])
+    else:
+        candidate_type = "TRAVEL_ACTUAL"
+        amount = candidate.actual_amount
+        expense_date = candidate.expense_date
+        detail_url = reverse("travel:tr_detail", args=[candidate.travel_request_id])
+
+    reference = (getattr(candidate, "reference_no", "") or "").strip()
+    vendor = (getattr(candidate, "vendor_name", "") or "").strip()
+    return {
+        "type": candidate_type,
+        "object_id": candidate.id,
+        "request_no": get_request_no(request_obj),
+        "amount": amount,
+        "date": expense_date,
+        "vendor": vendor,
+        "reference": reference,
+        "match_type": match_type,
+        "url": detail_url,
+        "label": f"{get_request_no(request_obj)} actual #{candidate.id}",
+    }
+
+
+def _duplicate_attachment_hash_candidates(actual_expense):
     links = _active_line_attachment_queryset(actual_expense).select_related(
         "purchase_attachment",
         "travel_attachment",
@@ -1071,13 +1104,68 @@ def _duplicate_attachment_hash_candidate_ids(actual_expense):
     elif hasattr(actual_expense, "travel_request_id"):
         duplicates = duplicates.exclude(travel_actual_expense=actual_expense)
 
-    candidate_ids = []
+    candidates = []
     for link in duplicates[:5]:
         if link.purchase_actual_spend_id:
-            candidate_ids.append(f"purchase actual #{link.purchase_actual_spend_id}")
+            payload = _duplicate_candidate_payload(link.purchase_actual_spend, match_type="Receipt/Invoice Hash")
+            if payload:
+                candidates.append(payload)
         elif link.travel_actual_expense_id:
-            candidate_ids.append(f"travel actual #{link.travel_actual_expense_id}")
-    return candidate_ids
+            payload = _duplicate_candidate_payload(link.travel_actual_expense, match_type="Receipt/Invoice Hash")
+            if payload:
+                candidates.append(payload)
+    return candidates
+
+
+def build_duplicate_actual_expense_candidates(actual_expense):
+    if not actual_expense:
+        return []
+
+    vendor = (getattr(actual_expense, "vendor_name", "") or "").strip()
+    reference = (getattr(actual_expense, "reference_no", "") or "").strip()
+    candidates = []
+
+    if hasattr(actual_expense, "purchase_request_id"):
+        from purchase.models import PurchaseActualSpend
+
+        duplicate_qs = PurchaseActualSpend.objects.select_related("purchase_request").filter(
+            spend_date=actual_expense.spend_date,
+            amount=actual_expense.amount,
+        ).exclude(pk=actual_expense.pk)
+        if vendor:
+            duplicate_qs = duplicate_qs.filter(vendor_name__iexact=vendor)
+        if reference:
+            duplicate_qs = duplicate_qs.filter(reference_no__iexact=reference)
+    elif hasattr(actual_expense, "travel_request_id"):
+        from travel.models import TravelActualExpenseLine
+
+        duplicate_qs = TravelActualExpenseLine.objects.select_related("travel_request").filter(
+            expense_date=actual_expense.expense_date,
+            actual_amount=actual_expense.actual_amount,
+        ).exclude(pk=actual_expense.pk)
+        if vendor:
+            duplicate_qs = duplicate_qs.filter(vendor_name__iexact=vendor)
+        if reference:
+            duplicate_qs = duplicate_qs.filter(reference_no__iexact=reference)
+    else:
+        duplicate_qs = []
+
+    seen = set()
+    for candidate in duplicate_qs[:5]:
+        payload = _duplicate_candidate_payload(candidate, match_type="Vendor/Date/Amount/Reference")
+        if payload:
+            key = (payload["type"], payload["object_id"])
+            seen.add(key)
+            candidates.append(payload)
+
+    for payload in _duplicate_attachment_hash_candidates(actual_expense):
+        key = (payload["type"], payload["object_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(payload)
+
+    return candidates
 
 
 def create_duplicate_actual_expense_review_item(actual_expense, *, created_by=None):
@@ -1091,7 +1179,7 @@ def create_duplicate_actual_expense_review_item(actual_expense, *, created_by=No
     expense_date = getattr(actual_expense, "spend_date", None)
     request_type = RequestType.PURCHASE
     duplicate_qs = None
-    hash_candidate_ids = _duplicate_attachment_hash_candidate_ids(actual_expense)
+    hash_candidates = _duplicate_attachment_hash_candidates(actual_expense)
 
     if hasattr(actual_expense, "purchase_request_id"):
         from purchase.models import PurchaseActualSpend
@@ -1120,7 +1208,7 @@ def create_duplicate_actual_expense_review_item(actual_expense, *, created_by=No
             duplicate_qs = duplicate_qs.filter(reference_no__iexact=reference)
 
     has_field_duplicate = duplicate_qs is not None and duplicate_qs.exists()
-    if not has_field_duplicate and not hash_candidate_ids:
+    if not has_field_duplicate and not hash_candidates:
         return None
     if getattr(actual_expense, "accounting_review_items", None) and actual_expense.accounting_review_items.filter(
         reason=AccountingReviewReason.DUPLICATE_EXPENSE,
@@ -1129,7 +1217,7 @@ def create_duplicate_actual_expense_review_item(actual_expense, *, created_by=No
         return None
 
     duplicate_ids = ", ".join(str(item.id) for item in duplicate_qs[:5]) if has_field_duplicate else ""
-    duplicate_hash_text = ", ".join(hash_candidate_ids)
+    duplicate_hash_text = ", ".join(candidate["label"] for candidate in hash_candidates)
     evidence_text = []
     if duplicate_ids:
         evidence_text.append(f"matching field candidate line id(s): {duplicate_ids}")

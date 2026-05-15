@@ -151,6 +151,41 @@
     </div>
 </div>
 
+{% if item.reason == "DUPLICATE_EXPENSE" %}
+<div class="card">
+    <h2>Duplicate Candidate Review</h2>
+    <p class="muted">Possible duplicate candidates are calculated from vendor, date, amount, reference, and linked receipt or invoice hash.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Candidate</th>
+                <th>Match Type</th>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Vendor</th>
+                <th>Reference</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for candidate in duplicate_candidates %}
+            <tr>
+                <td><a href="{{ candidate.url }}">{{ candidate.label }}</a></td>
+                <td>{{ candidate.match_type }}</td>
+                <td>{{ candidate.date }}</td>
+                <td>{{ candidate.amount }}</td>
+                <td>{{ candidate.vendor|default:"-" }}</td>
+                <td>{{ candidate.reference|default:"-" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6">No active duplicate candidate could be resolved from current records. Review the description for original detection notes.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
 <div class="card">
     <h2>Decision History / Audit Context</h2>
     <div class="summary-grid">
